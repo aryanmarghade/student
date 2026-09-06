@@ -127,6 +127,14 @@ const bulkUsersSchema = z.object({
   })).min(1).max(1000),
 })
 
+const marksheetSchema = z.object({
+  studentId: z.string().uuid(),
+  semesterId: z.string().uuid(),
+  fileUrl: z.string().url(),
+  sgpa: z.number().min(0).max(10).optional(),
+  cgpa: z.number().min(0).max(10).optional(),
+})
+
 const aiQuerySchema = z.object({
   query: z.string().min(2).max(1000),
   classId: z.string().uuid().optional(),
@@ -423,6 +431,27 @@ app.post('/api/admin/users/bulk-import', requireAuth, requireRoles('super_admin'
     next(error)
   } finally {
     client.release()
+  }
+})
+
+app.post('/api/admin/marksheets', requireAuth, requireRoles('super_admin'), async (request: AuthRequest, response, next) => {
+  try {
+    const input = marksheetSchema.parse(request.body)
+    const result = await pool.query(
+      `INSERT INTO marksheets (student_id, semester_id, file_url, uploaded_by, sgpa, cgpa)
+       SELECT st.id, sem.id, $3, $4, $5, $6
+         FROM students st
+         JOIN users u ON u.id = st.id AND u.college_id = $7
+         JOIN semesters sem ON sem.id = $2
+         JOIN academic_years ay ON ay.id = sem.academic_year_id AND ay.college_id = $7
+        WHERE st.id = $1
+       RETURNING id, student_id, semester_id, file_url, sgpa, cgpa, uploaded_at`,
+      [input.studentId, input.semesterId, input.fileUrl, request.user!.id, input.sgpa ?? null, input.cgpa ?? null, request.user!.collegeId],
+    )
+    if (result.rowCount !== 1) return response.status(400).json({ error: 'Student or semester is outside this college' })
+    return response.status(201).json({ marksheet: result.rows[0] })
+  } catch (error) {
+    next(error)
   }
 })
 
