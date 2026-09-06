@@ -36,7 +36,7 @@ const storageClient = process.env.STORAGE_ENDPOINT
     })
 
 type Role = 'super_admin' | 'teacher' | 'student'
-type AuthUser = { id: string; collegeId: string; role: Role; email: string }
+type AuthUser = { id: string; collegeId: string; role: Role; email: string; fullName: string }
 
 type AuthRequest = Request & { user?: AuthUser }
 
@@ -73,21 +73,24 @@ const loginSchema = z.object({
   password: z.string().min(8),
 })
 
+const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+
 const marksSchema = z.object({
-  classId: z.string().uuid(),
-  subjectId: z.string().uuid(),
-  semesterId: z.string().uuid(),
+  classId: uuidSchema,
+  subjectId: uuidSchema,
+  semesterId: uuidSchema,
   examType: z.enum(['internal1', 'internal2', 'midterm', 'final', 'assignment', 'practical']),
   marks: z.array(z.object({
-    studentId: z.string().uuid(),
+    studentId: uuidSchema,
     marksObtained: z.number().min(0),
     maxMarks: z.number().positive(),
   })).min(1).max(500),
 })
 
 const profileUpdateSchema = z.object({
-  linkedinUrl: z.string().url().or(z.literal('')).optional(),
-  githubUrl: z.string().url().or(z.literal('')).optional(),
+  profilePhotoUrl: z.string().url().or(z.literal('')).nullable().optional(),
+  linkedinUrl: z.string().url().or(z.literal('')).nullable().optional(),
+  githubUrl: z.string().url().or(z.literal('')).nullable().optional(),
   bio: z.string().max(1000).optional(),
 })
 
@@ -106,15 +109,15 @@ const notificationSchema = z.object({
   title: z.string().min(1).max(255),
   body: z.string().max(5000).optional(),
   targetRole: z.enum(['all', 'students', 'teachers']).optional(),
-  targetClassId: z.string().uuid().optional(),
+  targetClassId: uuidSchema.optional(),
   fileUrl: z.string().url().optional(),
 })
 
 const assignmentSchema = z.object({
-  teacherId: z.string().uuid(),
-  classId: z.string().uuid(),
-  subjectId: z.string().uuid(),
-  semesterId: z.string().uuid(),
+  teacherId: uuidSchema,
+  classId: uuidSchema,
+  subjectId: uuidSchema,
+  semesterId: uuidSchema,
 })
 
 const bulkUsersSchema = z.object({
@@ -128,8 +131,8 @@ const bulkUsersSchema = z.object({
 })
 
 const marksheetSchema = z.object({
-  studentId: z.string().uuid(),
-  semesterId: z.string().uuid(),
+  studentId: uuidSchema,
+  semesterId: uuidSchema,
   fileUrl: z.string().url(),
   sgpa: z.number().min(0).max(10).optional(),
   cgpa: z.number().min(0).max(10).optional(),
@@ -137,9 +140,9 @@ const marksheetSchema = z.object({
 
 const aiQuerySchema = z.object({
   query: z.string().min(2).max(1000),
-  classId: z.string().uuid().optional(),
-  subjectId: z.string().uuid().optional(),
-  semesterId: z.string().uuid().optional(),
+  classId: uuidSchema.optional(),
+  subjectId: uuidSchema.optional(),
+  semesterId: uuidSchema.optional(),
 })
 
 const allowedDocumentTypes: Record<string, { mimeTypes: string[]; maxBytes: number }> = {
@@ -163,8 +166,8 @@ app.get('/api/health', (_request, response) => {
 app.post('/api/auth/login', async (request, response, next) => {
   try {
     const input = loginSchema.parse(request.body)
-    const result = await pool.query<{ id: string; college_id: string; role: Role; email: string; password_hash: string; is_active: boolean }>(
-      'SELECT id, college_id, role, email, password_hash, is_active FROM users WHERE email = $1 LIMIT 1',
+    const result = await pool.query<{ id: string; college_id: string; role: Role; email: string; full_name: string; password_hash: string; is_active: boolean }>(
+      'SELECT id, college_id, role, email, full_name, password_hash, is_active FROM users WHERE email = $1 LIMIT 1',
       [input.email.toLowerCase()],
     )
     const user = result.rows[0]
@@ -172,7 +175,7 @@ app.post('/api/auth/login', async (request, response, next) => {
       return response.status(401).json({ error: 'Invalid email or password' })
     }
 
-    const authUser: AuthUser = { id: user.id, collegeId: user.college_id, role: user.role, email: user.email }
+    const authUser: AuthUser = { id: user.id, collegeId: user.college_id, role: user.role, email: user.email, fullName: user.full_name }
     await pool.query('UPDATE users SET last_login = now() WHERE id = $1', [user.id])
     return response.json({ accessToken: signToken(authUser), user: authUser })
   } catch (error) {
@@ -223,19 +226,20 @@ app.put('/api/students/me', requireAuth, requireRoles('student'), async (request
     const input = profileUpdateSchema.parse(request.body)
     const result = await pool.query(
       `UPDATE students
-          SET linkedin_url = COALESCE($1, linkedin_url),
-              github_url = COALESCE($2, github_url),
-              bio = COALESCE($3, bio),
+          SET profile_photo_url = COALESCE($1, profile_photo_url),
+              linkedin_url = COALESCE($2, linkedin_url),
+              github_url = COALESCE($3, github_url),
+              bio = COALESCE($4, bio),
               profile_strength = LEAST(100,
-                (CASE WHEN profile_photo_url IS NOT NULL THEN 20 ELSE 0 END) +
+                (CASE WHEN COALESCE($1, profile_photo_url) IS NOT NULL AND COALESCE($1, profile_photo_url) <> '' THEN 20 ELSE 0 END) +
                 (CASE WHEN resume_url IS NOT NULL THEN 25 ELSE 0 END) +
-                (CASE WHEN COALESCE($1, linkedin_url) IS NOT NULL AND COALESCE($1, linkedin_url) <> '' THEN 15 ELSE 0 END) +
-                (CASE WHEN COALESCE($2, github_url) IS NOT NULL AND COALESCE($2, github_url) <> '' THEN 15 ELSE 0 END) +
-                (CASE WHEN COALESCE($3, bio) IS NOT NULL AND COALESCE($3, bio) <> '' THEN 10 ELSE 0 END) +
+                (CASE WHEN COALESCE($2, linkedin_url) IS NOT NULL AND COALESCE($2, linkedin_url) <> '' THEN 15 ELSE 0 END) +
+                (CASE WHEN COALESCE($3, github_url) IS NOT NULL AND COALESCE($3, github_url) <> '' THEN 15 ELSE 0 END) +
+                (CASE WHEN COALESCE($4, bio) IS NOT NULL AND COALESCE($4, bio) <> '' THEN 10 ELSE 0 END) +
                 (CASE WHEN EXISTS (SELECT 1 FROM marks WHERE student_id = students.id) THEN 15 ELSE 0 END))
-        WHERE id = $4 AND college_id = $5
-      RETURNING linkedin_url, github_url, bio, profile_strength`,
-      [input.linkedinUrl, input.githubUrl, input.bio, request.user!.id, request.user!.collegeId],
+        WHERE id = $5 AND college_id = $6
+      RETURNING profile_photo_url, linkedin_url, github_url, bio, profile_strength`,
+      [input.profilePhotoUrl, input.linkedinUrl, input.githubUrl, input.bio, request.user!.id, request.user!.collegeId],
     )
     if (result.rowCount !== 1) return response.status(404).json({ error: 'Student profile not found' })
     return response.json({ profile: result.rows[0] })
@@ -340,7 +344,7 @@ app.get('/api/students/me/marksheets', requireAuth, requireRoles('student'), asy
 
 app.post('/api/students/me/notifications/:notificationId/read', requireAuth, requireRoles('student'), async (request: AuthRequest, response, next) => {
   try {
-    const notificationId = z.string().uuid().parse(request.params.notificationId)
+    const notificationId = uuidSchema.parse(request.params.notificationId)
     const result = await pool.query(
       `INSERT INTO notification_reads (notification_id, user_id, read_at)
        SELECT n.id, u.id, now()
@@ -470,6 +474,37 @@ app.get('/api/admin/users', requireAuth, requireRoles('super_admin'), async (req
   }
 })
 
+app.get('/api/admin/catalog', requireAuth, requireRoles('super_admin'), async (request: AuthRequest, response, next) => {
+  try {
+    const [teachers, classes, subjects, semesters] = await Promise.all([
+      pool.query(`SELECT id, full_name, email FROM users WHERE college_id = $1 AND role = 'teacher' AND is_active = true ORDER BY full_name`, [request.user!.collegeId]),
+      pool.query(`SELECT c.id, c.name, c.year, c.section, d.name AS department_name FROM classes c JOIN departments d ON d.id = c.department_id WHERE d.college_id = $1 ORDER BY d.name, c.year, c.section`, [request.user!.collegeId]),
+      pool.query(`SELECT s.id, s.name, s.code, d.name AS department_name FROM subjects s JOIN departments d ON d.id = s.department_id WHERE d.college_id = $1 ORDER BY d.name, s.name`, [request.user!.collegeId]),
+      pool.query(`SELECT sem.id, sem.sem_number, ay.label AS academic_year FROM semesters sem JOIN academic_years ay ON ay.id = sem.academic_year_id WHERE ay.college_id = $1 ORDER BY ay.label DESC, sem.sem_number`, [request.user!.collegeId]),
+    ])
+    return response.json({ teachers: teachers.rows, classes: classes.rows, subjects: subjects.rows, semesters: semesters.rows })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/admin/overview', requireAuth, requireRoles('super_admin'), async (request: AuthRequest, response, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE u.role = 'student')::int AS student_count,
+         COUNT(*) FILTER (WHERE u.role = 'teacher')::int AS teacher_count,
+         (SELECT COUNT(*)::int FROM classes c JOIN departments d ON d.id = c.department_id WHERE d.college_id = $1) AS class_count,
+         (SELECT COUNT(*)::int FROM semesters sem JOIN academic_years ay ON ay.id = sem.academic_year_id WHERE ay.college_id = $1 AND CURRENT_DATE BETWEEN COALESCE(sem.start_date, CURRENT_DATE) AND COALESCE(sem.end_date, CURRENT_DATE)) AS active_semester_count
+       FROM users u WHERE u.college_id = $1`,
+      [request.user!.collegeId],
+    )
+    return response.json({ overview: result.rows[0] })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.get('/api/admin/assignments', requireAuth, requireRoles('super_admin'), async (request: AuthRequest, response, next) => {
   try {
     const result = await pool.query(
@@ -517,7 +552,7 @@ app.post('/api/admin/assignments', requireAuth, requireRoles('super_admin'), asy
 
 app.delete('/api/admin/assignments/:assignmentId', requireAuth, requireRoles('super_admin'), async (request: AuthRequest, response, next) => {
   try {
-    const assignmentId = z.string().uuid().parse(request.params.assignmentId)
+    const assignmentId = uuidSchema.parse(request.params.assignmentId)
     const result = await pool.query(
       `UPDATE teacher_class_assignments a
           SET status = 'past'
@@ -537,12 +572,13 @@ app.delete('/api/admin/assignments/:assignmentId', requireAuth, requireRoles('su
 app.get('/api/teacher/assignments', requireAuth, requireRoles('teacher'), async (request: AuthRequest, response, next) => {
   try {
     const result = await pool.query(
-      `SELECT a.id, a.class_id, c.name AS class_name, a.subject_id, s.name AS subject_name,
-              a.semester_id, sem.sem_number, a.status
+            `SELECT a.id, a.class_id, c.name AS class_name, a.subject_id, s.name AS subject_name,
+              a.semester_id, sem.sem_number, ay.label AS academic_year, a.status
          FROM teacher_class_assignments a
          JOIN classes c ON c.id = a.class_id
          JOIN subjects s ON s.id = a.subject_id
          JOIN semesters sem ON sem.id = a.semester_id
+         JOIN academic_years ay ON ay.id = sem.academic_year_id
         WHERE a.teacher_id = $1 AND c.department_id IN (SELECT id FROM departments WHERE college_id = $2)
         ORDER BY a.status, sem.sem_number`,
       [request.user!.id, request.user!.collegeId],
@@ -555,6 +591,8 @@ app.get('/api/teacher/assignments', requireAuth, requireRoles('teacher'), async 
 
 app.get('/api/teacher/classes/:classId/students', requireAuth, requireRoles('teacher'), async (request: AuthRequest, response, next) => {
   try {
+    const subjectId = uuidSchema.parse(request.query.subjectId)
+    const semesterId = uuidSchema.parse(request.query.semesterId)
     const result = await pool.query(
       `SELECT st.id, u.full_name, st.roll_number, st.profile_strength
          FROM students st
@@ -563,9 +601,10 @@ app.get('/api/teacher/classes/:classId/students', requireAuth, requireRoles('tea
           AND EXISTS (
             SELECT 1 FROM teacher_class_assignments a
              WHERE a.teacher_id = $3 AND a.class_id = st.class_id
+               AND a.subject_id = $4 AND a.semester_id = $5
           )
         ORDER BY st.roll_number`,
-      [request.params.classId, request.user!.collegeId, request.user!.id],
+      [request.params.classId, request.user!.collegeId, request.user!.id, subjectId, semesterId],
     )
     return response.json({ students: result.rows })
   } catch (error) {
@@ -575,9 +614,9 @@ app.get('/api/teacher/classes/:classId/students', requireAuth, requireRoles('tea
 
 app.get('/api/teacher/analytics', requireAuth, requireRoles('teacher'), async (request: AuthRequest, response, next) => {
   try {
-    const classId = z.string().uuid().parse(request.query.classId)
-    const subjectId = z.string().uuid().parse(request.query.subjectId)
-    const semesterId = z.string().uuid().parse(request.query.semesterId)
+    const classId = uuidSchema.parse(request.query.classId)
+    const subjectId = uuidSchema.parse(request.query.subjectId)
+    const semesterId = uuidSchema.parse(request.query.semesterId)
     const result = await pool.query(
       `SELECT AVG(m.marks_obtained / NULLIF(m.max_marks, 0) * 100)::numeric(5,2) AS average_percentage,
               COUNT(DISTINCT m.student_id)::int AS student_count,

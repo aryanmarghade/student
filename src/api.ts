@@ -5,6 +5,7 @@ export type SessionUser = {
   collegeId: string
   role: ApiRole
   email: string
+  fullName: string
 }
 
 export type LoginResponse = {

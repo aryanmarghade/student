@@ -22,6 +22,7 @@ function Find-Psql {
 }
 
 $psql = Find-Psql
+$createdb = Join-Path (Split-Path $psql) 'createdb.exe'
 $database = if ($env:PGDATABASE) { $env:PGDATABASE } else { 'student_profile' }
 $user = if ($env:PGUSER) { $env:PGUSER } else { 'postgres' }
 $hostName = if ($env:PGHOST) { $env:PGHOST } else { 'localhost' }
@@ -30,13 +31,19 @@ $port = if ($env:PGPORT) { $env:PGPORT } else { '5432' }
 Write-Host "Using PostgreSQL client: $psql"
 Write-Host "Initializing database '$database' on $hostName`:$port"
 
-& $psql --host=$hostName --port=$port --username=$user --dbname=postgres --command="SELECT 'CREATE DATABASE $database' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$database')\gexec"
+$databaseExists = & $psql --host=$hostName --port=$port --username=$user --dbname=postgres --tuples-only --no-align --command="SELECT 1 FROM pg_database WHERE datname = '$database'"
 if ($LASTEXITCODE -ne 0) { throw "Could not connect to PostgreSQL as '$user'. Set PGHOST, PGPORT, PGUSER, and PGPASSWORD as needed." }
+if ([string]::IsNullOrWhiteSpace([string]$databaseExists)) {
+    & $createdb --host=$hostName --port=$port --username=$user $database
+    if ($LASTEXITCODE -ne 0) { throw "Could not create database '$database'." }
+}
 
-& $psql --host=$hostName --port=$port --username=$user --dbname=$database --file=(Join-Path $PSScriptRoot 'schema.sql')
+$schemaFile = Join-Path $PSScriptRoot 'schema.sql'
+$seedFile = Join-Path $PSScriptRoot 'seed.sql'
+& $psql --host=$hostName --port=$port --username=$user --dbname=$database --file $schemaFile
 if ($LASTEXITCODE -ne 0) { throw 'Schema initialization failed.' }
 
-& $psql --host=$hostName --port=$port --username=$user --dbname=$database --file=(Join-Path $PSScriptRoot 'seed.sql')
+& $psql --host=$hostName --port=$port --username=$user --dbname=$database --file $seedFile
 if ($LASTEXITCODE -ne 0) { throw 'Seed initialization failed.' }
 
 Write-Host 'Database schema and development seed applied successfully.'
