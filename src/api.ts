@@ -6,6 +6,7 @@ export type SessionUser = {
   role: ApiRole
   email: string
   fullName: string
+  mustResetPassword: boolean
 }
 
 export type LoginResponse = {

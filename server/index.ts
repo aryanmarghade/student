@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import cors from 'cors'
 import bcrypt from 'bcryptjs'
 import express, { type NextFunction, type Request, type Response } from 'express'
@@ -7,6 +7,9 @@ import jwt from 'jsonwebtoken'
 import { Pool } from 'pg'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { z } from 'zod'
+import { linearRegression, median, standardDeviation } from './analytics.js'
+import { AiScopeError, runGeminiQuery } from './ai.js'
+import { parseResume } from './documents.js'
 
 const app = express()
 const port = Number(process.env.API_PORT ?? 4000)
@@ -17,42 +20,97 @@ if (!jwtSecret && process.env.NODE_ENV === 'production') {
 }
 
 const tokenSecret = jwtSecret ?? 'development-only-secret'
+const refreshCookieName = 'student-profile-refresh'
+const refreshMaxAgeSeconds = 7 * 24 * 60 * 60
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
-const storageBucket = process.env.STORAGE_BUCKET
-const storageClient = process.env.STORAGE_ENDPOINT
+const storageBucket = process.env.STORAGE_BUCKET ?? 'student-profile-documents'
+const storageEndpoint = process.env.STORAGE_ENDPOINT || process.env.MINIO_ENDPOINT
+const storageAccessKey = process.env.STORAGE_ACCESS_KEY_ID || process.env.MINIO_ACCESS_KEY
+const storageSecretKey = process.env.STORAGE_SECRET_ACCESS_KEY || process.env.MINIO_SECRET_KEY
+const storageClient = storageEndpoint
   ? new S3Client({
       region: process.env.STORAGE_REGION ?? 'auto',
-      endpoint: process.env.STORAGE_ENDPOINT,
-      forcePathStyle: process.env.STORAGE_FORCE_PATH_STYLE === 'true',
-      credentials: process.env.STORAGE_ACCESS_KEY_ID && process.env.STORAGE_SECRET_ACCESS_KEY
-        ? { accessKeyId: process.env.STORAGE_ACCESS_KEY_ID, secretAccessKey: process.env.STORAGE_SECRET_ACCESS_KEY }
+      endpoint: storageEndpoint,
+      forcePathStyle: process.env.STORAGE_FORCE_PATH_STYLE === 'true' || Boolean(process.env.MINIO_ENDPOINT),
+      credentials: storageAccessKey && storageSecretKey
+        ? { accessKeyId: storageAccessKey, secretAccessKey: storageSecretKey }
         : undefined,
     })
   : new S3Client({
       region: process.env.STORAGE_REGION ?? 'us-east-1',
-      credentials: process.env.STORAGE_ACCESS_KEY_ID && process.env.STORAGE_SECRET_ACCESS_KEY
-        ? { accessKeyId: process.env.STORAGE_ACCESS_KEY_ID, secretAccessKey: process.env.STORAGE_SECRET_ACCESS_KEY }
+      credentials: storageAccessKey && storageSecretKey
+        ? { accessKeyId: storageAccessKey, secretAccessKey: storageSecretKey }
         : undefined,
     })
 
 type Role = 'super_admin' | 'teacher' | 'student'
-type AuthUser = { id: string; collegeId: string; role: Role; email: string; fullName: string }
+type AuthUser = { id: string; collegeId: string; role: Role; email: string; fullName: string; mustResetPassword: boolean }
 
 type AuthRequest = Request & { user?: AuthUser }
 
 app.use(cors({ origin: process.env.WEB_ORIGIN ?? 'http://localhost:5173' }))
 app.use(express.json({ limit: '1mb' }))
 
-function signToken(user: AuthUser) {
+function signAccessToken(user: AuthUser) {
   return jwt.sign(user, tokenSecret, { expiresIn: '15m' })
 }
+
+function signRefreshToken(user: AuthUser) {
+  return jwt.sign({ ...user, tokenType: 'refresh' }, tokenSecret, { expiresIn: '7d' })
+}
+
+function setRefreshCookie(response: Response, token: string) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  response.setHeader('Set-Cookie', `${refreshCookieName}=${encodeURIComponent(token)}; Max-Age=${refreshMaxAgeSeconds}; Path=/api/auth; HttpOnly; SameSite=Lax${secure}`)
+}
+
+function getCookie(request: Request, name: string) {
+  const cookie = request.headers.cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))
+  return cookie ? decodeURIComponent(cookie.slice(name.length + 1)) : undefined
+}
+
+type RateLimitEntry = { count: number; resetAt: number }
+
+function createRateLimiter(options: { limit: number; windowMs: number; key: (request: Request & { user?: AuthUser }) => string }) {
+  const entries = new Map<string, RateLimitEntry>()
+  return (request: Request & { user?: AuthUser }, response: Response, next: NextFunction) => {
+    const now = Date.now()
+    const key = options.key(request)
+    const current = entries.get(key)
+    const entry = !current || current.resetAt <= now ? { count: 0, resetAt: now + options.windowMs } : current
+    entry.count += 1
+    entries.set(key, entry)
+    if (entry.count > options.limit) {
+      const retryAfterSeconds = Math.ceil((entry.resetAt - now) / 1000)
+      response.setHeader('Retry-After', retryAfterSeconds)
+      return response.status(429).json({ error: 'Too many requests', retryAfterSeconds })
+    }
+    next()
+  }
+}
+
+const loginRateLimiter = createRateLimiter({
+  limit: 5,
+  windowMs: 15 * 60 * 1000,
+  key: (request) => `${request.ip}:${String(request.body?.email ?? '').trim().toLowerCase()}`,
+})
+
+const aiRateLimiter = createRateLimiter({
+  limit: 20,
+  windowMs: 60 * 60 * 1000,
+  key: (request) => request.user?.id ?? request.ip ?? 'unknown-ip',
+})
 
 function requireAuth(request: AuthRequest, response: Response, next: NextFunction) {
   const token = request.headers.authorization?.replace('Bearer ', '')
   if (!token) return response.status(401).json({ error: 'Authentication required' })
 
   try {
-    request.user = jwt.verify(token, tokenSecret) as AuthUser
+    const user = jwt.verify(token, tokenSecret) as AuthUser
+    if (user.mustResetPassword && request.path !== '/api/auth/reset-password') {
+      return response.status(403).json({ error: 'Password reset required', code: 'PASSWORD_RESET_REQUIRED' })
+    }
+    request.user = user
     next()
   } catch {
     return response.status(401).json({ error: 'Invalid or expired token' })
@@ -68,9 +126,24 @@ function requireRoles(...roles: Role[]) {
   }
 }
 
+async function teacherHasAssignment(teacherId: string, classId: string, subjectId: string, semesterId: string) {
+  const result = await pool.query(
+    `SELECT 1 FROM teacher_class_assignments
+      WHERE teacher_id = $1 AND class_id = $2 AND subject_id = $3 AND semester_id = $4
+        AND status IN ('active', 'past')
+      LIMIT 1`,
+    [teacherId, classId, subjectId, semesterId],
+  )
+  return result.rowCount === 1
+}
+
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
+})
+
+const resetPasswordSchema = z.object({
+  newPassword: z.string().min(8).max(200),
 })
 
 const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
@@ -98,6 +171,7 @@ const documentSchema = z.object({
   docType: z.enum(['photo', 'resume_pdf', 'resume_docx', 'certificate', 'other']),
   fileName: z.string().min(1).max(255),
   fileUrl: z.string().url(),
+  objectKey: z.string().min(1).optional(),
   mimeType: z.string().min(1),
   sizeBytes: z.number().int().positive(),
   parsedHeadings: z.array(z.string().min(1).max(80)).max(30).default([]),
@@ -145,29 +219,51 @@ const aiQuerySchema = z.object({
   semesterId: uuidSchema.optional(),
 })
 
+const analyticsQuerySchema = z.object({
+  classId: uuidSchema,
+  subjectId: uuidSchema,
+  studentIds: z.array(uuidSchema).nullable().optional(),
+  semesterIds: z.array(uuidSchema).min(1),
+  examTypes: z.array(z.enum(['internal1', 'internal2', 'midterm', 'final', 'assignment', 'practical'])).min(1),
+})
+
 const allowedDocumentTypes: Record<string, { mimeTypes: string[]; maxBytes: number }> = {
   photo: { mimeTypes: ['image/jpeg', 'image/png'], maxBytes: 5 * 1024 * 1024 },
   resume_pdf: { mimeTypes: ['application/pdf'], maxBytes: 10 * 1024 * 1024 },
   resume_docx: { mimeTypes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'], maxBytes: 10 * 1024 * 1024 },
 }
 
+class DocumentValidationError extends Error {
+  constructor(public readonly status: number, message: string, public readonly details?: Record<string, unknown>) {
+    super(message)
+  }
+}
+
 function validateDocument(input: z.infer<typeof documentSchema>) {
   const rule = allowedDocumentTypes[input.docType]
   if (!rule) return
-  if (!rule.mimeTypes.includes(input.mimeType) || input.sizeBytes > rule.maxBytes) {
-    throw new Error(`Invalid ${input.docType} file type or size`)
+  if (input.sizeBytes > rule.maxBytes) {
+    throw new DocumentValidationError(413, `File exceeds maximum allowed size of ${rule.maxBytes / (1024 * 1024)}MB`, { maxSizeBytes: rule.maxBytes })
   }
+  if (!rule.mimeTypes.includes(input.mimeType)) {
+    throw new DocumentValidationError(400, `Invalid MIME type for ${input.docType}`, { allowedMimeTypes: rule.mimeTypes })
+  }
+}
+
+function objectKeyFromUrl(fileUrl: string) {
+  const pathname = new URL(fileUrl).pathname.replace(/^\/+/, '')
+  return pathname.startsWith(`${storageBucket}/`) ? pathname.slice(storageBucket.length + 1) : pathname
 }
 
 app.get('/api/health', (_request, response) => {
   response.json({ service: 'student-profile-saas-api', status: 'ok' })
 })
 
-app.post('/api/auth/login', async (request, response, next) => {
+app.post('/api/auth/login', loginRateLimiter, async (request, response, next) => {
   try {
     const input = loginSchema.parse(request.body)
-    const result = await pool.query<{ id: string; college_id: string; role: Role; email: string; full_name: string; password_hash: string; is_active: boolean }>(
-      'SELECT id, college_id, role, email, full_name, password_hash, is_active FROM users WHERE email = $1 LIMIT 1',
+    const result = await pool.query<{ id: string; college_id: string; role: Role; email: string; full_name: string; password_hash: string; is_active: boolean; must_reset_password: boolean }>(
+      'SELECT id, college_id, role, email, full_name, password_hash, is_active, must_reset_password FROM users WHERE email = $1 LIMIT 1',
       [input.email.toLowerCase()],
     )
     const user = result.rows[0]
@@ -175,9 +271,50 @@ app.post('/api/auth/login', async (request, response, next) => {
       return response.status(401).json({ error: 'Invalid email or password' })
     }
 
-    const authUser: AuthUser = { id: user.id, collegeId: user.college_id, role: user.role, email: user.email, fullName: user.full_name }
+    const authUser: AuthUser = { id: user.id, collegeId: user.college_id, role: user.role, email: user.email, fullName: user.full_name, mustResetPassword: user.must_reset_password }
     await pool.query('UPDATE users SET last_login = now() WHERE id = $1', [user.id])
-    return response.json({ accessToken: signToken(authUser), user: authUser })
+    setRefreshCookie(response, signRefreshToken(authUser))
+    return response.json({ accessToken: signAccessToken(authUser), user: authUser })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/auth/refresh', async (request, response, next) => {
+  try {
+    const refreshToken = getCookie(request, refreshCookieName)
+    if (!refreshToken) return response.status(401).json({ error: 'Refresh token required' })
+    const payload = jwt.verify(refreshToken, tokenSecret) as AuthUser & { tokenType?: string }
+    if (payload.tokenType !== 'refresh') return response.status(401).json({ error: 'Invalid refresh token' })
+    const result = await pool.query<{ id: string; college_id: string; role: Role; email: string; full_name: string; is_active: boolean; must_reset_password: boolean }>(
+      'SELECT id, college_id, role, email, full_name, is_active, must_reset_password FROM users WHERE id = $1 LIMIT 1',
+      [payload.id],
+    )
+    const user = result.rows[0]
+    if (!user || !user.is_active) return response.status(401).json({ error: 'Invalid refresh token' })
+    const authUser: AuthUser = { id: user.id, collegeId: user.college_id, role: user.role, email: user.email, fullName: user.full_name, mustResetPassword: user.must_reset_password }
+    setRefreshCookie(response, signRefreshToken(authUser))
+    return response.json({ accessToken: signAccessToken(authUser), user: authUser })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+app.post('/api/auth/reset-password', requireAuth, async (request: AuthRequest, response, next) => {
+  try {
+    const input = resetPasswordSchema.parse(request.body)
+    const passwordHash = await bcrypt.hash(input.newPassword, 12)
+    const result = await pool.query<{ id: string; college_id: string; role: Role; email: string; full_name: string }>(
+      `UPDATE users SET password_hash = $1, must_reset_password = false
+        WHERE id = $2 AND is_active = true
+        RETURNING id, college_id, role, email, full_name`,
+      [passwordHash, request.user!.id],
+    )
+    if (result.rowCount !== 1) return response.status(404).json({ error: 'User not found' })
+    const user = result.rows[0]
+    const authUser: AuthUser = { id: user.id, collegeId: user.college_id, role: user.role, email: user.email, fullName: user.full_name, mustResetPassword: false }
+    setRefreshCookie(response, signRefreshToken(authUser))
+    return response.json({ accessToken: signAccessToken(authUser), user: authUser })
   } catch (error) {
     next(error)
   }
@@ -207,7 +344,7 @@ app.post('/api/students/me/documents/presign', requireAuth, requireRoles('studen
   try {
     const input = presignSchema.parse(request.body)
     validateDocument({ ...input, fileUrl: 'https://upload.invalid', parsedHeadings: [] })
-    if (!storageBucket || !process.env.STORAGE_ACCESS_KEY_ID || !process.env.STORAGE_SECRET_ACCESS_KEY) {
+    if (!storageEndpoint || !storageAccessKey || !storageSecretKey) {
       return response.status(503).json({ error: 'Object storage is not configured' })
     }
 
@@ -268,6 +405,13 @@ app.post('/api/students/me/documents', requireAuth, requireRoles('student'), asy
         await client.query('UPDATE students SET resume_url = $1 WHERE id = $2 AND college_id = $3', [input.fileUrl, request.user!.id, request.user!.collegeId])
       }
       await client.query('COMMIT')
+      if (input.docType === 'resume_pdf' || input.docType === 'resume_docx') {
+        void storageClient.send(new GetObjectCommand({ Bucket: storageBucket, Key: input.objectKey ?? objectKeyFromUrl(input.fileUrl) })).then(async (fileResponse) => {
+          if (!fileResponse.Body) throw new Error('Uploaded document has no content')
+          const parsedHeadings = await parseResume(Buffer.from(await fileResponse.Body.transformToByteArray()), input.mimeType)
+          await pool.query('UPDATE student_documents SET parsed_headings = $1, status = $2 WHERE id = $3 AND student_id = $4', [JSON.stringify(parsedHeadings), 'active', documentResult.rows[0].id, request.user!.id])
+        }).catch((error) => console.error('Document parsing failed', error))
+      }
       return response.status(201).json({ document: documentResult.rows[0], message: 'Document queued for security scanning' })
     } catch (error) {
       await client.query('ROLLBACK')
@@ -275,6 +419,19 @@ app.post('/api/students/me/documents', requireAuth, requireRoles('student'), asy
     } finally {
       client.release()
     }
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/students/me/documents', requireAuth, requireRoles('student'), async (request: AuthRequest, response, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, doc_type, file_name, file_url, parsed_headings, uploaded_at, status
+         FROM student_documents WHERE student_id = $1 ORDER BY uploaded_at DESC`,
+      [request.user!.id],
+    )
+    return response.json({ documents: result.rows })
   } catch (error) {
     next(error)
   }
@@ -591,8 +748,12 @@ app.get('/api/teacher/assignments', requireAuth, requireRoles('teacher'), async 
 
 app.get('/api/teacher/classes/:classId/students', requireAuth, requireRoles('teacher'), async (request: AuthRequest, response, next) => {
   try {
+    const classId = uuidSchema.parse(request.params.classId)
     const subjectId = uuidSchema.parse(request.query.subjectId)
     const semesterId = uuidSchema.parse(request.query.semesterId)
+    if (!await teacherHasAssignment(request.user!.id, classId, subjectId, semesterId)) {
+      return response.status(403).json({ error: "You don't have access to this class's data." })
+    }
     const result = await pool.query(
       `SELECT st.id, u.full_name, st.roll_number, st.profile_strength
          FROM students st
@@ -604,7 +765,7 @@ app.get('/api/teacher/classes/:classId/students', requireAuth, requireRoles('tea
                AND a.subject_id = $4 AND a.semester_id = $5
           )
         ORDER BY st.roll_number`,
-      [request.params.classId, request.user!.collegeId, request.user!.id, subjectId, semesterId],
+      [classId, request.user!.collegeId, request.user!.id, subjectId, semesterId],
     )
     return response.json({ students: result.rows })
   } catch (error) {
@@ -617,6 +778,9 @@ app.get('/api/teacher/analytics', requireAuth, requireRoles('teacher'), async (r
     const classId = uuidSchema.parse(request.query.classId)
     const subjectId = uuidSchema.parse(request.query.subjectId)
     const semesterId = uuidSchema.parse(request.query.semesterId)
+    if (!await teacherHasAssignment(request.user!.id, classId, subjectId, semesterId)) {
+      return response.status(403).json({ error: "You don't have access to this class's data." })
+    }
     const result = await pool.query(
       `SELECT AVG(m.marks_obtained / NULLIF(m.max_marks, 0) * 100)::numeric(5,2) AS average_percentage,
               COUNT(DISTINCT m.student_id)::int AS student_count,
@@ -637,104 +801,143 @@ app.get('/api/teacher/analytics', requireAuth, requireRoles('teacher'), async (r
   }
 })
 
-app.post('/api/teacher/ai/query', requireAuth, requireRoles('teacher'), async (request: AuthRequest, response, next) => {
+app.post('/api/teacher/analytics/query', requireAuth, requireRoles('teacher'), async (request: AuthRequest, response, next) => {
   try {
-    const input = aiQuerySchema.parse(request.body)
-    const lowerQuery = input.query.toLowerCase()
-    const requiresMarksScope = !input.classId || !input.subjectId || !input.semesterId
-    let resolvedIntent = 'search_student'
-    let responseSummary = ''
-    let chartHint: { type: string; labels: string[]; values: number[] } | undefined
-    let result: { rows: Record<string, unknown>[] } = { rows: [] }
-
-    if (/(topper|highest|best)/.test(lowerQuery)) {
-      resolvedIntent = 'topper'
-      if (requiresMarksScope) return response.status(400).json({ error: 'classId, subjectId, and semesterId are required for topper queries' })
-      result = await pool.query(
-        `SELECT u.full_name, st.roll_number,
-                ROUND((SUM(m.marks_obtained) / NULLIF(SUM(m.max_marks), 0) * 100)::numeric, 2) AS percentage
-           FROM marks m
-           JOIN students st ON st.id = m.student_id
-           JOIN users u ON u.id = st.id AND u.college_id = $5
-          WHERE st.class_id = $1 AND m.subject_id = $2 AND m.semester_id = $3
-            AND EXISTS (SELECT 1 FROM teacher_class_assignments a WHERE a.teacher_id = $4 AND a.class_id = $1 AND a.subject_id = m.subject_id AND a.semester_id = m.semester_id)
-          GROUP BY u.full_name, st.roll_number ORDER BY percentage DESC LIMIT 1`,
-        [input.classId, input.subjectId, input.semesterId, request.user!.id, request.user!.collegeId],
-      )
-      const topper = result.rows[0]
-      responseSummary = topper ? `${topper.full_name} (${topper.roll_number}) is the topper with ${topper.percentage}% in the assigned scope.` : 'No marks are available in the assigned scope.'
-    } else if (/(average|avg|mean)/.test(lowerQuery)) {
-      resolvedIntent = 'average'
-      if (requiresMarksScope) return response.status(400).json({ error: 'classId, subjectId, and semesterId are required for average queries' })
-      result = await pool.query(
-        `SELECT ROUND(AVG(m.marks_obtained / NULLIF(m.max_marks, 0) * 100)::numeric, 2) AS average_percentage,
-                COUNT(DISTINCT m.student_id)::int AS student_count
-           FROM marks m JOIN students st ON st.id = m.student_id AND st.class_id = $1
-          WHERE m.subject_id = $2 AND m.semester_id = $3
-            AND EXISTS (SELECT 1 FROM teacher_class_assignments a WHERE a.teacher_id = $4 AND a.class_id = $1 AND a.subject_id = m.subject_id AND a.semester_id = m.semester_id)`,
-        [input.classId, input.subjectId, input.semesterId, request.user!.id],
-      )
-      const average = result.rows[0]
-      responseSummary = `The assigned class average is ${average?.average_percentage ?? 0}% across ${average?.student_count ?? 0} students.`
-    } else if (/(weak|below|under|fail)/.test(lowerQuery)) {
-      resolvedIntent = 'weakest_students'
-      if (requiresMarksScope) return response.status(400).json({ error: 'classId, subjectId, and semesterId are required for weakest-student queries' })
-      const threshold = Number(lowerQuery.match(/(?:below|under)\s+(\d+)/)?.[1] ?? 40)
-      result = await pool.query(
-        `SELECT u.full_name, st.roll_number, ROUND((AVG(m.marks_obtained / NULLIF(m.max_marks, 0)) * 100)::numeric, 2) AS percentage
-           FROM marks m JOIN students st ON st.id = m.student_id AND st.class_id = $1
-           JOIN users u ON u.id = st.id AND u.college_id = $5
-          WHERE m.subject_id = $2 AND m.semester_id = $3
-            AND EXISTS (SELECT 1 FROM teacher_class_assignments a WHERE a.teacher_id = $4 AND a.class_id = $1 AND a.subject_id = m.subject_id AND a.semester_id = m.semester_id)
-          GROUP BY u.full_name, st.roll_number HAVING AVG(m.marks_obtained / NULLIF(m.max_marks, 0)) * 100 < $6
-          ORDER BY percentage ASC LIMIT 20`,
-        [input.classId, input.subjectId, input.semesterId, request.user!.id, request.user!.collegeId, threshold],
-      )
-      responseSummary = `${result.rows.length} assigned students are below ${threshold}%.`
-      chartHint = { type: 'bar', labels: result.rows.map((row) => String(row.roll_number)), values: result.rows.map((row) => Number(row.percentage)) }
-    } else {
-      const search = `%${input.query.trim()}%`
-      result = await pool.query(
-        `SELECT DISTINCT u.full_name, st.roll_number, c.name AS class_name
-           FROM students st JOIN users u ON u.id = st.id AND u.college_id = $2
-           JOIN classes c ON c.id = st.class_id
-          WHERE (u.full_name ILIKE $1 OR st.roll_number ILIKE $1)
-            AND EXISTS (SELECT 1 FROM teacher_class_assignments a WHERE a.teacher_id = $3 AND a.class_id = st.class_id)
-          ORDER BY u.full_name LIMIT 20`,
-        [search, request.user!.collegeId, request.user!.id],
-      )
-      responseSummary = result.rows.length ? `Found ${result.rows.length} student(s) in your assigned classes.` : 'No student found in your assigned classes.'
+    const input = analyticsQuerySchema.parse(request.body)
+    for (const semesterId of input.semesterIds) {
+      if (!await teacherHasAssignment(request.user!.id, input.classId, input.subjectId, semesterId)) {
+        return response.status(403).json({ error: "You don't have access to this class's data." })
+      }
     }
 
-    await pool.query(
-      'INSERT INTO ai_query_logs (user_id, query_text, resolved_intent, response_summary) VALUES ($1, $2, $3, $4)',
-      [request.user!.id, input.query, resolvedIntent, responseSummary],
+    const studentIds = input.studentIds ?? []
+    if (studentIds.length) {
+      const students = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM students st
+          JOIN users u ON u.id = st.id AND u.college_id = $2
+         WHERE st.id = ANY($1::uuid[]) AND st.class_id = $3`,
+        [studentIds, request.user!.collegeId, input.classId],
+      )
+      if (students.rows[0].count !== studentIds.length) {
+        return response.status(403).json({ error: "You don't have access to one or more selected students." })
+      }
+    }
+
+    const result = await pool.query(
+      `SELECT m.student_id, u.full_name AS student_name, st.roll_number, m.semester_id,
+              sem.sem_number, ay.label AS semester_label, m.exam_type,
+              m.marks_obtained, m.max_marks,
+              (m.marks_obtained / NULLIF(m.max_marks, 0) * 100)::numeric AS percentage
+         FROM marks m
+         JOIN students st ON st.id = m.student_id AND st.class_id = $1
+         JOIN users u ON u.id = st.id AND u.college_id = $6
+         JOIN semesters sem ON sem.id = m.semester_id
+         JOIN academic_years ay ON ay.id = sem.academic_year_id AND ay.college_id = $6
+        WHERE m.subject_id = $2
+          AND m.semester_id = ANY($3::uuid[])
+          AND m.exam_type = ANY($4::text[])
+          AND ($5::uuid[] IS NULL OR m.student_id = ANY($5::uuid[]))
+          AND EXISTS (SELECT 1 FROM teacher_class_assignments a
+            WHERE a.teacher_id = $7 AND a.class_id = $1 AND a.subject_id = m.subject_id
+              AND a.semester_id = m.semester_id AND a.status IN ('active', 'past'))
+        ORDER BY ay.label, sem.sem_number, u.full_name, m.exam_type`,
+      [input.classId, input.subjectId, input.semesterIds, input.examTypes, studentIds.length ? studentIds : null, request.user!.collegeId, request.user!.id],
     )
-    return response.json({ response: responseSummary, intent: resolvedIntent, results: result.rows, chartHint, provider: 'fixed-scoped-tools' })
+
+    const raw = result.rows.map((row) => ({
+      studentId: row.student_id,
+      studentName: row.student_name,
+      rollNumber: row.roll_number,
+      semesterId: row.semester_id,
+      semesterLabel: row.semester_label,
+      semesterNumber: row.sem_number,
+      examType: row.exam_type,
+      marksObtained: Number(row.marks_obtained),
+      maxMarks: Number(row.max_marks),
+      percentage: Number(row.percentage),
+    }))
+    const values = raw.map((row) => row.percentage)
+    const gradeDistribution = { A: 0, B: 0, C: 0, D: 0, F: 0 }
+    for (const value of values) {
+      if (value >= 90) gradeDistribution.A += 1
+      else if (value >= 80) gradeDistribution.B += 1
+      else if (value >= 70) gradeDistribution.C += 1
+      else if (value >= 60) gradeDistribution.D += 1
+      else gradeDistribution.F += 1
+    }
+    const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0
+    const semesterKeys = [...new Set(raw.map((row) => `${row.semesterId}|${row.semesterLabel}`))]
+    const semesterIndex = new Map(semesterKeys.map((key, index) => [key, index + 1]))
+    const byStudent = new Map<string, typeof raw>()
+    for (const row of raw) byStudent.set(row.studentId, [...(byStudent.get(row.studentId) ?? []), row])
+    const perStudentStats = [...byStudent.entries()].map(([studentId, rows]) => {
+      const bySemester = new Map<string, number[]>()
+      for (const row of rows) bySemester.set(`${row.semesterId}|${row.semesterLabel}`, [...(bySemester.get(`${row.semesterId}|${row.semesterLabel}`) ?? []), row.percentage])
+      return {
+        studentId,
+        studentName: rows[0].studentName,
+        mean: rows.reduce((sum, row) => sum + row.percentage, 0) / rows.length,
+        trend: [...bySemester.entries()].map(([key, semesterValues]) => ({ semesterLabel: key.split('|')[1], avgPercentage: semesterValues.reduce((sum, value) => sum + value, 0) / semesterValues.length })),
+      }
+    })
+    const trendValues = new Map<number, number[]>()
+    for (const row of raw) {
+      const index = semesterIndex.get(`${row.semesterId}|${row.semesterLabel}`)!
+      trendValues.set(index, [...(trendValues.get(index) ?? []), row.percentage])
+    }
+    const pointsUsed = [...trendValues.entries()].map(([x, trend]) => ({ x, y: trend.reduce((sum, value) => sum + value, 0) / trend.length }))
+    return response.json({
+      raw,
+      stats: { mean, median: median(values), stdDev: standardDeviation(values), min: values.length ? Math.min(...values) : 0, max: values.length ? Math.max(...values) : 0, count: values.length },
+      perStudentStats,
+      gradeDistribution,
+      regression: linearRegression(pointsUsed) ?? { reason: 'insufficient_data' },
+    })
   } catch (error) {
     next(error)
   }
 })
 
+async function handleAiQuery(request: AuthRequest, response: Response, next: NextFunction) {
+  let input: z.infer<typeof aiQuerySchema> | undefined
+  try {
+    input = aiQuerySchema.parse(request.body)
+    const result = await runGeminiQuery(pool, request.user!, input.query)
+    await pool.query(
+      'INSERT INTO ai_query_logs (user_id, query_text, resolved_intent, response_summary) VALUES ($1, $2, $3, $4)',
+      [request.user!.id, input.query, result.toolCalls.map((call) => call.name).join(',') || 'none', result.response],
+    )
+    return response.json({ response: result.response, toolCalls: result.toolCalls.map((call) => ({ name: call.name, args: call.args })), provider: 'gemini-function-calling' })
+  } catch (error) {
+    if (input) {
+      const resolvedIntent = error instanceof AiScopeError ? 'scope_rejected' : 'error'
+      const responseSummary = error instanceof Error ? error.message : 'AI query failed'
+      await pool.query(
+        'INSERT INTO ai_query_logs (user_id, query_text, resolved_intent, response_summary) VALUES ($1, $2, $3, $4)',
+        [request.user!.id, input.query, resolvedIntent, responseSummary],
+      )
+    }
+    next(error)
+  }
+}
+
+app.post('/api/teacher/ai/query', requireAuth, requireRoles('teacher'), aiRateLimiter, handleAiQuery)
+app.post('/api/student/ai/query', requireAuth, requireRoles('student'), aiRateLimiter, handleAiQuery)
+app.post('/api/admin/ai/query', requireAuth, requireRoles('super_admin'), aiRateLimiter, handleAiQuery)
+
 app.post('/api/teacher/marks', requireAuth, requireRoles('teacher'), async (request: AuthRequest, response, next) => {
   const client = await pool.connect()
   try {
     const input = marksSchema.parse(request.body)
-    await client.query('BEGIN')
-    const assignment = await client.query(
-      `SELECT 1 FROM teacher_class_assignments
-        WHERE teacher_id = $1 AND class_id = $2 AND subject_id = $3 AND semester_id = $4`,
-      [request.user!.id, input.classId, input.subjectId, input.semesterId],
-    )
-    if (assignment.rowCount !== 1) {
-      await client.query('ROLLBACK')
-      return response.status(403).json({ error: 'You are not assigned to this class, subject, or semester' })
+    const invalidMark = input.marks.find((mark) => mark.marksObtained > mark.maxMarks)
+    if (invalidMark) {
+      return response.status(400).json({ error: 'marksObtained cannot exceed maxMarks', field: 'marksObtained' })
     }
-
+    if (!await teacherHasAssignment(request.user!.id, input.classId, input.subjectId, input.semesterId)) {
+      return response.status(403).json({ error: "You don't have access to this class's data." })
+    }
+    await client.query('BEGIN')
     for (const mark of input.marks) {
-      if (mark.marksObtained > mark.maxMarks) {
-        throw new Error(`Marks cannot exceed max marks for student ${mark.studentId}`)
-      }
       await client.query(
         `INSERT INTO marks (student_id, subject_id, semester_id, teacher_id, exam_type, marks_obtained, max_marks, updated_at)
          SELECT $1, $2, $3, $4, $5, $6, $7, now()
@@ -757,6 +960,11 @@ app.post('/api/teacher/marks', requireAuth, requireRoles('teacher'), async (requ
 
 app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
   if (error instanceof z.ZodError) return response.status(400).json({ error: 'Invalid request', details: error.flatten() })
+  if (error instanceof DocumentValidationError) return response.status(error.status).json({ error: error.message, ...error.details })
+  if (typeof error === 'object' && error !== null && 'status' in error && [400, 401, 403, 404, 413, 429, 503].includes(Number((error as { status?: unknown }).status))) {
+    const parseError = error as { status: number; message?: string }
+    return response.status(parseError.status).json({ error: parseError.message ?? 'Invalid request' })
+  }
   console.error(error)
   return response.status(500).json({ error: 'Internal server error' })
 })

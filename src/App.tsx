@@ -1,9 +1,14 @@
 import { Fragment, useEffect, useState, type FormEvent } from 'react'
+import { Bar, Line, Pie } from 'react-chartjs-2'
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Tooltip, Legend } from 'chart.js'
 import './App.css'
 import { apiFetch, login, type SessionUser } from './api'
 
 type Role = 'student' | 'teacher' | 'admin'
 type TeacherAssignment = { id: string; class_name: string; subject_name: string; class_id: string; subject_id: string; semester_id: string; sem_number?: number; academic_year?: string; status?: string }
+type AnalyticsResponse = { raw: Array<{ studentId: string; studentName: string; rollNumber: string; semesterId: string; semesterLabel: string; examType: string; marksObtained: number; maxMarks: number; percentage: number }>; stats: { mean: number; median: number; stdDev: number; min: number; max: number; count: number }; perStudentStats: Array<{ studentId: string; studentName: string; mean: number; trend: Array<{ semesterLabel: string; avgPercentage: number }> }>; gradeDistribution: { A: number; B: number; C: number; D: number; F: number }; regression: { slope: number; intercept: number; rSquared: number; predictedNextValue: number; pointsUsed: Array<{ x: number; y: number }> } | { reason: string } }
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Tooltip, Legend)
 
 const roleLabels: Record<Role, string> = {
   student: 'Student workspace',
@@ -40,7 +45,7 @@ function App() {
   const initials = name.split(' ').map((part) => part[0]).join('')
 
   useEffect(() => {
-    if (!session) return
+    if (!session || session.user.mustResetPassword) return
     const loadDashboardData = async () => {
       try {
         if (session.user.role === 'teacher') {
@@ -103,6 +108,13 @@ function App() {
     }} />
   }
 
+  if (session.user.mustResetPassword) {
+    return <ResetPasswordScreen token={session.token} onComplete={(nextSession) => {
+      sessionStorage.setItem('student-profile-session', JSON.stringify(nextSession))
+      setSession(nextSession)
+    }} />
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -124,7 +136,7 @@ function App() {
           {dataNotice && <div className="data-notice">{dataNotice}</div>}
           <LiveDataSummary role={role} notifications={liveNotifications} marks={liveMarks} analytics={liveAnalytics} />
           <RoleStats role={role} profileStrength={liveProfileStrength} marks={liveMarks} marksheets={liveMarksheets} analytics={liveAnalytics} assignments={liveAssignments} adminOverview={liveAdminOverview} />
-          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' && activeNav === 'Notifications' ? <StudentNotificationsPage token={session.token} notifications={liveNotifications} /> : role === 'student' && activeNav === 'My profile' ? <StudentProfilePage token={session.token} profile={liveProfile} onSaved={(profile) => { setLiveProfile((current) => current ? { ...current, ...profile } : current); setLiveProfileStrength(profile.profile_strength) }} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profile={liveProfile} profileStrength={liveProfileStrength} marks={liveMarks} notifications={liveNotifications} marksheets={liveMarksheets} /> : role === 'teacher' && activeNav === 'My classes' ? <TeacherAssignmentsPage assignments={liveAssignments} selectedAssignmentId={selectedAssignment?.id ?? ''} onSelect={setSelectedAssignmentId} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={orderedAssignments} /> : role === 'teacher' && activeNav === 'Analytics' ? <TeacherAnalyticsPage token={session.token} assignments={orderedAssignments} analytics={liveAnalytics} /> : role === 'admin' && activeNav === 'Users' ? <AdminUsersPage token={session.token} /> : role === 'admin' && activeNav === 'Assignments' ? <AdminAssignmentsPage token={session.token} /> : role === 'admin' && activeNav === 'Marksheets' ? <AdminMarksheetsPage token={session.token} /> : role === 'admin' && activeNav === 'Notifications' ? <AdminNotificationsPage token={session.token} /> : <FacultyOverview role={role} assignments={liveAssignments} analytics={liveAnalytics} adminUsers={liveAdminUsers} adminAssignments={liveAdminAssignments} setActiveNav={setActiveNav} />}
+          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' && activeNav === 'Notifications' ? <StudentNotificationsPage token={session.token} notifications={liveNotifications} /> : role === 'student' && activeNav === 'My profile' ? <StudentProfilePage token={session.token} profile={liveProfile} onSaved={(profile) => { setLiveProfile((current) => current ? { ...current, ...profile } : current); setLiveProfileStrength(profile.profile_strength) }} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profile={liveProfile} profileStrength={liveProfileStrength} marks={liveMarks} notifications={liveNotifications} marksheets={liveMarksheets} /> : role === 'teacher' && activeNav === 'My classes' ? <TeacherAssignmentsPage assignments={liveAssignments} selectedAssignmentId={selectedAssignment?.id ?? ''} onSelect={setSelectedAssignmentId} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={orderedAssignments} /> : role === 'teacher' && activeNav === 'Analytics' ? <TeacherAnalyticsPage token={session.token} assignments={orderedAssignments} /> : role === 'admin' && activeNav === 'Users' ? <AdminUsersPage token={session.token} /> : role === 'admin' && activeNav === 'Assignments' ? <AdminAssignmentsPage token={session.token} /> : role === 'admin' && activeNav === 'Marksheets' ? <AdminMarksheetsPage token={session.token} /> : role === 'admin' && activeNav === 'Notifications' ? <AdminNotificationsPage token={session.token} /> : <FacultyOverview role={role} assignments={liveAssignments} analytics={liveAnalytics} adminUsers={liveAdminUsers} adminAssignments={liveAdminAssignments} setActiveNav={setActiveNav} />}
         </section>
       </main>
     </div>
@@ -152,6 +164,33 @@ function LoginScreen({ onLogin }: { onLogin: (session: { token: string; user: Se
   }
 
   return <main className="login-shell"><section className="login-panel"><div className="brand login-brand"><span className="brand-mark">s</span><span>student profile</span></div><p className="eyebrow">Northstar College</p><h1>Your academic journey, in one place.</h1><p className="login-copy">Sign in to manage your profile, academic records, and college updates.</p><form onSubmit={submit}><label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>{error && <p className="login-error">{error}</p>}<button className="primary-button login-button" disabled={isLoading}>{isLoading ? 'Signing in...' : 'Sign in to workspace →'}</button></form><p className="login-note">Use your college account. Your role and permissions are applied by the server.</p></section><aside className="login-aside"><div className="aside-mark">✦</div><p className="eyebrow">One connected campus</p><h2>Profiles, performance, and progress that move with you.</h2><div className="aside-points"><span><b>01</b> Build a stronger student profile</span><span><b>02</b> Keep every semester in view</span><span><b>03</b> Give faculty the right insight</span></div></aside></main>
+}
+
+function ResetPasswordScreen({ token, onComplete }: { token: string; onComplete: (session: { token: string; user: SessionUser }) => void }) {
+  const [password, setPassword] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const [error, setError] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    if (password !== confirmation) {
+      setError('Passwords do not match')
+      return
+    }
+    setIsLoading(true)
+    try {
+      const result = await apiFetch<{ accessToken: string; user: SessionUser }>('/api/auth/reset-password', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ newPassword: password }) })
+      onComplete({ token: result.accessToken, user: result.user })
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : 'Unable to reset password')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return <main className="login-shell"><section className="login-panel"><div className="brand login-brand"><span className="brand-mark">s</span><span>student profile</span></div><p className="eyebrow">Password update required</p><h1>Set a new password before continuing.</h1><p className="login-copy">Your account must use a new password before you can access the workspace.</p><form onSubmit={submit}><label>New password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label><label>Confirm new password<input type="password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} minLength={8} required /></label>{error && <p className="login-error">{error}</p>}<button className="primary-button login-button" disabled={isLoading}>{isLoading ? 'Updating password...' : 'Update password →'}</button></form></section><aside className="login-aside"><div className="aside-mark">✦</div><p className="eyebrow">Account security</p><h2>A quick update keeps your college account protected.</h2></aside></main>
 }
 
 function RoleStats({ role, profileStrength, marks, marksheets, analytics, assignments, adminOverview }: { role: Role; profileStrength: number | null; marks: Array<{ sem_number: number }>; marksheets: Array<{ cgpa: string | null }>; analytics: { average_percentage: string | null; top_percentage: string | null; student_count: number } | null; assignments: Array<{ class_name: string; subject_name: string }>; adminOverview: { student_count: number; teacher_count: number; class_count: number; active_semester_count: number } | null }) {
@@ -322,29 +361,59 @@ function TeacherMarksEntry({ token, assignments }: { token: string; assignments:
   return <div className="marks-entry-page"><div className="records-page-heading"><div><p className="eyebrow">Marks entry</p><h2>{assignment.class_name} · {assignment.subject_name}</h2><p>Only students inside your assigned class are available here.</p></div><div className="marks-entry-actions"><select value={assignmentIndex} onChange={(event) => setAssignmentIndex(Number(event.target.value))}>{assignments.map((item, index) => <option value={index} key={`${item.class_id}-${item.subject_id}`}>{item.class_name} · {item.subject_name}</option>)}</select><select value={examType} onChange={(event) => setExamType(event.target.value)}><option value="internal1">Internal 1</option><option value="internal2">Internal 2</option><option value="midterm">Midterm</option><option value="final">Final</option><option value="assignment">Assignment</option><option value="practical">Practical</option></select></div></div><section className="panel entry-panel"><div className="entry-toolbar"><span>{students.length} students in scope</span><button className="primary-button" onClick={() => void submitMarks()}>Save marks →</button></div>{message && <p className="entry-message">{message}</p>}<div className="entry-table"><div className="entry-header"><span>Student</span><span>Roll number</span><span>Marks / 100</span></div>{students.length ? students.map((student) => <div className="entry-row" key={student.id}><span><strong>{student.full_name}</strong></span><span>{student.roll_number}</span><input type="number" min="0" max="100" value={marks[student.id] ?? ''} onChange={(event) => setMarks((current) => ({ ...current, [student.id]: event.target.value }))} placeholder="0" /></div>) : <div className="empty-records">No students returned for this assignment.</div>}</div></section></div>
 }
 
-function TeacherAnalyticsPage({ token, assignments, analytics }: { token: string; assignments: Array<{ class_name: string; subject_name: string; class_id: string; subject_id: string; semester_id: string }>; analytics: { average_percentage: string | null; top_percentage: string | null; student_count: number } | null }) {
-  const [query, setQuery] = useState('Who is the topper in this class?')
-  const [answer, setAnswer] = useState('')
-  const [intent, setIntent] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const assignment = assignments[0]
+function TeacherAnalyticsPage({ token, assignments }: { token: string; assignments: TeacherAssignment[] }) {
+  const [assignmentId, setAssignmentId] = useState(assignments[0]?.id ?? '')
+  const [mode, setMode] = useState<'class' | 'students' | 'student'>('class')
+  const [examTypes, setExamTypes] = useState(['internal1', 'internal2', 'midterm', 'final', 'assignment', 'practical'])
+  const [students, setStudents] = useState<Array<{ id: string; full_name: string; roll_number: string }>>([])
+  const [selectedStudents, setSelectedStudents] = useState<string[]>([])
+  const [data, setData] = useState<AnalyticsResponse | null>(null)
+  const [message, setMessage] = useState('')
+  const assignment = assignments.find((item) => item.id === assignmentId) ?? assignments[0]
+  const availableExams = ['internal1', 'internal2', 'midterm', 'final', 'assignment', 'practical']
 
-  async function askAssistant() {
+  useEffect(() => {
     if (!assignment) return
-    setIsLoading(true)
-    try {
-      const result = await apiFetch<{ response: string; intent: string; chartHint?: { labels: string[]; values: number[] } }>('/api/teacher/ai/query', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, classId: assignment.class_id, subjectId: assignment.subject_id, semesterId: assignment.semester_id }) })
-      setAnswer(result.response)
-      setIntent(result.intent)
-    } catch (error) {
-      setAnswer(error instanceof Error ? error.message : 'Unable to query analytics')
-      setIntent('error')
-    } finally {
-      setIsLoading(false)
+    const loadStudents = async () => {
+      try {
+        const result = await apiFetch<{ students: typeof students }>(`/api/teacher/classes/${assignment.class_id}/students?subjectId=${assignment.subject_id}&semesterId=${assignment.semester_id}`, token)
+        setStudents(result.students)
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Unable to load students')
+      }
     }
+    void loadStudents()
+  }, [assignment, token])
+
+  useEffect(() => {
+    if (!assignment || !examTypes.length) return
+    const loadAnalytics = async () => {
+      try {
+        const result = await apiFetch<AnalyticsResponse>('/api/teacher/analytics/query', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId: assignment.class_id, subjectId: assignment.subject_id, studentIds: mode === 'class' ? null : selectedStudents, semesterIds: [assignment.semester_id], examTypes }) })
+        setData(result)
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Unable to load analytics')
+      }
+    }
+    void loadAnalytics()
+  }, [assignment, examTypes, mode, selectedStudents, token])
+
+  function exportCsv() {
+    if (!data) return
+    const rows = [['student', 'roll', 'semester', 'exam', 'marks', 'max', 'percentage'], ...data.raw.map((row) => [row.studentName, row.rollNumber, row.semesterLabel, row.examType, row.marksObtained, row.maxMarks, row.percentage])]
+    const blob = new Blob([rows.map((row) => row.join(',')).join('\n')], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'analytics.csv'
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
-  return <div className="analytics-page"><div className="records-page-heading"><div><p className="eyebrow">Teacher analytics</p><h2>Ask your academic data.</h2><p>Answers come from fixed, assignment-scoped tools.</p></div><div className="analytics-kpi"><strong>{analytics?.average_percentage ?? '--'}%</strong><span>class average</span></div></div><div className="analytics-grid"><section className="panel ai-panel"><div className="ai-heading"><span className="ai-spark">✦</span><div><h2>Academic assistant</h2><p>Ask about your assigned class, subject, or semester.</p></div></div><div className="suggestion-row"><button onClick={() => setQuery('Who is the topper in this class?')}>Find topper</button><button onClick={() => setQuery('What is the class average?')}>Class average</button><button onClick={() => setQuery('Which students are below 40?')}>Needs attention</button></div><div className="ai-input-row"><input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void askAssistant() }} /><button className="primary-button" onClick={() => void askAssistant()} disabled={isLoading}>{isLoading ? 'Thinking...' : 'Ask →'}</button></div>{answer && <div className="ai-answer"><span className="eyebrow">{intent.replace('_', ' ')}</span><p>{answer}</p></div>}</section><section className="panel analytics-scope"><p className="eyebrow">Current scope</p><h2>{assignment?.class_name ?? 'No assignment selected'}</h2><p>{assignment?.subject_name ?? 'Assign a class and subject to begin'}</p><div className="scope-stat"><strong>{analytics?.student_count ?? '--'}</strong><span>students in scope</span></div><div className="scope-stat"><strong>{analytics?.top_percentage ?? '--'}%</strong><span>top score</span></div></section></div></div>
+  const examAverages = availableExams.map((exam) => { const rows = data?.raw.filter((row) => row.examType === exam) ?? []; return rows.length ? rows.reduce((sum, row) => sum + row.percentage, 0) / rows.length : 0 })
+  const semesterLabels = data?.perStudentStats[0]?.trend.map((item) => item.semesterLabel) ?? []
+  const semesterValues = data?.perStudentStats[0]?.trend.map((item) => item.avgPercentage) ?? []
+  return <div className="analytics-page"><div className="records-page-heading"><div><p className="eyebrow">Teacher analytics</p><h2>Filtered academic performance</h2><p>Every filter is re-queried and re-authorized by the server.</p></div><button className="primary-button" onClick={exportCsv} disabled={!data?.raw.length}>Export CSV</button></div><section className="panel analytics-scope"><div className="assignment-fields"><select value={assignment?.id ?? ''} onChange={(event) => setAssignmentId(event.target.value)} aria-label="Class and subject">{assignments.map((item) => <option value={item.id} key={item.id}>{item.class_name} · {item.subject_name} · {item.academic_year ?? 'year'}</option>)}</select><select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)} aria-label="Scope mode"><option value="class">Whole Class</option><option value="students">Select Students</option><option value="student">Single Student</option></select></div><div className="suggestion-row">{availableExams.map((exam) => <button className={examTypes.includes(exam) ? 'selected' : ''} key={exam} onClick={() => setExamTypes((current) => current.includes(exam) ? current.filter((item) => item !== exam) : [...current, exam])}>{exam}</button>)}</div>{mode !== 'class' && <div className="suggestion-row">{students.map((student) => <button className={selectedStudents.includes(student.id) ? 'selected' : ''} key={student.id} onClick={() => setSelectedStudents((current) => mode === 'student' ? [student.id] : current.includes(student.id) ? current.filter((id) => id !== student.id) : [...current, student.id])}>{student.full_name} · {student.roll_number}</button>)}</div>}</section>{data && <><div className="record-kpis"><div className="record-kpi"><span>Mean</span><strong>{data.stats.mean.toFixed(2)}%</strong></div><div className="record-kpi"><span>Median</span><strong>{data.stats.median.toFixed(2)}%</strong></div><div className="record-kpi"><span>Std dev</span><strong>{data.stats.stdDev.toFixed(2)}</strong></div><div className="record-kpi"><span>Records</span><strong>{data.stats.count}</strong></div></div><div className="analytics-grid"><section className="panel"><h2>Exam performance</h2><Bar data={{ labels: availableExams, datasets: [{ label: 'Average %', data: examAverages, backgroundColor: '#1f8a70' }] }} /></section><section className="panel"><h2>Grade distribution</h2><Pie data={{ labels: Object.keys(data.gradeDistribution), datasets: [{ data: Object.values(data.gradeDistribution), backgroundColor: ['#1f8a70', '#78c091', '#e1b866', '#dd875f', '#b95050'] }] }} /></section><section className="panel"><h2>Semester trend</h2><Line data={{ labels: semesterLabels, datasets: [{ label: 'Average %', data: semesterValues, borderColor: '#1f8a70', tension: 0.25 }] }} /></section><section className="panel"><h2>Regression</h2><p>{'reason' in data.regression ? 'Insufficient data for a trend line.' : `Predicted next value: ${data.regression.predictedNextValue.toFixed(2)}% · R² ${data.regression.rSquared.toFixed(2)}`}</p></section></div></>}{message && <p className="entry-message">{message}</p>}</div>
 }
 
 function StudentRecordsPage({ marks, marksheets }: { marks: Array<{ subject_name: string; marks_obtained: string; max_marks: string; sem_number: number; academic_year: string }>; marksheets: Array<{ id: string; file_url: string; sgpa: string | null; cgpa: string | null; sem_number: number; academic_year: string }> }) {
@@ -386,6 +455,8 @@ function StudentProfilePage({ token, profile, onSaved }: { token: string; profil
   const [form, setForm] = useState({ profilePhotoUrl: profile?.profile_photo_url ?? '', linkedinUrl: profile?.linkedin_url ?? '', githubUrl: profile?.github_url ?? '', bio: profile?.bio ?? '' })
   const [message, setMessage] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [documents, setDocuments] = useState<Array<{ id: string; doc_type: string; file_name: string | null; parsed_headings: Array<{ heading: string; content: string }> | null; status: string }>>([])
+  useEffect(() => { void apiFetch<{ documents: typeof documents }>('/api/students/me/documents', token).then((result) => setDocuments(result.documents)).catch(() => undefined) }, [token])
   async function saveProfile() {
     try {
       const result = await apiFetch<{ profile: typeof profile }>('/api/students/me', token, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
@@ -398,20 +469,22 @@ function StudentProfilePage({ token, profile, onSaved }: { token: string; profil
   async function uploadDocument(file: File, docType: 'photo' | 'resume_pdf' | 'resume_docx') {
     setUploading(true)
     try {
-      const presigned = await apiFetch<{ uploadUrl: string }>('/api/students/me/documents/presign', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docType, fileName: file.name, mimeType: file.type, sizeBytes: file.size }) })
+      const presigned = await apiFetch<{ uploadUrl: string; objectKey: string }>('/api/students/me/documents/presign', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docType, fileName: file.name, mimeType: file.type, sizeBytes: file.size }) })
       const upload = await fetch(presigned.uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
       if (!upload.ok) throw new Error('File upload failed')
-      await apiFetch('/api/students/me/documents', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docType, fileName: file.name, fileUrl: presigned.uploadUrl.split('?')[0], mimeType: file.type, sizeBytes: file.size, parsedHeadings: [] }) })
+      await apiFetch('/api/students/me/documents', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docType, fileName: file.name, fileUrl: presigned.uploadUrl.split('?')[0], objectKey: presigned.objectKey, mimeType: file.type, sizeBytes: file.size, parsedHeadings: [] }) })
       const refreshed = await apiFetch<{ profile: typeof profile }>('/api/students/me', token)
       if (refreshed.profile) onSaved(refreshed.profile)
-      setMessage(`${file.name} uploaded and queued for scanning.`)
+      setMessage(`${file.name} uploaded and queued for parsing.`)
+      const refreshedDocuments = await apiFetch<{ documents: typeof documents }>('/api/students/me/documents', token)
+      setDocuments(refreshedDocuments.documents)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to upload document')
     } finally {
       setUploading(false)
     }
   }
-  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Your profile</p><h2>{profile?.full_name ?? 'Student profile'}</h2><p>Keep the professional details used by your college workspace up to date.</p></div></div><section className="panel import-panel"><div><h2>Profile details</h2><p>Links and bio are saved to your college record.</p></div><input value={form.profilePhotoUrl} onChange={(event) => setForm((current) => ({ ...current, profilePhotoUrl: event.target.value }))} placeholder="Profile photo URL" aria-label="Profile photo URL" /><input value={form.linkedinUrl} onChange={(event) => setForm((current) => ({ ...current, linkedinUrl: event.target.value }))} placeholder="LinkedIn URL" aria-label="LinkedIn URL" /><input value={form.githubUrl} onChange={(event) => setForm((current) => ({ ...current, githubUrl: event.target.value }))} placeholder="GitHub URL" aria-label="GitHub URL" /><textarea value={form.bio} onChange={(event) => setForm((current) => ({ ...current, bio: event.target.value }))} placeholder="Short bio" aria-label="Bio" /><button className="primary-button" onClick={() => void saveProfile()}>Save profile →</button></section><section className="panel import-panel"><div><h2>Documents</h2><p>Upload a photo or resume directly to configured object storage.</p></div><label>Profile photo<input type="file" accept="image/jpeg,image/png" disabled={uploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadDocument(file, 'photo') }} /></label><label>Resume<input type="file" accept="application/pdf,.docx" disabled={uploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadDocument(file, file.type === 'application/pdf' ? 'resume_pdf' : 'resume_docx') }} /></label>{message && <p className="entry-message">{message}</p>}</section></div>
+  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Your profile</p><h2>{profile?.full_name ?? 'Student profile'}</h2><p>Links and bio are saved to your college record.</p></div></div><section className="panel import-panel"><div><h2>Profile details</h2><p>Links and bio are saved to your college record.</p></div><input value={form.profilePhotoUrl} onChange={(event) => setForm((current) => ({ ...current, profilePhotoUrl: event.target.value }))} placeholder="Profile photo URL" aria-label="Profile photo URL" /><input value={form.linkedinUrl} onChange={(event) => setForm((current) => ({ ...current, linkedinUrl: event.target.value }))} placeholder="LinkedIn URL" aria-label="LinkedIn URL" /><input value={form.githubUrl} onChange={(event) => setForm((current) => ({ ...current, githubUrl: event.target.value }))} placeholder="GitHub URL" aria-label="GitHub URL" /><textarea value={form.bio} onChange={(event) => setForm((current) => ({ ...current, bio: event.target.value }))} placeholder="Short bio" aria-label="Bio" /><button className="primary-button" onClick={() => void saveProfile()}>Save profile →</button></section><section className="panel import-panel"><div><h2>Documents</h2><p>Uploads require configured object storage. Resume headings are extracted asynchronously after upload.</p></div><label>Profile photo<input type="file" accept="image/jpeg,image/png" disabled={uploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadDocument(file, 'photo') }} /></label><label>Resume<input type="file" accept="application/pdf,.docx" disabled={uploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadDocument(file, file.type === 'application/pdf' ? 'resume_pdf' : 'resume_docx') }} /></label>{documents.map((document) => <div className="activity-row" key={document.id}><strong>{document.file_name ?? document.doc_type}</strong><small>{document.status} · {document.parsed_headings?.map((heading) => heading.heading).join(', ') || 'Parsing headings'}</small></div>)}{message && <p className="entry-message">{message}</p>}</section></div>
 }
 
 function StudentOverview({ setActiveNav, profile, profileStrength, marks, notifications, marksheets }: { setActiveNav: (nav: string) => void; profile: { full_name: string; profile_photo_url: string | null; bio: string | null; linkedin_url: string | null; github_url: string | null; class_name: string | null; department_name: string | null; roll_number: string } | null; profileStrength: number | null; marks: Array<{ subject_name: string; marks_obtained: string; max_marks: string }>; notifications: Array<{ title: string; body: string | null }>; marksheets: Array<{ sgpa: string | null }> }) {
