@@ -112,7 +112,7 @@ function App() {
           {dataNotice && <div className="data-notice">Using preview data: {dataNotice}</div>}
           <LiveDataSummary role={role} notifications={liveNotifications} marks={liveMarks} analytics={liveAnalytics} />
           <RoleStats role={role} profileStrength={liveProfileStrength} />
-          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={liveAssignments} /> : role === 'admin' && activeNav === 'Users' ? <AdminUsersPage token={session.token} /> : role === 'admin' && activeNav === 'Assignments' ? <AdminAssignmentsPage token={session.token} /> : role === 'admin' && activeNav === 'Marksheets' ? <AdminMarksheetsPage token={session.token} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
+          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={liveAssignments} /> : role === 'teacher' && activeNav === 'Analytics' ? <TeacherAnalyticsPage token={session.token} assignments={liveAssignments} analytics={liveAnalytics} /> : role === 'admin' && activeNav === 'Users' ? <AdminUsersPage token={session.token} /> : role === 'admin' && activeNav === 'Assignments' ? <AdminAssignmentsPage token={session.token} /> : role === 'admin' && activeNav === 'Marksheets' ? <AdminMarksheetsPage token={session.token} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
         </section>
       </main>
     </div>
@@ -275,6 +275,31 @@ function TeacherMarksEntry({ token, assignments }: { token: string; assignments:
 
   if (!assignment) return <div className="empty-workspace"><p className="eyebrow">Marks entry</p><h2>No active assignments yet.</h2><p>Your college admin needs to assign a class and subject before marks can be entered.</p></div>
   return <div className="marks-entry-page"><div className="records-page-heading"><div><p className="eyebrow">Marks entry</p><h2>{assignment.class_name} · {assignment.subject_name}</h2><p>Only students inside your assigned class are available here.</p></div><div className="marks-entry-actions"><select value={assignmentIndex} onChange={(event) => setAssignmentIndex(Number(event.target.value))}>{assignments.map((item, index) => <option value={index} key={`${item.class_id}-${item.subject_id}`}>{item.class_name} · {item.subject_name}</option>)}</select><select value={examType} onChange={(event) => setExamType(event.target.value)}><option value="internal1">Internal 1</option><option value="internal2">Internal 2</option><option value="midterm">Midterm</option><option value="final">Final</option><option value="assignment">Assignment</option><option value="practical">Practical</option></select></div></div><section className="panel entry-panel"><div className="entry-toolbar"><span>{students.length} students in scope</span><button className="primary-button" onClick={() => void submitMarks()}>Save marks →</button></div>{message && <p className="entry-message">{message}</p>}<div className="entry-table"><div className="entry-header"><span>Student</span><span>Roll number</span><span>Marks / 100</span></div>{students.length ? students.map((student) => <div className="entry-row" key={student.id}><span><strong>{student.full_name}</strong></span><span>{student.roll_number}</span><input type="number" min="0" max="100" value={marks[student.id] ?? ''} onChange={(event) => setMarks((current) => ({ ...current, [student.id]: event.target.value }))} placeholder="0" /></div>) : <div className="empty-records">No students returned for this assignment.</div>}</div></section></div>
+}
+
+function TeacherAnalyticsPage({ token, assignments, analytics }: { token: string; assignments: Array<{ class_name: string; subject_name: string; class_id: string; subject_id: string; semester_id: string }>; analytics: { average_percentage: string | null; top_percentage: string | null; student_count: number } | null }) {
+  const [query, setQuery] = useState('Who is the topper in this class?')
+  const [answer, setAnswer] = useState('')
+  const [intent, setIntent] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const assignment = assignments[0]
+
+  async function askAssistant() {
+    if (!assignment) return
+    setIsLoading(true)
+    try {
+      const result = await apiFetch<{ response: string; intent: string; chartHint?: { labels: string[]; values: number[] } }>('/api/teacher/ai/query', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, classId: assignment.class_id, subjectId: assignment.subject_id, semesterId: assignment.semester_id }) })
+      setAnswer(result.response)
+      setIntent(result.intent)
+    } catch (error) {
+      setAnswer(error instanceof Error ? error.message : 'Unable to query analytics')
+      setIntent('error')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return <div className="analytics-page"><div className="records-page-heading"><div><p className="eyebrow">Teacher analytics</p><h2>Ask your academic data.</h2><p>Answers come from fixed, assignment-scoped tools.</p></div><div className="analytics-kpi"><strong>{analytics?.average_percentage ?? '--'}%</strong><span>class average</span></div></div><div className="analytics-grid"><section className="panel ai-panel"><div className="ai-heading"><span className="ai-spark">✦</span><div><h2>Academic assistant</h2><p>Ask about your assigned class, subject, or semester.</p></div></div><div className="suggestion-row"><button onClick={() => setQuery('Who is the topper in this class?')}>Find topper</button><button onClick={() => setQuery('What is the class average?')}>Class average</button><button onClick={() => setQuery('Which students are below 40?')}>Needs attention</button></div><div className="ai-input-row"><input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void askAssistant() }} /><button className="primary-button" onClick={() => void askAssistant()} disabled={isLoading}>{isLoading ? 'Thinking...' : 'Ask →'}</button></div>{answer && <div className="ai-answer"><span className="eyebrow">{intent.replace('_', ' ')}</span><p>{answer}</p></div>}</section><section className="panel analytics-scope"><p className="eyebrow">Current scope</p><h2>{assignment?.class_name ?? 'No assignment selected'}</h2><p>{assignment?.subject_name ?? 'Assign a class and subject to begin'}</p><div className="scope-stat"><strong>{analytics?.student_count ?? '--'}</strong><span>students in scope</span></div><div className="scope-stat"><strong>{analytics?.top_percentage ?? '--'}%</strong><span>top score</span></div></section></div></div>
 }
 
 function StudentRecordsPage({ marks, marksheets }: { marks: Array<{ subject_name: string; marks_obtained: string; max_marks: string }>; marksheets: Array<{ id: string; file_url: string; sgpa: string | null; cgpa: string | null; sem_number: number; academic_year: string }> }) {
