@@ -19,7 +19,7 @@ const roleNames: Record<Role, string> = {
 const roleNav: Record<Role, string[]> = {
   student: ['Overview', 'My profile', 'Academic records', 'Notifications'],
   teacher: ['Overview', 'My classes', 'Marks entry', 'Analytics'],
-  admin: ['Overview', 'Users', 'Assignments', 'Marksheets', 'College analytics'],
+  admin: ['Overview', 'Users', 'Assignments', 'Marksheets', 'Notifications', 'College analytics'],
 }
 
 const bars = [74, 82, 61, 88, 69, 79, 92, 76, 84, 70, 87, 80]
@@ -112,7 +112,7 @@ function App() {
           {dataNotice && <div className="data-notice">Using preview data: {dataNotice}</div>}
           <LiveDataSummary role={role} notifications={liveNotifications} marks={liveMarks} analytics={liveAnalytics} />
           <RoleStats role={role} profileStrength={liveProfileStrength} />
-          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={liveAssignments} /> : role === 'teacher' && activeNav === 'Analytics' ? <TeacherAnalyticsPage token={session.token} assignments={liveAssignments} analytics={liveAnalytics} /> : role === 'admin' && activeNav === 'Users' ? <AdminUsersPage token={session.token} /> : role === 'admin' && activeNav === 'Assignments' ? <AdminAssignmentsPage token={session.token} /> : role === 'admin' && activeNav === 'Marksheets' ? <AdminMarksheetsPage token={session.token} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
+          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={liveAssignments} /> : role === 'teacher' && activeNav === 'Analytics' ? <TeacherAnalyticsPage token={session.token} assignments={liveAssignments} analytics={liveAnalytics} /> : role === 'admin' && activeNav === 'Users' ? <AdminUsersPage token={session.token} /> : role === 'admin' && activeNav === 'Assignments' ? <AdminAssignmentsPage token={session.token} /> : role === 'admin' && activeNav === 'Marksheets' ? <AdminMarksheetsPage token={session.token} /> : role === 'admin' && activeNav === 'Notifications' ? <AdminNotificationsPage token={session.token} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
         </section>
       </main>
     </div>
@@ -234,6 +234,23 @@ function AdminMarksheetsPage({ token }: { token: string }) {
   }
 
   return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>Official marksheets</h2><p>Publish verified semester results to student academic records.</p></div></div><section className="panel import-panel"><div><h2>Register a marksheet</h2><p>Upload the file to storage first, then register its secure URL here.</p></div><div className="marksheet-fields"><input value={form.studentId} onChange={(event) => setForm((current) => ({ ...current, studentId: event.target.value }))} placeholder="Student ID" aria-label="Student ID" /><input value={form.semesterId} onChange={(event) => setForm((current) => ({ ...current, semesterId: event.target.value }))} placeholder="Semester ID" aria-label="Semester ID" /><input value={form.fileUrl} onChange={(event) => setForm((current) => ({ ...current, fileUrl: event.target.value }))} placeholder="Secure file URL" aria-label="Secure file URL" /><input type="number" min="0" max="10" step="0.01" value={form.sgpa} onChange={(event) => setForm((current) => ({ ...current, sgpa: event.target.value }))} placeholder="SGPA" aria-label="SGPA" /><input type="number" min="0" max="10" step="0.01" value={form.cgpa} onChange={(event) => setForm((current) => ({ ...current, cgpa: event.target.value }))} placeholder="CGPA" aria-label="CGPA" /></div><button className="primary-button" onClick={() => void registerMarksheet()}>Publish marksheet →</button>{message && <p className="entry-message">{message}</p>}</section></div>
+}
+
+function AdminNotificationsPage({ token }: { token: string }) {
+  const [form, setForm] = useState({ title: '', body: '', targetRole: 'all', targetClassId: '', fileUrl: '' })
+  const [message, setMessage] = useState('')
+
+  async function publishNotification() {
+    try {
+      await apiFetch('/api/admin/notifications', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, targetClassId: form.targetClassId || undefined, fileUrl: form.fileUrl || undefined }) })
+      setMessage('Notification published to the selected audience.')
+      setForm({ title: '', body: '', targetRole: 'all', targetClassId: '', fileUrl: '' })
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to publish notification')
+    }
+  }
+
+  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>College communications</h2><p>Send timely, targeted updates to students and faculty.</p></div></div><section className="panel notification-composer"><div><h2>Compose notification</h2><p>Choose a role, optionally narrow it to a class, and publish.</p></div><input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Notification title" aria-label="Notification title" /><textarea value={form.body} onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))} placeholder="Write the announcement..." aria-label="Notification body" /><div className="notification-options"><select value={form.targetRole} onChange={(event) => setForm((current) => ({ ...current, targetRole: event.target.value }))} aria-label="Target role"><option value="all">Everyone</option><option value="students">Students</option><option value="teachers">Teachers</option></select><input value={form.targetClassId} onChange={(event) => setForm((current) => ({ ...current, targetClassId: event.target.value }))} placeholder="Optional class ID" aria-label="Optional class ID" /><input value={form.fileUrl} onChange={(event) => setForm((current) => ({ ...current, fileUrl: event.target.value }))} placeholder="Optional attachment URL" aria-label="Optional attachment URL" /></div><button className="primary-button" onClick={() => void publishNotification()}>Publish notification →</button>{message && <p className="entry-message">{message}</p>}</section></div>
 }
 
 function TeacherMarksEntry({ token, assignments }: { token: string; assignments: Array<{ class_name: string; subject_name: string; class_id: string; subject_id: string; semester_id: string }> }) {
