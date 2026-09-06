@@ -149,7 +149,7 @@ CREATE TABLE ai_query_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id),
     query_text TEXT NOT NULL,
-    resolved_intent VARCHAR(50),
+    resolved_intent TEXT,
     response_summary TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
