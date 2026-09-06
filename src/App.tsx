@@ -112,7 +112,7 @@ function App() {
           {dataNotice && <div className="data-notice">Using preview data: {dataNotice}</div>}
           <LiveDataSummary role={role} notifications={liveNotifications} marks={liveMarks} analytics={liveAnalytics} />
           <RoleStats role={role} profileStrength={liveProfileStrength} />
-          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={liveAssignments} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
+          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={liveAssignments} /> : role === 'admin' && activeNav === 'Users' ? <AdminUsersPage token={session.token} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
         </section>
       </main>
     </div>
@@ -145,6 +145,38 @@ function LoginScreen({ onLogin }: { onLogin: (session: { token: string; user: Se
 function RoleStats({ role, profileStrength }: { role: Role; profileStrength: number | null }) {
   const stats = role === 'student' ? [['Profile strength', `${profileStrength ?? 82}%`, '↑ 12%', 'since last month'], ['Current CGPA', '8.7', '↑ 0.4', 'this semester'], ['Semesters complete', '05', 'On track', 'for graduation'], ['Unread updates', '03', '2 new', 'this week']] : role === 'admin' ? [['Active students', '1,248', '↑ 8.2%', 'vs last year'], ['Faculty members', '86', '04 new', 'this semester'], ['Classes running', '42', '02 pending', 'assignments'], ['Marksheets ready', '94%', '↑ 6%', 'this month']] : [['Active students', '84', '↑ 8.2%', 'vs last semester'], ['Average performance', '78.4%', '↑ 4.6%', 'vs last semester'], ['Classes assigned', '02', 'Current', 'semester 2025 / 26'], ['Needs attention', '06', '↓ 2 students', 'since last week']]
   return <div className="stats-grid">{stats.map(([label, number, change, detail], index) => <div className="stat-card" key={label}><div className="stat-label">{label} <span className={`stat-dot ${['mint', 'purple', 'orange', 'red'][index]}`}></span></div><div className="stat-number">{number}</div><div className={`stat-foot ${change.startsWith('↑') ? 'positive' : change.startsWith('↓') ? 'warning' : 'neutral'}`}>{change} <span>{detail}</span></div></div>)}</div>
+}
+
+function AdminUsersPage({ token }: { token: string }) {
+  const [users, setUsers] = useState<Array<{ id: string; email: string; full_name: string; role: string; is_active: boolean; must_reset_password: boolean }>>([])
+  const [rows, setRows] = useState('teacher@example.edu,Alex Kumar,ChangeMe123!\nstudent@example.edu,Priya Sharma,ChangeMe123!,CS21045')
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const result = await apiFetch<{ users: typeof users }>('/api/admin/users', token)
+        setUsers(result.users)
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Unable to load users')
+      }
+    }
+    void loadUsers()
+  }, [token])
+
+  async function importUsers() {
+    const importedUsers = rows.split('\n').map((row) => row.split(',').map((value) => value.trim())).filter((row) => row.length >= 3 && row[0])
+    try {
+      const result = await apiFetch<{ imported: number }>('/api/admin/users/bulk-import', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ users: importedUsers.map(([email, fullName, password, rollNumber]) => ({ email, fullName, password, role: rollNumber ? 'student' : 'teacher', ...(rollNumber ? { rollNumber } : {}) })) }) })
+      setMessage(`${result.imported} accounts imported. Temporary passwords require reset.`)
+      const refreshed = await apiFetch<{ users: typeof users }>('/api/admin/users', token)
+      setUsers(refreshed.users)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Import failed')
+    }
+  }
+
+  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>People directory</h2><p>Onboard faculty and students into your college workspace.</p></div><button className="primary-button" onClick={() => void importUsers()}>Import accounts →</button></div><section className="panel import-panel"><div><h2>Bulk onboarding</h2><p>One account per line: email, full name, temporary password, optional student roll number.</p></div><textarea value={rows} onChange={(event) => setRows(event.target.value)} aria-label="Bulk user rows" />{message && <p className="entry-message">{message}</p>}</section><section className="panel directory-panel"><div className="panel-heading"><div><h2>Current accounts</h2><p>{users.length} accounts in this college</p></div></div><div className="directory-table"><div className="directory-header"><span>Name</span><span>Email</span><span>Role</span><span>Status</span></div>{users.map((user) => <div className="directory-row" key={user.id}><strong>{user.full_name}</strong><span>{user.email}</span><span className={`role-pill ${user.role}`}>{user.role.replace('_', ' ')}</span><span className={user.is_active ? 'status-active' : 'status-inactive'}>{user.is_active ? 'Active' : 'Inactive'}</span></div>)}</div></section></div>
 }
 
 function TeacherMarksEntry({ token, assignments }: { token: string; assignments: Array<{ class_name: string; subject_name: string; class_id: string; subject_id: string; semester_id: string }> }) {
