@@ -280,6 +280,50 @@ app.get('/api/students/me/notifications', requireAuth, requireRoles('student'), 
   }
 })
 
+app.post('/api/students/me/notifications/:notificationId/read', requireAuth, requireRoles('student'), async (request: AuthRequest, response, next) => {
+  try {
+    const notificationId = z.string().uuid().parse(request.params.notificationId)
+    const result = await pool.query(
+      `INSERT INTO notification_reads (notification_id, user_id, read_at)
+       SELECT n.id, u.id, now()
+         FROM notifications n
+         JOIN users u ON u.id = $2 AND u.college_id = n.college_id
+         JOIN students st ON st.id = u.id
+        WHERE n.id = $1 AND n.college_id = $3
+          AND (n.target_role IS NULL OR n.target_role IN ('all', 'students'))
+          AND (n.target_class_id IS NULL OR n.target_class_id = st.class_id)
+       ON CONFLICT (notification_id, user_id)
+       DO UPDATE SET read_at = now()
+       RETURNING notification_id, user_id, read_at`,
+      [notificationId, request.user!.id, request.user!.collegeId],
+    )
+    if (result.rowCount !== 1) return response.status(404).json({ error: 'Notification not found' })
+    return response.json({ read: result.rows[0] })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/students/me/notifications/read-all', requireAuth, requireRoles('student'), async (request: AuthRequest, response, next) => {
+  try {
+    const result = await pool.query(
+      `INSERT INTO notification_reads (notification_id, user_id, read_at)
+       SELECT n.id, $1, now()
+         FROM notifications n
+         JOIN students st ON st.id = $1
+        WHERE n.college_id = $2
+          AND (n.target_role IS NULL OR n.target_role IN ('all', 'students'))
+          AND (n.target_class_id IS NULL OR n.target_class_id = st.class_id)
+       ON CONFLICT (notification_id, user_id)
+       DO UPDATE SET read_at = now()`,
+      [request.user!.id, request.user!.collegeId],
+    )
+    return response.json({ markedRead: result.rowCount ?? 0 })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.post('/api/admin/notifications', requireAuth, requireRoles('super_admin'), async (request: AuthRequest, response, next) => {
   try {
     const input = notificationSchema.parse(request.body)
