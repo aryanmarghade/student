@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import './App.css'
+import { login, type SessionUser } from './api'
 
 type Role = 'student' | 'teacher' | 'admin'
 
@@ -24,6 +25,10 @@ const roleNav: Record<Role, string[]> = {
 const bars = [74, 82, 61, 88, 69, 79, 92, 76, 84, 70, 87, 80]
 
 function App() {
+  const [session, setSession] = useState<{ token: string; user: SessionUser } | null>(() => {
+    const stored = sessionStorage.getItem('student-profile-session')
+    return stored ? JSON.parse(stored) as { token: string; user: SessionUser } : null
+  })
   const [role, setRole] = useState<Role>('teacher')
   const [activeNav, setActiveNav] = useState('Overview')
   const [showPast, setShowPast] = useState(false)
@@ -32,6 +37,14 @@ function App() {
   const assignedClasses = showPast
     ? ['CSE 2A · Data Structures', 'CSE 3B · Database Systems', 'CSE 1A · Programming Lab']
     : ['CSE 3B · Database Systems', 'CSE 3A · Web Engineering']
+
+  if (!session) {
+    return <LoginScreen onLogin={(nextSession) => {
+      sessionStorage.setItem('student-profile-session', JSON.stringify(nextSession))
+      setSession(nextSession)
+      setRole(nextSession.user.role === 'super_admin' ? 'admin' : nextSession.user.role)
+    }} />
+  }
 
   function changeRole(nextRole: Role) {
     setRole(nextRole)
@@ -53,7 +66,7 @@ function App() {
         <div className="sidebar-bottom"><div className="help-icon">?</div><div><strong>Need a hand?</strong><small>Visit the help center</small></div><span>↗</span></div>
       </aside>
       <main className="main-content">
-        <header className="topbar"><div className="breadcrumb"><span>{roleLabels[role]}</span><b>/</b><strong>{activeNav}</strong></div><div className="top-actions"><div className="role-switcher" aria-label="Preview role"><button className={role === 'student' ? 'selected' : ''} onClick={() => changeRole('student')}>Student</button><button className={role === 'teacher' ? 'selected' : ''} onClick={() => changeRole('teacher')}>Teacher</button><button className={role === 'admin' ? 'selected' : ''} onClick={() => changeRole('admin')}>Admin</button></div><button className="icon-button" aria-label="Notifications">♢<i></i></button><button className="profile-chip"><span className="avatar avatar-orange">{initials}</span><span>{name}</span><span>⌄</span></button></div></header>
+        <header className="topbar"><div className="breadcrumb"><span>{roleLabels[role]}</span><b>/</b><strong>{activeNav}</strong></div><div className="top-actions"><div className="role-switcher" aria-label="Preview role"><button className={role === 'student' ? 'selected' : ''} onClick={() => changeRole('student')}>Student</button><button className={role === 'teacher' ? 'selected' : ''} onClick={() => changeRole('teacher')}>Teacher</button><button className={role === 'admin' ? 'selected' : ''} onClick={() => changeRole('admin')}>Admin</button></div><button className="icon-button" aria-label="Notifications">♢<i></i></button><button className="profile-chip" onClick={() => { sessionStorage.removeItem('student-profile-session'); setSession(null) }}><span className="avatar avatar-orange">{initials}</span><span>{session.user.email}</span><span>↪</span></button></div></header>
         <section className="content-wrap">
           <div className="welcome-row"><div><p className="eyebrow">Monday, September 8, 2025</p><h1>{role === 'student' ? `Welcome back, ${name.split(' ')[0]}.` : role === 'admin' ? 'Good morning, Meera.' : 'Good morning, Alex.'}</h1><p className="subheading">{role === 'student' ? 'Keep your academic record and professional profile up to date.' : role === 'admin' ? 'A clear view of your college operations, all in one place.' : 'Here is what is happening across your assigned classes today.'}</p></div><button className="primary-button">＋ {role === 'student' ? 'Update profile' : role === 'admin' ? 'Import users' : 'Enter marks'}</button></div>
           <RoleStats role={role} />
@@ -62,6 +75,29 @@ function App() {
       </main>
     </div>
   )
+}
+
+function LoginScreen({ onLogin }: { onLogin: (session: { token: string; user: SessionUser }) => void }) {
+  const [email, setEmail] = useState('student@northstar.edu')
+  const [password, setPassword] = useState('ChangeMe123!')
+  const [error, setError] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    setIsLoading(true)
+    try {
+      const result = await login(email, password)
+      onLogin({ token: result.accessToken, user: result.user })
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : 'Unable to sign in')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return <main className="login-shell"><section className="login-panel"><div className="brand login-brand"><span className="brand-mark">s</span><span>student profile</span></div><p className="eyebrow">Northstar College</p><h1>Your academic journey, in one place.</h1><p className="login-copy">Sign in to manage your profile, academic records, and college updates.</p><form onSubmit={submit}><label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>{error && <p className="login-error">{error}</p>}<button className="primary-button login-button" disabled={isLoading}>{isLoading ? 'Signing in...' : 'Sign in to workspace →'}</button></form><p className="login-note">Use your college account. Your role and permissions are applied by the server.</p></section><aside className="login-aside"><div className="aside-mark">✦</div><p className="eyebrow">One connected campus</p><h2>Profiles, performance, and progress that move with you.</h2><div className="aside-points"><span><b>01</b> Build a stronger student profile</span><span><b>02</b> Keep every semester in view</span><span><b>03</b> Give faculty the right insight</span></div></aside></main>
 }
 
 function RoleStats({ role }: { role: Role }) {
