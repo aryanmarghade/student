@@ -112,7 +112,7 @@ function App() {
           {dataNotice && <div className="data-notice">Using preview data: {dataNotice}</div>}
           <LiveDataSummary role={role} notifications={liveNotifications} marks={liveMarks} analytics={liveAnalytics} />
           <RoleStats role={role} profileStrength={liveProfileStrength} />
-          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={liveAssignments} /> : role === 'admin' && activeNav === 'Users' ? <AdminUsersPage token={session.token} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
+          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={liveAssignments} /> : role === 'admin' && activeNav === 'Users' ? <AdminUsersPage token={session.token} /> : role === 'admin' && activeNav === 'Assignments' ? <AdminAssignmentsPage token={session.token} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
         </section>
       </main>
     </div>
@@ -177,6 +177,46 @@ function AdminUsersPage({ token }: { token: string }) {
   }
 
   return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>People directory</h2><p>Onboard faculty and students into your college workspace.</p></div><button className="primary-button" onClick={() => void importUsers()}>Import accounts →</button></div><section className="panel import-panel"><div><h2>Bulk onboarding</h2><p>One account per line: email, full name, temporary password, optional student roll number.</p></div><textarea value={rows} onChange={(event) => setRows(event.target.value)} aria-label="Bulk user rows" />{message && <p className="entry-message">{message}</p>}</section><section className="panel directory-panel"><div className="panel-heading"><div><h2>Current accounts</h2><p>{users.length} accounts in this college</p></div></div><div className="directory-table"><div className="directory-header"><span>Name</span><span>Email</span><span>Role</span><span>Status</span></div>{users.map((user) => <div className="directory-row" key={user.id}><strong>{user.full_name}</strong><span>{user.email}</span><span className={`role-pill ${user.role}`}>{user.role.replace('_', ' ')}</span><span className={user.is_active ? 'status-active' : 'status-inactive'}>{user.is_active ? 'Active' : 'Inactive'}</span></div>)}</div></section></div>
+}
+
+type AdminAssignment = { id: string; teacher_name: string; class_name: string; subject_name: string; sem_number: number; status: string }
+
+async function fetchAdminAssignments(token: string) {
+  const result = await apiFetch<{ assignments: AdminAssignment[] }>('/api/admin/assignments', token)
+  return result.assignments
+}
+
+function AdminAssignmentsPage({ token }: { token: string }) {
+  const [assignments, setAssignments] = useState<AdminAssignment[]>([])
+  const [form, setForm] = useState({ teacherId: '', classId: '', subjectId: '', semesterId: '' })
+  const [message, setMessage] = useState('')
+
+  async function loadAssignments() {
+    setAssignments(await fetchAdminAssignments(token))
+  }
+
+  useEffect(() => { void fetchAdminAssignments(token).then(setAssignments).catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'Unable to load assignments')) }, [token])
+
+  async function saveAssignment() {
+    try {
+      await apiFetch('/api/admin/assignments', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      setMessage('Assignment saved and teacher access updated.')
+      await loadAssignments()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to save assignment')
+    }
+  }
+
+  async function archiveAssignment(id: string) {
+    try {
+      await apiFetch(`/api/admin/assignments/${id}`, token, { method: 'DELETE' })
+      await loadAssignments()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to archive assignment')
+    }
+  }
+
+  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>Teaching assignments</h2><p>Control exactly which academic data each teacher can access.</p></div></div><section className="panel assignment-form"><div><h2>Assign a teacher</h2><p>Paste the IDs from your academic directory to create an assignment.</p></div><div className="assignment-fields">{(['teacherId', 'classId', 'subjectId', 'semesterId'] as const).map((field) => <input key={field} value={form[field]} onChange={(event) => setForm((current) => ({ ...current, [field]: event.target.value }))} placeholder={field} aria-label={field} />)}<button className="primary-button" onClick={() => void saveAssignment()}>Save assignment →</button></div>{message && <p className="entry-message">{message}</p>}</section><section className="panel directory-panel"><div className="panel-heading"><div><h2>Assignment history</h2><p>{assignments.length} records · past assignments are preserved</p></div></div><div className="directory-table"><div className="directory-header assignment-grid"><span>Teacher</span><span>Class</span><span>Subject</span><span>Status</span><span></span></div>{assignments.map((assignment) => <div className="directory-row assignment-grid" key={assignment.id}><strong>{assignment.teacher_name}</strong><span>{assignment.class_name}</span><span>{assignment.subject_name} · Sem {assignment.sem_number}</span><span className={assignment.status === 'active' ? 'status-active' : 'status-inactive'}>{assignment.status}</span><button className="archive-button" disabled={assignment.status !== 'active'} onClick={() => void archiveAssignment(assignment.id)}>Archive</button></div>)}</div></section></div>
 }
 
 function TeacherMarksEntry({ token, assignments }: { token: string; assignments: Array<{ class_name: string; subject_name: string; class_id: string; subject_id: string; semester_id: string }> }) {
