@@ -36,6 +36,7 @@ function App() {
   const [liveProfileStrength, setLiveProfileStrength] = useState<number | null>(null)
   const [liveNotifications, setLiveNotifications] = useState<Array<{ id: string; title: string; body: string | null; created_at: string; is_read: boolean }>>([])
   const [liveMarks, setLiveMarks] = useState<Array<{ subject_name: string; marks_obtained: string; max_marks: string }>>([])
+  const [liveMarksheets, setLiveMarksheets] = useState<Array<{ id: string; file_url: string; sgpa: string | null; cgpa: string | null; sem_number: number; academic_year: string }>>([])
   const [liveAnalytics, setLiveAnalytics] = useState<{ average_percentage: string | null; top_percentage: string | null; student_count: number } | null>(null)
   const [dataNotice, setDataNotice] = useState('')
   const name = roleNames[role]
@@ -65,6 +66,8 @@ function App() {
           setLiveNotifications(notifications.notifications)
           const marks = await apiFetch<{ marks: Array<{ subject_name: string; marks_obtained: string; max_marks: string }> }>('/api/students/me/marks', session.token)
           setLiveMarks(marks.marks)
+          const marksheets = await apiFetch<{ marksheets: Array<{ id: string; file_url: string; sgpa: string | null; cgpa: string | null; sem_number: number; academic_year: string }> }>('/api/students/me/marksheets', session.token)
+          setLiveMarksheets(marksheets.marksheets)
         }
       } catch (error) {
         setDataNotice(error instanceof Error ? error.message : 'Live data is temporarily unavailable')
@@ -107,7 +110,7 @@ function App() {
           {dataNotice && <div className="data-notice">Using preview data: {dataNotice}</div>}
           <LiveDataSummary role={role} notifications={liveNotifications} marks={liveMarks} analytics={liveAnalytics} />
           <RoleStats role={role} profileStrength={liveProfileStrength} />
-          {role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
+          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
         </section>
       </main>
     </div>
@@ -140,6 +143,12 @@ function LoginScreen({ onLogin }: { onLogin: (session: { token: string; user: Se
 function RoleStats({ role, profileStrength }: { role: Role; profileStrength: number | null }) {
   const stats = role === 'student' ? [['Profile strength', `${profileStrength ?? 82}%`, '↑ 12%', 'since last month'], ['Current CGPA', '8.7', '↑ 0.4', 'this semester'], ['Semesters complete', '05', 'On track', 'for graduation'], ['Unread updates', '03', '2 new', 'this week']] : role === 'admin' ? [['Active students', '1,248', '↑ 8.2%', 'vs last year'], ['Faculty members', '86', '04 new', 'this semester'], ['Classes running', '42', '02 pending', 'assignments'], ['Marksheets ready', '94%', '↑ 6%', 'this month']] : [['Active students', '84', '↑ 8.2%', 'vs last semester'], ['Average performance', '78.4%', '↑ 4.6%', 'vs last semester'], ['Classes assigned', '02', 'Current', 'semester 2025 / 26'], ['Needs attention', '06', '↓ 2 students', 'since last week']]
   return <div className="stats-grid">{stats.map(([label, number, change, detail], index) => <div className="stat-card" key={label}><div className="stat-label">{label} <span className={`stat-dot ${['mint', 'purple', 'orange', 'red'][index]}`}></span></div><div className="stat-number">{number}</div><div className={`stat-foot ${change.startsWith('↑') ? 'positive' : change.startsWith('↓') ? 'warning' : 'neutral'}`}>{change} <span>{detail}</span></div></div>)}</div>
+}
+
+function StudentRecordsPage({ marks, marksheets }: { marks: Array<{ subject_name: string; marks_obtained: string; max_marks: string }>; marksheets: Array<{ id: string; file_url: string; sgpa: string | null; cgpa: string | null; sem_number: number; academic_year: string }> }) {
+  const average = marks.length ? Math.round(marks.reduce((total, mark) => total + (Number(mark.marks_obtained) / Number(mark.max_marks)) * 100, 0) / marks.length) : 0
+  const latestMarksheet = marksheets[0]
+  return <div className="records-page"><div className="records-page-heading"><div><p className="eyebrow">Academic records</p><h2>Progress across every semester</h2><p>Marks and official results linked to your college record.</p></div><button className="select-button">Semester 5 <span>⌄</span></button></div><div className="record-kpis"><div className="record-kpi"><span>Current SGPA</span><strong>{latestMarksheet?.sgpa ?? '8.7'}</strong><small>Latest official result</small></div><div className="record-kpi"><span>Current CGPA</span><strong>{latestMarksheet?.cgpa ?? '8.4'}</strong><small>Across completed semesters</small></div><div className="record-kpi"><span>Marks average</span><strong>{average || 86}%</strong><small>{marks.length || 3} records loaded</small></div></div><section className="panel marks-table-panel"><div className="panel-heading"><div><h2>Semester 5 marks</h2><p>Assessment records from your current semester</p></div></div><div className="marks-table">{marks.length ? marks.map((mark) => <div className="marks-row" key={`${mark.subject_name}-${mark.marks_obtained}`}><span><strong>{mark.subject_name}</strong><small>Current semester</small></span><b>{mark.marks_obtained} <small>/ {mark.max_marks}</small></b><i>{Math.round(Number(mark.marks_obtained) / Number(mark.max_marks) * 100)}%</i></div>) : <div className="empty-records">Your marks will appear here once faculty publish them.</div>}</div></section><section className="panel marksheet-panel"><div className="panel-heading"><div><h2>Official marksheets</h2><p>Download verified semester documents</p></div></div><div className="marksheet-list">{marksheets.length ? marksheets.map((marksheet) => <a className="marksheet-row" href={marksheet.file_url} target="_blank" rel="noreferrer" key={marksheet.id}><span className="document-icon">PDF</span><span><strong>Semester {marksheet.sem_number} marksheet</strong><small>{marksheet.academic_year} · SGPA {marksheet.sgpa ?? 'Pending'}</small></span><b>↗</b></a>) : <div className="empty-records">Official marksheets will be available after the college uploads them.</div>}</div></section></div>
 }
 
 function LiveDataSummary({ role, notifications, marks, analytics }: { role: Role; notifications: Array<{ title: string; is_read: boolean }>; marks: Array<{ subject_name: string; marks_obtained: string; max_marks: string }>; analytics: { average_percentage: string | null; top_percentage: string | null; student_count: number } | null }) {
