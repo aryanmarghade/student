@@ -34,6 +34,8 @@ function App() {
   const [showPast, setShowPast] = useState(false)
   const [liveClasses, setLiveClasses] = useState<string[] | null>(null)
   const [liveProfileStrength, setLiveProfileStrength] = useState<number | null>(null)
+  const [liveNotifications, setLiveNotifications] = useState<Array<{ id: string; title: string; body: string | null; created_at: string; is_read: boolean }>>([])
+  const [liveAnalytics, setLiveAnalytics] = useState<{ average_percentage: string | null; top_percentage: string | null; student_count: number } | null>(null)
   const [dataNotice, setDataNotice] = useState('')
   const name = roleNames[role]
   const initials = name.split(' ').map((part) => part[0]).join('')
@@ -46,13 +48,20 @@ function App() {
     const loadDashboardData = async () => {
       try {
         if (session.user.role === 'teacher') {
-          const result = await apiFetch<{ assignments: Array<{ class_name: string; subject_name: string }> }>('/api/teacher/assignments', session.token)
+          const result = await apiFetch<{ assignments: Array<{ class_name: string; subject_name: string; class_id: string; subject_id: string; semester_id: string }> }>('/api/teacher/assignments', session.token)
           const classes = result.assignments.map((assignment) => `${assignment.class_name} · ${assignment.subject_name}`)
           if (classes.length) setLiveClasses(classes)
+          const firstAssignment = result.assignments[0]
+          if (firstAssignment) {
+            const analytics = await apiFetch<{ analytics: { average_percentage: string | null; top_percentage: string | null; student_count: number } }>(`/api/teacher/analytics?classId=${firstAssignment.class_id}&subjectId=${firstAssignment.subject_id}&semesterId=${firstAssignment.semester_id}`, session.token)
+            setLiveAnalytics(analytics.analytics)
+          }
         }
         if (session.user.role === 'student') {
           const result = await apiFetch<{ profile: { profile_strength: number } }>('/api/students/me', session.token)
           setLiveProfileStrength(result.profile.profile_strength)
+          const notifications = await apiFetch<{ notifications: Array<{ id: string; title: string; body: string | null; created_at: string; is_read: boolean }> }>('/api/students/me/notifications', session.token)
+          setLiveNotifications(notifications.notifications)
         }
       } catch (error) {
         setDataNotice(error instanceof Error ? error.message : 'Live data is temporarily unavailable')
@@ -93,6 +102,7 @@ function App() {
         <section className="content-wrap">
           <div className="welcome-row"><div><p className="eyebrow">Monday, September 8, 2025</p><h1>{role === 'student' ? `Welcome back, ${name.split(' ')[0]}.` : role === 'admin' ? 'Good morning, Meera.' : 'Good morning, Alex.'}</h1><p className="subheading">{role === 'student' ? 'Keep your academic record and professional profile up to date.' : role === 'admin' ? 'A clear view of your college operations, all in one place.' : 'Here is what is happening across your assigned classes today.'}</p></div><button className="primary-button">＋ {role === 'student' ? 'Update profile' : role === 'admin' ? 'Import users' : 'Enter marks'}</button></div>
           {dataNotice && <div className="data-notice">Using preview data: {dataNotice}</div>}
+          <LiveDataSummary role={role} notifications={liveNotifications} analytics={liveAnalytics} />
           <RoleStats role={role} profileStrength={liveProfileStrength} />
           {role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
         </section>
@@ -127,6 +137,17 @@ function LoginScreen({ onLogin }: { onLogin: (session: { token: string; user: Se
 function RoleStats({ role, profileStrength }: { role: Role; profileStrength: number | null }) {
   const stats = role === 'student' ? [['Profile strength', `${profileStrength ?? 82}%`, '↑ 12%', 'since last month'], ['Current CGPA', '8.7', '↑ 0.4', 'this semester'], ['Semesters complete', '05', 'On track', 'for graduation'], ['Unread updates', '03', '2 new', 'this week']] : role === 'admin' ? [['Active students', '1,248', '↑ 8.2%', 'vs last year'], ['Faculty members', '86', '04 new', 'this semester'], ['Classes running', '42', '02 pending', 'assignments'], ['Marksheets ready', '94%', '↑ 6%', 'this month']] : [['Active students', '84', '↑ 8.2%', 'vs last semester'], ['Average performance', '78.4%', '↑ 4.6%', 'vs last semester'], ['Classes assigned', '02', 'Current', 'semester 2025 / 26'], ['Needs attention', '06', '↓ 2 students', 'since last week']]
   return <div className="stats-grid">{stats.map(([label, number, change, detail], index) => <div className="stat-card" key={label}><div className="stat-label">{label} <span className={`stat-dot ${['mint', 'purple', 'orange', 'red'][index]}`}></span></div><div className="stat-number">{number}</div><div className={`stat-foot ${change.startsWith('↑') ? 'positive' : change.startsWith('↓') ? 'warning' : 'neutral'}`}>{change} <span>{detail}</span></div></div>)}</div>
+}
+
+function LiveDataSummary({ role, notifications, analytics }: { role: Role; notifications: Array<{ title: string; is_read: boolean }>; analytics: { average_percentage: string | null; top_percentage: string | null; student_count: number } | null }) {
+  if (role === 'student' && notifications.length) {
+    const unreadCount = notifications.filter((notification) => !notification.is_read).length
+    return <div className="live-summary"><span className="live-pulse"></span><strong>{unreadCount} unread update{unreadCount === 1 ? '' : 's'}</strong><span>from your college notifications</span></div>
+  }
+  if (role === 'teacher' && analytics) {
+    return <div className="live-summary"><span className="live-pulse"></span><strong>Live class average {analytics.average_percentage ?? 0}%</strong><span>{analytics.student_count} students · top score {analytics.top_percentage ?? 0}%</span></div>
+  }
+  return null
 }
 
 function StudentOverview({ setActiveNav, profileStrength }: { setActiveNav: (nav: string) => void; profileStrength: number | null }) {
