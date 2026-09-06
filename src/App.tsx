@@ -33,6 +33,7 @@ function App() {
   const [activeNav, setActiveNav] = useState('Overview')
   const [showPast, setShowPast] = useState(false)
   const [liveClasses, setLiveClasses] = useState<string[] | null>(null)
+  const [liveAssignments, setLiveAssignments] = useState<Array<{ class_name: string; subject_name: string; class_id: string; subject_id: string; semester_id: string }>>([])
   const [liveProfileStrength, setLiveProfileStrength] = useState<number | null>(null)
   const [liveNotifications, setLiveNotifications] = useState<Array<{ id: string; title: string; body: string | null; created_at: string; is_read: boolean }>>([])
   const [liveMarks, setLiveMarks] = useState<Array<{ subject_name: string; marks_obtained: string; max_marks: string }>>([])
@@ -51,6 +52,7 @@ function App() {
       try {
         if (session.user.role === 'teacher') {
           const result = await apiFetch<{ assignments: Array<{ class_name: string; subject_name: string; class_id: string; subject_id: string; semester_id: string }> }>('/api/teacher/assignments', session.token)
+          setLiveAssignments(result.assignments)
           const classes = result.assignments.map((assignment) => `${assignment.class_name} · ${assignment.subject_name}`)
           if (classes.length) setLiveClasses(classes)
           const firstAssignment = result.assignments[0]
@@ -110,7 +112,7 @@ function App() {
           {dataNotice && <div className="data-notice">Using preview data: {dataNotice}</div>}
           <LiveDataSummary role={role} notifications={liveNotifications} marks={liveMarks} analytics={liveAnalytics} />
           <RoleStats role={role} profileStrength={liveProfileStrength} />
-          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
+          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={liveAssignments} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
         </section>
       </main>
     </div>
@@ -143,6 +145,47 @@ function LoginScreen({ onLogin }: { onLogin: (session: { token: string; user: Se
 function RoleStats({ role, profileStrength }: { role: Role; profileStrength: number | null }) {
   const stats = role === 'student' ? [['Profile strength', `${profileStrength ?? 82}%`, '↑ 12%', 'since last month'], ['Current CGPA', '8.7', '↑ 0.4', 'this semester'], ['Semesters complete', '05', 'On track', 'for graduation'], ['Unread updates', '03', '2 new', 'this week']] : role === 'admin' ? [['Active students', '1,248', '↑ 8.2%', 'vs last year'], ['Faculty members', '86', '04 new', 'this semester'], ['Classes running', '42', '02 pending', 'assignments'], ['Marksheets ready', '94%', '↑ 6%', 'this month']] : [['Active students', '84', '↑ 8.2%', 'vs last semester'], ['Average performance', '78.4%', '↑ 4.6%', 'vs last semester'], ['Classes assigned', '02', 'Current', 'semester 2025 / 26'], ['Needs attention', '06', '↓ 2 students', 'since last week']]
   return <div className="stats-grid">{stats.map(([label, number, change, detail], index) => <div className="stat-card" key={label}><div className="stat-label">{label} <span className={`stat-dot ${['mint', 'purple', 'orange', 'red'][index]}`}></span></div><div className="stat-number">{number}</div><div className={`stat-foot ${change.startsWith('↑') ? 'positive' : change.startsWith('↓') ? 'warning' : 'neutral'}`}>{change} <span>{detail}</span></div></div>)}</div>
+}
+
+function TeacherMarksEntry({ token, assignments }: { token: string; assignments: Array<{ class_name: string; subject_name: string; class_id: string; subject_id: string; semester_id: string }> }) {
+  const [assignmentIndex, setAssignmentIndex] = useState(0)
+  const [students, setStudents] = useState<Array<{ id: string; full_name: string; roll_number: string }>>([])
+  const [marks, setMarks] = useState<Record<string, string>>({})
+  const [examType, setExamType] = useState('midterm')
+  const [message, setMessage] = useState('')
+  const assignment = assignments[assignmentIndex]
+
+  useEffect(() => {
+    if (!assignment) return
+    const loadStudents = async () => {
+      try {
+        const result = await apiFetch<{ students: Array<{ id: string; full_name: string; roll_number: string }> }>(`/api/teacher/classes/${assignment.class_id}/students`, token)
+        setStudents(result.students)
+        setMarks(Object.fromEntries(result.students.map((student) => [student.id, ''])))
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Unable to load students')
+      }
+    }
+    void loadStudents()
+  }, [assignment, token])
+
+  async function submitMarks() {
+    if (!assignment) return
+    const entries = students.filter((student) => marks[student.id] !== '').map((student) => ({ studentId: student.id, marksObtained: Number(marks[student.id]), maxMarks: 100 }))
+    if (!entries.length || entries.some((entry) => !Number.isFinite(entry.marksObtained) || entry.marksObtained < 0 || entry.marksObtained > 100)) {
+      setMessage('Enter marks from 0 to 100 for at least one student.')
+      return
+    }
+    try {
+      const result = await apiFetch<{ saved: number }>('/api/teacher/marks', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId: assignment.class_id, subjectId: assignment.subject_id, semesterId: assignment.semester_id, examType, marks: entries }) })
+      setMessage(`${result.saved} mark${result.saved === 1 ? '' : 's'} saved successfully.`)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to save marks')
+    }
+  }
+
+  if (!assignment) return <div className="empty-workspace"><p className="eyebrow">Marks entry</p><h2>No active assignments yet.</h2><p>Your college admin needs to assign a class and subject before marks can be entered.</p></div>
+  return <div className="marks-entry-page"><div className="records-page-heading"><div><p className="eyebrow">Marks entry</p><h2>{assignment.class_name} · {assignment.subject_name}</h2><p>Only students inside your assigned class are available here.</p></div><div className="marks-entry-actions"><select value={assignmentIndex} onChange={(event) => setAssignmentIndex(Number(event.target.value))}>{assignments.map((item, index) => <option value={index} key={`${item.class_id}-${item.subject_id}`}>{item.class_name} · {item.subject_name}</option>)}</select><select value={examType} onChange={(event) => setExamType(event.target.value)}><option value="internal1">Internal 1</option><option value="internal2">Internal 2</option><option value="midterm">Midterm</option><option value="final">Final</option><option value="assignment">Assignment</option><option value="practical">Practical</option></select></div></div><section className="panel entry-panel"><div className="entry-toolbar"><span>{students.length} students in scope</span><button className="primary-button" onClick={() => void submitMarks()}>Save marks →</button></div>{message && <p className="entry-message">{message}</p>}<div className="entry-table"><div className="entry-header"><span>Student</span><span>Roll number</span><span>Marks / 100</span></div>{students.length ? students.map((student) => <div className="entry-row" key={student.id}><span><strong>{student.full_name}</strong></span><span>{student.roll_number}</span><input type="number" min="0" max="100" value={marks[student.id] ?? ''} onChange={(event) => setMarks((current) => ({ ...current, [student.id]: event.target.value }))} placeholder="0" /></div>) : <div className="empty-records">No students returned for this assignment.</div>}</div></section></div>
 }
 
 function StudentRecordsPage({ marks, marksheets }: { marks: Array<{ subject_name: string; marks_obtained: string; max_marks: string }>; marksheets: Array<{ id: string; file_url: string; sgpa: string | null; cgpa: string | null; sem_number: number; academic_year: string }> }) {

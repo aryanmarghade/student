@@ -28,9 +28,10 @@ export async function login(email: string, password: string): Promise<LoginRespo
   return { accessToken: body.accessToken, user: body.user }
 }
 
-export async function apiFetch<T>(path: string, token: string): Promise<T> {
+export async function apiFetch<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    ...init,
+    headers: { ...init?.headers, Authorization: `Bearer ${token}` },
   })
   const body = await response.json() as T & { error?: string }
   if (!response.ok) throw new Error(body.error ?? 'Request failed')
