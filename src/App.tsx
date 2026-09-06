@@ -35,6 +35,7 @@ function App() {
   const [liveClasses, setLiveClasses] = useState<string[] | null>(null)
   const [liveProfileStrength, setLiveProfileStrength] = useState<number | null>(null)
   const [liveNotifications, setLiveNotifications] = useState<Array<{ id: string; title: string; body: string | null; created_at: string; is_read: boolean }>>([])
+  const [liveMarks, setLiveMarks] = useState<Array<{ subject_name: string; marks_obtained: string; max_marks: string }>>([])
   const [liveAnalytics, setLiveAnalytics] = useState<{ average_percentage: string | null; top_percentage: string | null; student_count: number } | null>(null)
   const [dataNotice, setDataNotice] = useState('')
   const name = roleNames[role]
@@ -62,6 +63,8 @@ function App() {
           setLiveProfileStrength(result.profile.profile_strength)
           const notifications = await apiFetch<{ notifications: Array<{ id: string; title: string; body: string | null; created_at: string; is_read: boolean }> }>('/api/students/me/notifications', session.token)
           setLiveNotifications(notifications.notifications)
+          const marks = await apiFetch<{ marks: Array<{ subject_name: string; marks_obtained: string; max_marks: string }> }>('/api/students/me/marks', session.token)
+          setLiveMarks(marks.marks)
         }
       } catch (error) {
         setDataNotice(error instanceof Error ? error.message : 'Live data is temporarily unavailable')
@@ -102,7 +105,7 @@ function App() {
         <section className="content-wrap">
           <div className="welcome-row"><div><p className="eyebrow">Monday, September 8, 2025</p><h1>{role === 'student' ? `Welcome back, ${name.split(' ')[0]}.` : role === 'admin' ? 'Good morning, Meera.' : 'Good morning, Alex.'}</h1><p className="subheading">{role === 'student' ? 'Keep your academic record and professional profile up to date.' : role === 'admin' ? 'A clear view of your college operations, all in one place.' : 'Here is what is happening across your assigned classes today.'}</p></div><button className="primary-button">＋ {role === 'student' ? 'Update profile' : role === 'admin' ? 'Import users' : 'Enter marks'}</button></div>
           {dataNotice && <div className="data-notice">Using preview data: {dataNotice}</div>}
-          <LiveDataSummary role={role} notifications={liveNotifications} analytics={liveAnalytics} />
+          <LiveDataSummary role={role} notifications={liveNotifications} marks={liveMarks} analytics={liveAnalytics} />
           <RoleStats role={role} profileStrength={liveProfileStrength} />
           {role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
         </section>
@@ -139,10 +142,10 @@ function RoleStats({ role, profileStrength }: { role: Role; profileStrength: num
   return <div className="stats-grid">{stats.map(([label, number, change, detail], index) => <div className="stat-card" key={label}><div className="stat-label">{label} <span className={`stat-dot ${['mint', 'purple', 'orange', 'red'][index]}`}></span></div><div className="stat-number">{number}</div><div className={`stat-foot ${change.startsWith('↑') ? 'positive' : change.startsWith('↓') ? 'warning' : 'neutral'}`}>{change} <span>{detail}</span></div></div>)}</div>
 }
 
-function LiveDataSummary({ role, notifications, analytics }: { role: Role; notifications: Array<{ title: string; is_read: boolean }>; analytics: { average_percentage: string | null; top_percentage: string | null; student_count: number } | null }) {
+function LiveDataSummary({ role, notifications, marks, analytics }: { role: Role; notifications: Array<{ title: string; is_read: boolean }>; marks: Array<{ subject_name: string; marks_obtained: string; max_marks: string }>; analytics: { average_percentage: string | null; top_percentage: string | null; student_count: number } | null }) {
   if (role === 'student' && notifications.length) {
     const unreadCount = notifications.filter((notification) => !notification.is_read).length
-    return <div className="live-summary"><span className="live-pulse"></span><strong>{unreadCount} unread update{unreadCount === 1 ? '' : 's'}</strong><span>from your college notifications</span></div>
+    return <div className="live-summary"><span className="live-pulse"></span><strong>{unreadCount} unread update{unreadCount === 1 ? '' : 's'}</strong><span>{marks.length} academic records loaded</span></div>
   }
   if (role === 'teacher' && analytics) {
     return <div className="live-summary"><span className="live-pulse"></span><strong>Live class average {analytics.average_percentage ?? 0}%</strong><span>{analytics.student_count} students · top score {analytics.top_percentage ?? 0}%</span></div>

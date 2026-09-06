@@ -280,6 +280,46 @@ app.get('/api/students/me/notifications', requireAuth, requireRoles('student'), 
   }
 })
 
+app.get('/api/students/me/marks', requireAuth, requireRoles('student'), async (request: AuthRequest, response, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT m.id, m.exam_type, m.marks_obtained, m.max_marks, m.entered_at,
+              s.name AS subject_name, s.code AS subject_code, sem.sem_number,
+              ay.label AS academic_year
+         FROM marks m
+         JOIN students st ON st.id = m.student_id AND st.college_id = $1
+         JOIN subjects s ON s.id = m.subject_id
+         JOIN semesters sem ON sem.id = m.semester_id
+         JOIN academic_years ay ON ay.id = sem.academic_year_id AND ay.college_id = $1
+        WHERE m.student_id = $2
+        ORDER BY ay.label DESC, sem.sem_number DESC, s.name, m.exam_type`,
+      [request.user!.collegeId, request.user!.id],
+    )
+    return response.json({ marks: result.rows })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/students/me/marksheets', requireAuth, requireRoles('student'), async (request: AuthRequest, response, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT ms.id, ms.file_url, ms.uploaded_at, ms.sgpa, ms.cgpa,
+              sem.sem_number, ay.label AS academic_year
+         FROM marksheets ms
+         JOIN students st ON st.id = ms.student_id AND st.college_id = $1
+         JOIN semesters sem ON sem.id = ms.semester_id
+         JOIN academic_years ay ON ay.id = sem.academic_year_id AND ay.college_id = $1
+        WHERE ms.student_id = $2
+        ORDER BY ay.label DESC, sem.sem_number DESC`,
+      [request.user!.collegeId, request.user!.id],
+    )
+    return response.json({ marksheets: result.rows })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.post('/api/students/me/notifications/:notificationId/read', requireAuth, requireRoles('student'), async (request: AuthRequest, response, next) => {
   try {
     const notificationId = z.string().uuid().parse(request.params.notificationId)
