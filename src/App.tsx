@@ -19,7 +19,7 @@ const roleNames: Record<Role, string> = {
 const roleNav: Record<Role, string[]> = {
   student: ['Overview', 'My profile', 'Academic records', 'Notifications'],
   teacher: ['Overview', 'My classes', 'Marks entry', 'Analytics'],
-  admin: ['Overview', 'Users', 'Assignments', 'College analytics'],
+  admin: ['Overview', 'Users', 'Assignments', 'Marksheets', 'College analytics'],
 }
 
 const bars = [74, 82, 61, 88, 69, 79, 92, 76, 84, 70, 87, 80]
@@ -112,7 +112,7 @@ function App() {
           {dataNotice && <div className="data-notice">Using preview data: {dataNotice}</div>}
           <LiveDataSummary role={role} notifications={liveNotifications} marks={liveMarks} analytics={liveAnalytics} />
           <RoleStats role={role} profileStrength={liveProfileStrength} />
-          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={liveAssignments} /> : role === 'admin' && activeNav === 'Users' ? <AdminUsersPage token={session.token} /> : role === 'admin' && activeNav === 'Assignments' ? <AdminAssignmentsPage token={session.token} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
+          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profileStrength={liveProfileStrength} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={liveAssignments} /> : role === 'admin' && activeNav === 'Users' ? <AdminUsersPage token={session.token} /> : role === 'admin' && activeNav === 'Assignments' ? <AdminAssignmentsPage token={session.token} /> : role === 'admin' && activeNav === 'Marksheets' ? <AdminMarksheetsPage token={session.token} /> : <FacultyOverview role={role} bars={bars} assignedClasses={liveClasses ?? assignedClasses} showPast={showPast} setShowPast={setShowPast} setActiveNav={setActiveNav} />}
         </section>
       </main>
     </div>
@@ -217,6 +217,23 @@ function AdminAssignmentsPage({ token }: { token: string }) {
   }
 
   return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>Teaching assignments</h2><p>Control exactly which academic data each teacher can access.</p></div></div><section className="panel assignment-form"><div><h2>Assign a teacher</h2><p>Paste the IDs from your academic directory to create an assignment.</p></div><div className="assignment-fields">{(['teacherId', 'classId', 'subjectId', 'semesterId'] as const).map((field) => <input key={field} value={form[field]} onChange={(event) => setForm((current) => ({ ...current, [field]: event.target.value }))} placeholder={field} aria-label={field} />)}<button className="primary-button" onClick={() => void saveAssignment()}>Save assignment →</button></div>{message && <p className="entry-message">{message}</p>}</section><section className="panel directory-panel"><div className="panel-heading"><div><h2>Assignment history</h2><p>{assignments.length} records · past assignments are preserved</p></div></div><div className="directory-table"><div className="directory-header assignment-grid"><span>Teacher</span><span>Class</span><span>Subject</span><span>Status</span><span></span></div>{assignments.map((assignment) => <div className="directory-row assignment-grid" key={assignment.id}><strong>{assignment.teacher_name}</strong><span>{assignment.class_name}</span><span>{assignment.subject_name} · Sem {assignment.sem_number}</span><span className={assignment.status === 'active' ? 'status-active' : 'status-inactive'}>{assignment.status}</span><button className="archive-button" disabled={assignment.status !== 'active'} onClick={() => void archiveAssignment(assignment.id)}>Archive</button></div>)}</div></section></div>
+}
+
+function AdminMarksheetsPage({ token }: { token: string }) {
+  const [form, setForm] = useState({ studentId: '', semesterId: '', fileUrl: '', sgpa: '', cgpa: '' })
+  const [message, setMessage] = useState('')
+
+  async function registerMarksheet() {
+    try {
+      await apiFetch('/api/admin/marksheets', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, sgpa: form.sgpa ? Number(form.sgpa) : undefined, cgpa: form.cgpa ? Number(form.cgpa) : undefined }) })
+      setMessage('Official marksheet registered successfully and is now available to the student.')
+      setForm({ studentId: '', semesterId: '', fileUrl: '', sgpa: '', cgpa: '' })
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to register marksheet')
+    }
+  }
+
+  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>Official marksheets</h2><p>Publish verified semester results to student academic records.</p></div></div><section className="panel import-panel"><div><h2>Register a marksheet</h2><p>Upload the file to storage first, then register its secure URL here.</p></div><div className="marksheet-fields"><input value={form.studentId} onChange={(event) => setForm((current) => ({ ...current, studentId: event.target.value }))} placeholder="Student ID" aria-label="Student ID" /><input value={form.semesterId} onChange={(event) => setForm((current) => ({ ...current, semesterId: event.target.value }))} placeholder="Semester ID" aria-label="Semester ID" /><input value={form.fileUrl} onChange={(event) => setForm((current) => ({ ...current, fileUrl: event.target.value }))} placeholder="Secure file URL" aria-label="Secure file URL" /><input type="number" min="0" max="10" step="0.01" value={form.sgpa} onChange={(event) => setForm((current) => ({ ...current, sgpa: event.target.value }))} placeholder="SGPA" aria-label="SGPA" /><input type="number" min="0" max="10" step="0.01" value={form.cgpa} onChange={(event) => setForm((current) => ({ ...current, cgpa: event.target.value }))} placeholder="CGPA" aria-label="CGPA" /></div><button className="primary-button" onClick={() => void registerMarksheet()}>Publish marksheet →</button>{message && <p className="entry-message">{message}</p>}</section></div>
 }
 
 function TeacherMarksEntry({ token, assignments }: { token: string; assignments: Array<{ class_name: string; subject_name: string; class_id: string; subject_id: string; semester_id: string }> }) {
