@@ -117,6 +117,16 @@ const assignmentSchema = z.object({
   semesterId: z.string().uuid(),
 })
 
+const bulkUsersSchema = z.object({
+  users: z.array(z.object({
+    email: z.string().email(),
+    fullName: z.string().min(2).max(150),
+    role: z.enum(['teacher', 'student']),
+    password: z.string().min(8),
+    rollNumber: z.string().min(2).max(50).optional(),
+  })).min(1).max(1000),
+})
+
 const aiQuerySchema = z.object({
   query: z.string().min(2).max(1000),
   classId: z.string().uuid().optional(),
@@ -374,6 +384,58 @@ app.post('/api/admin/notifications', requireAuth, requireRoles('super_admin'), a
       [request.user!.collegeId, input.title, input.body ?? null, input.targetRole ?? 'all', input.targetClassId ?? null, input.fileUrl ?? null, request.user!.id],
     )
     return response.status(201).json({ notification: result.rows[0] })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/admin/users/bulk-import', requireAuth, requireRoles('super_admin'), async (request: AuthRequest, response, next) => {
+  const client = await pool.connect()
+  try {
+    const input = bulkUsersSchema.parse(request.body)
+    if (input.users.some((user) => user.role === 'student' && !user.rollNumber)) {
+      return response.status(400).json({ error: 'Every student import row requires a rollNumber' })
+    }
+
+    await client.query('BEGIN')
+    const imported: Array<{ email: string; role: string; userId: string }> = []
+    for (const user of input.users) {
+      const passwordHash = await bcrypt.hash(user.password, 12)
+      const userResult = await client.query<{ id: string }>(
+        `INSERT INTO users (college_id, email, password_hash, role, full_name, must_reset_password)
+         VALUES ($1, lower($2), $3, $4, $5, true)
+         RETURNING id`,
+        [request.user!.collegeId, user.email, passwordHash, user.role, user.fullName],
+      )
+      if (user.role === 'student') {
+        await client.query(
+          `INSERT INTO students (id, college_id, roll_number)
+           VALUES ($1, $2, $3)`,
+          [userResult.rows[0].id, request.user!.collegeId, user.rollNumber],
+        )
+      }
+      imported.push({ email: user.email.toLowerCase(), role: user.role, userId: userResult.rows[0].id })
+    }
+    await client.query('COMMIT')
+    return response.status(201).json({ imported: imported.length, users: imported })
+  } catch (error) {
+    await client.query('ROLLBACK')
+    next(error)
+  } finally {
+    client.release()
+  }
+})
+
+app.get('/api/admin/users', requireAuth, requireRoles('super_admin'), async (request: AuthRequest, response, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, email, full_name, role, is_active, must_reset_password, created_at, last_login
+         FROM users
+        WHERE college_id = $1
+        ORDER BY role, full_name`,
+      [request.user!.collegeId],
+    )
+    return response.json({ users: result.rows })
   } catch (error) {
     next(error)
   }
