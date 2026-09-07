@@ -293,6 +293,9 @@
 .performance-bar i { display: block; height: 11px; margin-top: -20px; border-radius: 8px; background: var(--accent); box-shadow: 0 3px 7px rgb(39 107 94 / 18%); }
 .performance-bar i.top-score-bar { background: var(--warning); }
 .performance-note { margin: 0; color: var(--ink-500); font-size: 10px; line-height: 1.5; }
+.records-page .record-kpi:first-child { background: var(--accent); border-color: var(--accent); box-shadow: 0 14px 28px rgb(39 107 94 / 14%); }
+.records-page .record-kpi:first-child span, .records-page .record-kpi:first-child small { color: rgb(255 255 255 / 74%); }
+.records-page .record-kpi:first-child strong { color: #fff; font-size: 42px; }
 .class-0 { background: #e1f1ed; color: #2f7a6b; }
 .class-1 { background: #f6eadf; color: #ad7049; }
 .class-2 { background: #e9edf7; color: #5d729d; }
