@@ -310,3 +310,34 @@
   .hero-stat .stat-number { font-size: 44px; }
   .performance-bar > div { align-items: start; flex-direction: column; gap: 3px; }
 }
+
+/* Shared workspace polish: forest green with one warm secondary accent. */
+:root { --accent-secondary: #d4875f; --warning: var(--accent-secondary); }
+.app-shell .panel, .app-shell .stat-card, .app-shell .record-kpi { transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.app-shell .panel:hover, .app-shell .stat-card:hover, .app-shell .record-kpi:hover { border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); box-shadow: 0 12px 28px rgb(24 37 34 / 8%); }
+.app-shell .class-row, .app-shell .marks-row, .app-shell .marksheet-row, .app-shell .activity-row, .app-shell .notification-row, .app-shell .directory-row { transition: background-color .16s ease, padding-left .16s ease; }
+.app-shell .class-row:hover, .app-shell .marks-row:hover, .app-shell .marksheet-row:hover, .app-shell .activity-row:hover, .app-shell .notification-row:hover, .app-shell .directory-row:hover { background: var(--surface-muted); padding-left: 8px; }
+.app-shell .primary-button, .app-shell .select-button, .app-shell .text-button, .app-shell .archive-button { transition: background-color .16s ease, color .16s ease, border-color .16s ease, transform .16s ease; }
+.app-shell .select-button:hover { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-soft); }
+.app-shell .text-button:hover { color: var(--accent-strong); transform: translateX(2px); }
+.app-shell .archive-button:hover { background: #fbe7de; color: #a95f41; }
+.app-shell .records-page-heading, .app-shell .admin-users-page > .records-page-heading, .app-shell .marks-entry-page > .records-page-heading, .app-shell .analytics-page > .records-page-heading { padding: 4px 0 18px 18px; border-left: 4px solid var(--accent); }
+.app-shell .records-page-heading h2 { font-size: 28px; }
+.app-shell .record-kpi strong { font-size: 30px; }
+.app-shell .analytics-hero { background: var(--accent); border-color: var(--accent); box-shadow: 0 14px 28px rgb(39 107 94 / 16%); }
+.app-shell .analytics-hero span, .app-shell .analytics-hero small, .app-shell .analytics-hero strong { color: #fff; }
+.app-shell .analytics-hero strong { font-size: 44px; }
+.app-shell .analytics-composition { background: linear-gradient(135deg, var(--accent-soft), var(--surface)); }
+.app-shell .status-active, .app-shell .status-inactive, .app-shell .role-pill, .app-shell .notification-count, .app-shell .marks-row i { display: inline-flex; width: max-content; align-items: center; border-radius: 999px; padding: 4px 8px; font-size: 9px; font-weight: 700; line-height: 1; }
+.app-shell .status-active { background: var(--accent-soft); color: var(--accent-strong); }
+.app-shell .status-inactive { background: #fbe7de; color: #a95f41; }
+.app-shell .role-pill.student { background: #fbe7de; color: #a95f41; }
+.app-shell .notification-count { background: var(--accent-soft); color: var(--accent-strong); }
+.app-shell .notification-row.unread { background: #fffaf7; }
+.app-shell .notification-row.unread .notification-status { background: #fbe7de; color: #a95f41; }
+.app-shell .marks-row i { min-width: 45px; justify-content: center; background: var(--accent-soft); color: var(--accent-strong); }
+.app-shell .marks-row i::first-letter { color: var(--accent-secondary); }
+.app-shell .class-row.selected { background: var(--accent-soft); border-radius: 6px; padding-left: 8px; }
+.app-shell .analytics-tabs button:hover, .app-shell .suggestion-row button:hover { border-color: var(--accent); color: var(--accent-strong); transform: translateY(-1px); }
+.app-shell .entry-row input:hover, .app-shell input:hover, .app-shell select:hover, .app-shell textarea:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+@media (max-width: 620px) { .app-shell .records-page-heading, .app-shell .admin-users-page > .records-page-heading, .app-shell .marks-entry-page > .records-page-heading, .app-shell .analytics-page > .records-page-heading { padding-left: 12px; }.app-shell .records-page-heading h2 { font-size: 23px; }.app-shell .analytics-hero strong { font-size: 36px; } }
