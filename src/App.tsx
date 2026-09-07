@@ -219,6 +219,8 @@ function AdminUsersPage({ token }: { token: string }) {
   const [rows, setRows] = useState('')
   const [passwordForm, setPasswordForm] = useState({ email: '', newPassword: '' })
   const [message, setMessage] = useState<string>('')
+  const [isImporting, setIsImporting] = useState(false)
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -233,6 +235,7 @@ function AdminUsersPage({ token }: { token: string }) {
   }, [token])
 
   async function importUsers() {
+    setIsImporting(true)
     const importedUsers = rows.split('\n').map((row) => row.split(',').map((value) => value.trim())).filter((row) => row.length >= 4 && row[0])
     try {
       const result = await apiFetch<{ imported: number }>('/api/admin/users/bulk-import', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ users: importedUsers.map(([email, fullName, password, role, rollNumber]) => ({ email, fullName, password, role, ...(role === 'student' ? { rollNumber } : {}) })) }) })
@@ -241,20 +244,25 @@ function AdminUsersPage({ token }: { token: string }) {
       setUsers(refreshed.users)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Import failed')
+    } finally {
+      setIsImporting(false)
     }
   }
 
   async function changePassword() {
+    setIsChangingPassword(true)
     try {
       const result = await apiFetch<{ message: string }>('/api/admin/users/reset-password', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(passwordForm) })
       setMessage(result.message)
       setPasswordForm({ email: '', newPassword: '' })
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Password change failed')
+    } finally {
+      setIsChangingPassword(false)
     }
   }
 
-  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>People directory</h2><p>Onboard faculty and students into your college workspace.</p></div><button className="primary-button" onClick={() => void importUsers()}>Import accounts →</button></div><section className="panel import-panel"><div><h2>Bulk onboarding</h2><p>One account per line: email, full name, temporary password, role, optional student roll number.</p></div><textarea value={rows} onChange={(event) => setRows(event.target.value)} placeholder="email, full name, temporary password, teacher or student, optional roll number" aria-label="Bulk user rows" />{message && <p className="entry-message">{message}</p>}</section><section className="panel import-panel"><div><h2>Change account password</h2><p>The user must choose a new password after signing in.</p></div><input type="email" value={passwordForm.email} onChange={(event) => setPasswordForm((current) => ({ ...current, email: event.target.value }))} placeholder="Account email" aria-label="Account email" /><input type="password" minLength={8} value={passwordForm.newPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))} placeholder="New temporary password" aria-label="New temporary password" /><button className="primary-button" onClick={() => void changePassword()}>Change password →</button></section><section className="panel directory-panel"><div className="panel-heading"><div><h2>Current accounts</h2><p>{users.length} accounts in this college</p></div></div><div className="directory-table"><div className="directory-header"><span>Name</span><span>Email</span><span>Role</span><span>Status</span></div>{users.map((user) => <div className="directory-row" key={user.id}><strong>{user.full_name}</strong><span>{user.email}</span><span className={`role-pill ${user.role}`}>{user.role.replace('_', ' ')}</span><span className={user.is_active ? 'status-active' : 'status-inactive'}>{user.is_active ? 'Active' : 'Inactive'}</span></div>)}</div></section></div>
+  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>People directory</h2><p>Onboard faculty and students into your college workspace.</p></div><button className="primary-button" disabled={isImporting} onClick={() => void importUsers()}>{isImporting ? 'Importing...' : 'Import accounts →'}</button></div><section className="panel import-panel"><div><h2>Bulk onboarding</h2><p>One account per line: email, full name, temporary password, role, optional student roll number.</p></div><textarea value={rows} onChange={(event) => setRows(event.target.value)} placeholder="email, full name, temporary password, teacher or student, optional roll number" aria-label="Bulk user rows" />{message && <p className="entry-message">{message}</p>}</section><section className="panel import-panel"><div><h2>Change account password</h2><p>The user must choose a new password after signing in.</p></div><input type="email" value={passwordForm.email} onChange={(event) => setPasswordForm((current) => ({ ...current, email: event.target.value }))} placeholder="Account email" aria-label="Account email" /><input type="password" minLength={8} value={passwordForm.newPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))} placeholder="New temporary password" aria-label="New temporary password" /><button className="primary-button" disabled={isChangingPassword} onClick={() => void changePassword()}>{isChangingPassword ? 'Changing...' : 'Change password →'}</button></section><section className="panel directory-panel"><div className="panel-heading"><div><h2>Current accounts</h2><p>{users.length} accounts in this college</p></div></div><div className="directory-table"><div className="directory-header"><span>Name</span><span>Email</span><span>Role</span><span>Status</span></div>{users.map((user) => <div className="directory-row" key={user.id}><strong>{user.full_name}</strong><span>{user.email}</span><span className={`role-pill ${user.role}`}>{user.role.replace('_', ' ')}</span><span className={user.is_active ? 'status-active' : 'status-inactive'}>{user.is_active ? 'Active' : 'Inactive'}</span></div>)}</div></section></div>
 }
 
 type AdminAssignment = { id: string; teacher_name: string; class_name: string; subject_name: string; sem_number: number; status: string }
@@ -269,6 +277,8 @@ function AdminAssignmentsPage({ token }: { token: string }) {
   const [form, setForm] = useState({ teacherId: '', classId: '', subjectId: '', semesterId: '' })
   const [catalog, setCatalog] = useState<{ teachers: Array<{ id: string; full_name: string; email: string }>; classes: Array<{ id: string; name: string; year: number; section: string | null; department_name: string }>; subjects: Array<{ id: string; name: string; code: string | null; department_name: string }>; semesters: Array<{ id: string; sem_number: number; academic_year: string }> }>({ teachers: [], classes: [], subjects: [], semesters: [] })
   const [message, setMessage] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [archivingId, setArchivingId] = useState('')
 
   async function loadAssignments() {
     setAssignments(await fetchAdminAssignments(token))
@@ -286,59 +296,73 @@ function AdminAssignmentsPage({ token }: { token: string }) {
       setMessage('Select a teacher, class, subject, and semester before saving.')
       return
     }
+    setIsSaving(true)
     try {
       await apiFetch('/api/admin/assignments', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
       setMessage('Assignment saved and teacher access updated.')
       await loadAssignments()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to save assignment')
+    } finally {
+      setIsSaving(false)
     }
   }
 
   async function archiveAssignment(id: string) {
+    setArchivingId(id)
     try {
       await apiFetch(`/api/admin/assignments/${id}`, token, { method: 'DELETE' })
       await loadAssignments()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to archive assignment')
+    } finally {
+      setArchivingId('')
     }
   }
 
-  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>Teaching assignments</h2><p>Control exactly which academic data each teacher can access.</p></div></div><section className="panel assignment-form"><div><h2>Assign a teacher</h2><p>Choose records from this college catalog. Past assignments are archived, never deleted.</p></div><div className="assignment-fields"><select value={form.teacherId} onChange={(event) => setForm((current) => ({ ...current, teacherId: event.target.value }))} aria-label="Teacher"><option value="">Select teacher</option>{catalog.teachers.map((teacher) => <option value={teacher.id} key={teacher.id}>{teacher.full_name} · {teacher.email}</option>)}</select><select value={form.classId} onChange={(event) => setForm((current) => ({ ...current, classId: event.target.value }))} aria-label="Class"><option value="">Select class</option>{catalog.classes.map((item) => <option value={item.id} key={item.id}>{item.department_name} · {item.name}</option>)}</select><select value={form.subjectId} onChange={(event) => setForm((current) => ({ ...current, subjectId: event.target.value }))} aria-label="Subject"><option value="">Select subject</option>{catalog.subjects.map((item) => <option value={item.id} key={item.id}>{item.department_name} · {item.name} {item.code ? `(${item.code})` : ''}</option>)}</select><select value={form.semesterId} onChange={(event) => setForm((current) => ({ ...current, semesterId: event.target.value }))} aria-label="Semester"><option value="">Select semester</option>{catalog.semesters.map((item) => <option value={item.id} key={item.id}>{item.academic_year} · Semester {item.sem_number}</option>)}</select><button className="primary-button" onClick={() => void saveAssignment()}>Save assignment →</button></div>{message && <p className="entry-message">{message}</p>}</section><section className="panel directory-panel"><div className="panel-heading"><div><h2>Assignment history</h2><p>{assignments.length} records · past assignments are preserved</p></div></div><div className="directory-table"><div className="directory-header assignment-grid"><span>Teacher</span><span>Class</span><span>Subject</span><span>Status</span><span></span></div>{assignments.map((assignment) => <div className="directory-row assignment-grid" key={assignment.id}><strong>{assignment.teacher_name}</strong><span>{assignment.class_name}</span><span>{assignment.subject_name} · Sem {assignment.sem_number}</span><span className={assignment.status === 'active' ? 'status-active' : 'status-inactive'}>{assignment.status}</span><button className="archive-button" disabled={assignment.status !== 'active'} onClick={() => void archiveAssignment(assignment.id)}>Archive</button></div>)}</div></section></div>
+  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>Teaching assignments</h2><p>Control exactly which academic data each teacher can access.</p></div></div><section className="panel assignment-form"><div><h2>Assign a teacher</h2><p>Choose records from this college catalog. Past assignments are archived, never deleted.</p></div><div className="assignment-fields"><select value={form.teacherId} onChange={(event) => setForm((current) => ({ ...current, teacherId: event.target.value }))} aria-label="Teacher"><option value="">Select teacher</option>{catalog.teachers.map((teacher) => <option value={teacher.id} key={teacher.id}>{teacher.full_name} · {teacher.email}</option>)}</select><select value={form.classId} onChange={(event) => setForm((current) => ({ ...current, classId: event.target.value }))} aria-label="Class"><option value="">Select class</option>{catalog.classes.map((item) => <option value={item.id} key={item.id}>{item.department_name} · {item.name}</option>)}</select><select value={form.subjectId} onChange={(event) => setForm((current) => ({ ...current, subjectId: event.target.value }))} aria-label="Subject"><option value="">Select subject</option>{catalog.subjects.map((item) => <option value={item.id} key={item.id}>{item.department_name} · {item.name} {item.code ? `(${item.code})` : ''}</option>)}</select><select value={form.semesterId} onChange={(event) => setForm((current) => ({ ...current, semesterId: event.target.value }))} aria-label="Semester"><option value="">Select semester</option>{catalog.semesters.map((item) => <option value={item.id} key={item.id}>{item.academic_year} · Semester {item.sem_number}</option>)}</select><button className="primary-button" disabled={isSaving} onClick={() => void saveAssignment()}>{isSaving ? 'Saving...' : 'Save assignment →'}</button></div>{message && <p className="entry-message">{message}</p>}</section><section className="panel directory-panel"><div className="panel-heading"><div><h2>Assignment history</h2><p>{assignments.length} records · past assignments are preserved</p></div></div><div className="directory-table"><div className="directory-header assignment-grid"><span>Teacher</span><span>Class</span><span>Subject</span><span>Status</span><span></span></div>{assignments.map((assignment) => <div className="directory-row assignment-grid" key={assignment.id}><strong>{assignment.teacher_name}</strong><span>{assignment.class_name}</span><span>{assignment.subject_name} · Sem {assignment.sem_number}</span><span className={assignment.status === 'active' ? 'status-active' : 'status-inactive'}>{assignment.status}</span><button className="archive-button" disabled={assignment.status !== 'active' || Boolean(archivingId)} onClick={() => void archiveAssignment(assignment.id)}>{archivingId === assignment.id ? 'Archiving...' : 'Archive'}</button></div>)}</div></section></div>
 }
 
 function AdminMarksheetsPage({ token }: { token: string }) {
   const [form, setForm] = useState({ studentId: '', semesterId: '', fileUrl: '', sgpa: '', cgpa: '' })
   const [message, setMessage] = useState('')
+  const [isPublishing, setIsPublishing] = useState(false)
 
   async function registerMarksheet() {
+    setIsPublishing(true)
     try {
       await apiFetch('/api/admin/marksheets', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, sgpa: form.sgpa ? Number(form.sgpa) : undefined, cgpa: form.cgpa ? Number(form.cgpa) : undefined }) })
       setMessage('Official marksheet registered successfully and is now available to the student.')
       setForm({ studentId: '', semesterId: '', fileUrl: '', sgpa: '', cgpa: '' })
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to register marksheet')
+    } finally {
+      setIsPublishing(false)
     }
   }
 
-  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>Official marksheets</h2><p>Publish verified semester results to student academic records.</p></div></div><section className="panel import-panel"><div><h2>Register a marksheet</h2><p>Upload the file to storage first, then register its secure URL here.</p></div><div className="marksheet-fields"><input value={form.studentId} onChange={(event) => setForm((current) => ({ ...current, studentId: event.target.value }))} placeholder="Student ID" aria-label="Student ID" /><input value={form.semesterId} onChange={(event) => setForm((current) => ({ ...current, semesterId: event.target.value }))} placeholder="Semester ID" aria-label="Semester ID" /><input value={form.fileUrl} onChange={(event) => setForm((current) => ({ ...current, fileUrl: event.target.value }))} placeholder="Secure file URL" aria-label="Secure file URL" /><input type="number" min="0" max="10" step="0.01" value={form.sgpa} onChange={(event) => setForm((current) => ({ ...current, sgpa: event.target.value }))} placeholder="SGPA" aria-label="SGPA" /><input type="number" min="0" max="10" step="0.01" value={form.cgpa} onChange={(event) => setForm((current) => ({ ...current, cgpa: event.target.value }))} placeholder="CGPA" aria-label="CGPA" /></div><button className="primary-button" onClick={() => void registerMarksheet()}>Publish marksheet →</button>{message && <p className="entry-message">{message}</p>}</section></div>
+  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>Official marksheets</h2><p>Publish verified semester results to student academic records.</p></div></div><section className="panel import-panel"><div><h2>Register a marksheet</h2><p>Upload the file to storage first, then register its secure URL here.</p></div><div className="marksheet-fields"><input value={form.studentId} onChange={(event) => setForm((current) => ({ ...current, studentId: event.target.value }))} placeholder="Student ID" aria-label="Student ID" /><input value={form.semesterId} onChange={(event) => setForm((current) => ({ ...current, semesterId: event.target.value }))} placeholder="Semester ID" aria-label="Semester ID" /><input value={form.fileUrl} onChange={(event) => setForm((current) => ({ ...current, fileUrl: event.target.value }))} placeholder="Secure file URL" aria-label="Secure file URL" /><input type="number" min="0" max="10" step="0.01" value={form.sgpa} onChange={(event) => setForm((current) => ({ ...current, sgpa: event.target.value }))} placeholder="SGPA" aria-label="SGPA" /><input type="number" min="0" max="10" step="0.01" value={form.cgpa} onChange={(event) => setForm((current) => ({ ...current, cgpa: event.target.value }))} placeholder="CGPA" aria-label="CGPA" /></div><button className="primary-button" disabled={isPublishing} onClick={() => void registerMarksheet()}>{isPublishing ? 'Publishing...' : 'Publish marksheet →'}</button>{message && <p className="entry-message">{message}</p>}</section></div>
 }
 
 function AdminNotificationsPage({ token }: { token: string }) {
   const [form, setForm] = useState({ title: '', body: '', targetRole: 'all', targetClassId: '', fileUrl: '' })
   const [message, setMessage] = useState('')
+  const [isPublishing, setIsPublishing] = useState(false)
 
   async function publishNotification() {
+    setIsPublishing(true)
     try {
       await apiFetch('/api/admin/notifications', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, targetClassId: form.targetClassId || undefined, fileUrl: form.fileUrl || undefined }) })
       setMessage('Notification published to the selected audience.')
       setForm({ title: '', body: '', targetRole: 'all', targetClassId: '', fileUrl: '' })
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to publish notification')
+    } finally {
+      setIsPublishing(false)
     }
   }
 
-  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>College communications</h2><p>Send timely, targeted updates to students and faculty.</p></div></div><section className="panel notification-composer"><div><h2>Compose notification</h2><p>Choose a role, optionally narrow it to a class, and publish.</p></div><input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Notification title" aria-label="Notification title" /><textarea value={form.body} onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))} placeholder="Write the announcement..." aria-label="Notification body" /><div className="notification-options"><select value={form.targetRole} onChange={(event) => setForm((current) => ({ ...current, targetRole: event.target.value }))} aria-label="Target role"><option value="all">Everyone</option><option value="students">Students</option><option value="teachers">Teachers</option></select><input value={form.targetClassId} onChange={(event) => setForm((current) => ({ ...current, targetClassId: event.target.value }))} placeholder="Optional class ID" aria-label="Optional class ID" /><input value={form.fileUrl} onChange={(event) => setForm((current) => ({ ...current, fileUrl: event.target.value }))} placeholder="Optional attachment URL" aria-label="Optional attachment URL" /></div><button className="primary-button" onClick={() => void publishNotification()}>Publish notification →</button>{message && <p className="entry-message">{message}</p>}</section></div>
+  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>College communications</h2><p>Send timely, targeted updates to students and faculty.</p></div></div><section className="panel notification-composer"><div><h2>Compose notification</h2><p>Choose a role, optionally narrow it to a class, and publish.</p></div><input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Notification title" aria-label="Notification title" /><textarea value={form.body} onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))} placeholder="Write the announcement..." aria-label="Notification body" /><div className="notification-options"><select value={form.targetRole} onChange={(event) => setForm((current) => ({ ...current, targetRole: event.target.value }))} aria-label="Target role"><option value="all">Everyone</option><option value="students">Students</option><option value="teachers">Teachers</option></select><input value={form.targetClassId} onChange={(event) => setForm((current) => ({ ...current, targetClassId: event.target.value }))} placeholder="Optional class ID" aria-label="Optional class ID" /><input value={form.fileUrl} onChange={(event) => setForm((current) => ({ ...current, fileUrl: event.target.value }))} placeholder="Optional attachment URL" aria-label="Optional attachment URL" /></div><button className="primary-button" disabled={isPublishing} onClick={() => void publishNotification()}>{isPublishing ? 'Publishing...' : 'Publish notification →'}</button>{message && <p className="entry-message">{message}</p>}</section></div>
 }
 
 function TeacherAssignmentsPage({ assignments, selectedAssignmentId, onSelect }: { assignments: TeacherAssignment[]; selectedAssignmentId: string; onSelect: (id: string) => void }) {
@@ -353,6 +377,7 @@ function TeacherMarksEntry({ token, assignments }: { token: string; assignments:
   const [marks, setMarks] = useState<Record<string, string>>({})
   const [examType, setExamType] = useState('midterm')
   const [message, setMessage] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
   const assignment = assignments[assignmentIndex]
 
   useEffect(() => {
@@ -376,16 +401,19 @@ function TeacherMarksEntry({ token, assignments }: { token: string; assignments:
       setMessage('Enter marks from 0 to 100 for at least one student.')
       return
     }
+    setIsSaving(true)
     try {
       const result = await apiFetch<{ saved: number }>('/api/teacher/marks', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId: assignment.class_id, subjectId: assignment.subject_id, semesterId: assignment.semester_id, examType, marks: entries }) })
       setMessage(`${result.saved} mark${result.saved === 1 ? '' : 's'} saved successfully.`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to save marks')
+    } finally {
+      setIsSaving(false)
     }
   }
 
   if (!assignment) return <div className="empty-workspace"><p className="eyebrow">Marks entry</p><h2>No active assignments yet.</h2><p>Your college admin needs to assign a class and subject before marks can be entered.</p></div>
-  return <div className="marks-entry-page"><div className="records-page-heading"><div><p className="eyebrow">Marks entry</p><h2>{assignment.class_name} · {assignment.subject_name}</h2><p>Only students inside your assigned class are available here.</p></div><div className="marks-entry-actions"><select value={assignmentIndex} onChange={(event) => setAssignmentIndex(Number(event.target.value))}>{assignments.map((item, index) => <option value={index} key={`${item.class_id}-${item.subject_id}`}>{item.class_name} · {item.subject_name}</option>)}</select><select value={examType} onChange={(event) => setExamType(event.target.value)}><option value="internal1">Internal 1</option><option value="internal2">Internal 2</option><option value="midterm">Midterm</option><option value="final">Final</option><option value="assignment">Assignment</option><option value="practical">Practical</option></select></div></div><section className="panel entry-panel"><div className="entry-toolbar"><span>{students.length} students in scope</span><button className="primary-button" onClick={() => void submitMarks()}>Save marks →</button></div>{message && <p className="entry-message">{message}</p>}<div className="entry-table"><div className="entry-header"><span>Student</span><span>Roll number</span><span>Marks / 100</span></div>{students.length ? students.map((student) => <div className="entry-row" key={student.id}><span><strong>{student.full_name}</strong></span><span>{student.roll_number}</span><input type="number" min="0" max="100" value={marks[student.id] ?? ''} onChange={(event) => setMarks((current) => ({ ...current, [student.id]: event.target.value }))} placeholder="0" /></div>) : <div className="empty-records">No students returned for this assignment.</div>}</div></section></div>
+  return <div className="marks-entry-page"><div className="records-page-heading"><div><p className="eyebrow">Marks entry</p><h2>{assignment.class_name} · {assignment.subject_name}</h2><p>Only students inside your assigned class are available here.</p></div><div className="marks-entry-actions"><select value={assignmentIndex} onChange={(event) => setAssignmentIndex(Number(event.target.value))}>{assignments.map((item, index) => <option value={index} key={`${item.class_id}-${item.subject_id}`}>{item.class_name} · {item.subject_name}</option>)}</select><select value={examType} onChange={(event) => setExamType(event.target.value)}><option value="internal1">Internal 1</option><option value="internal2">Internal 2</option><option value="midterm">Midterm</option><option value="final">Final</option><option value="assignment">Assignment</option><option value="practical">Practical</option></select></div></div><section className="panel entry-panel"><div className="entry-toolbar"><span>{students.length} students in scope</span><button className="primary-button" disabled={isSaving} onClick={() => void submitMarks()}>{isSaving ? 'Saving...' : 'Save marks →'}</button></div>{message && <p className="entry-message">{message}</p>}<div className="entry-table"><div className="entry-header"><span>Student</span><span>Roll number</span><span>Marks / 100</span></div>{students.length ? students.map((student) => <div className="entry-row" key={student.id}><span><strong>{student.full_name}</strong></span><span>{student.roll_number}</span><input type="number" min="0" max="100" value={marks[student.id] ?? ''} onChange={(event) => setMarks((current) => ({ ...current, [student.id]: event.target.value }))} placeholder="0" /></div>) : <div className="empty-records">No students returned for this assignment.</div>}</div></section></div>
 }
 
 // oxlint-disable no-unreachable, react-hooks/rules-of-hooks
@@ -559,24 +587,32 @@ function StudentRecordsPage({ marks, marksheets }: { marks: Array<{ subject_name
 function StudentNotificationsPage({ token, notifications: initialNotifications }: { token: string; notifications: Array<{ id: string; title: string; body: string | null; created_at: string; is_read: boolean }> }) {
   const [notifications, setNotifications] = useState(initialNotifications)
   const [message, setMessage] = useState('')
+  const [markingReadId, setMarkingReadId] = useState('')
+  const [isMarkingAllRead, setIsMarkingAllRead] = useState(false)
   async function markRead(id: string) {
+    setMarkingReadId(id)
     try {
       await apiFetch(`/api/students/me/notifications/${id}/read`, token, { method: 'POST' })
       setNotifications((current) => current.map((notification) => notification.id === id ? { ...notification, is_read: true } : notification))
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to mark notification as read')
+    } finally {
+      setMarkingReadId('')
     }
   }
   async function markAllRead() {
+    setIsMarkingAllRead(true)
     try {
       await apiFetch('/api/students/me/notifications/read-all', token, { method: 'POST' })
       setNotifications((current) => current.map((notification) => ({ ...notification, is_read: true })))
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to mark notifications as read')
+    } finally {
+      setIsMarkingAllRead(false)
     }
   }
   const unreadCount = notifications.filter((notification) => !notification.is_read).length
-  return <div className="notifications-page"><div className="records-page-heading"><div><p className="eyebrow">Student inbox</p><h2>College notifications</h2><p>Stay current with announcements for your role and class.</p></div><div className="notification-heading-actions"><span className="notification-count">{unreadCount} unread</span>{unreadCount > 0 && <button className="text-button" onClick={() => void markAllRead()}>Mark all read →</button>}</div></div>{message && <p className="data-notice">{message}</p>}<section className="panel notification-list">{notifications.length ? notifications.map((notification) => <article className={notification.is_read ? 'notification-row' : 'notification-row unread'} key={notification.id}><div className="notification-status">{notification.is_read ? '✓' : '!'}</div><div><h3>{notification.title}</h3><p>{notification.body ?? 'College announcement'}</p><time>{new Date(notification.created_at).toLocaleDateString()}</time></div>{!notification.is_read && <button onClick={() => void markRead(notification.id)}>Mark read</button>}</article>) : <div className="empty-records">You are all caught up. New college updates will appear here.</div>}</section></div>
+  return <div className="notifications-page"><div className="records-page-heading"><div><p className="eyebrow">Student inbox</p><h2>College notifications</h2><p>Stay current with announcements for your role and class.</p></div><div className="notification-heading-actions"><span className="notification-count">{unreadCount} unread</span>{unreadCount > 0 && <button className="text-button" disabled={isMarkingAllRead} onClick={() => void markAllRead()}>{isMarkingAllRead ? 'Updating...' : 'Mark all read →'}</button>}</div></div>{message && <p className="data-notice">{message}</p>}<section className="panel notification-list">{notifications.length ? notifications.map((notification) => <article className={notification.is_read ? 'notification-row' : 'notification-row unread'} key={notification.id}><div className="notification-status">{notification.is_read ? '✓' : '!'}</div><div><h3>{notification.title}</h3><p>{notification.body ?? 'College announcement'}</p><time>{new Date(notification.created_at).toLocaleDateString()}</time></div>{!notification.is_read && <button disabled={Boolean(markingReadId)} onClick={() => void markRead(notification.id)}>{markingReadId === notification.id ? 'Updating...' : 'Mark read'}</button>}</article>) : <div className="empty-records">You are all caught up. New college updates will appear here.</div>}</section></div>
 }
 
 function LiveDataSummary({ role, notifications, marks, analytics }: { role: Role; notifications: Array<{ title: string; is_read: boolean }>; marks: Array<{ subject_name: string; marks_obtained: string; max_marks: string }>; analytics: { average_percentage: string | null; top_percentage: string | null; student_count: number } | null }) {
@@ -594,15 +630,19 @@ function StudentProfilePage({ token, profile, onSaved }: { token: string; profil
   const [form, setForm] = useState({ profilePhotoUrl: profile?.profile_photo_url ?? '', linkedinUrl: profile?.linkedin_url ?? '', githubUrl: profile?.github_url ?? '', bio: profile?.bio ?? '' })
   const [message, setMessage] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
   const [documents, setDocuments] = useState<Array<{ id: string; doc_type: string; file_name: string | null; parsed_headings: Array<{ heading: string; content: string }> | null; status: string }>>([])
   useEffect(() => { void apiFetch<{ documents: typeof documents }>('/api/students/me/documents', token).then((result) => setDocuments(result.documents)).catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'Unable to load documents')) }, [token])
   async function saveProfile() {
+    setIsSaving(true)
     try {
       const result = await apiFetch<{ profile: typeof profile }>('/api/students/me', token, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
       if (result.profile) onSaved({ ...result.profile, full_name: profile?.full_name ?? '' })
       setMessage('Profile saved.')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to save profile')
+    } finally {
+      setIsSaving(false)
     }
   }
   async function uploadDocument(file: File, docType: 'photo' | 'resume_pdf' | 'resume_docx') {
@@ -623,7 +663,7 @@ function StudentProfilePage({ token, profile, onSaved }: { token: string; profil
       setUploading(false)
     }
   }
-  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Your profile</p><h2>{profile?.full_name ?? 'Student profile'}</h2><p>Links and bio are saved to your college record.</p></div></div><section className="panel import-panel"><div><h2>Profile details</h2><p>Links and bio are saved to your college record.</p></div><input value={form.profilePhotoUrl} onChange={(event) => setForm((current) => ({ ...current, profilePhotoUrl: event.target.value }))} placeholder="Profile photo URL" aria-label="Profile photo URL" /><input value={form.linkedinUrl} onChange={(event) => setForm((current) => ({ ...current, linkedinUrl: event.target.value }))} placeholder="LinkedIn URL" aria-label="LinkedIn URL" /><input value={form.githubUrl} onChange={(event) => setForm((current) => ({ ...current, githubUrl: event.target.value }))} placeholder="GitHub URL" aria-label="GitHub URL" /><textarea value={form.bio} onChange={(event) => setForm((current) => ({ ...current, bio: event.target.value }))} placeholder="Short bio" aria-label="Bio" /><button className="primary-button" onClick={() => void saveProfile()}>Save profile →</button></section><section className="panel import-panel"><div><h2>Documents</h2><p>Uploads require configured object storage. Resume headings are extracted asynchronously after upload.</p></div><label>Profile photo<input type="file" accept="image/jpeg,image/png" disabled={uploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadDocument(file, 'photo') }} /></label><label>Resume<input type="file" accept="application/pdf,.docx" disabled={uploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadDocument(file, file.type === 'application/pdf' ? 'resume_pdf' : 'resume_docx') }} /></label>{documents.map((document) => <div className="activity-row" key={document.id}><strong>{document.file_name ?? document.doc_type}</strong><small>{document.status} · {document.parsed_headings?.map((heading) => heading.heading).join(', ') || 'Parsing headings'}</small></div>)}{message && <p className="entry-message">{message}</p>}</section></div>
+  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Your profile</p><h2>{profile?.full_name ?? 'Student profile'}</h2><p>Links and bio are saved to your college record.</p></div></div><section className="panel import-panel"><div><h2>Profile details</h2><p>Links and bio are saved to your college record.</p></div><input value={form.profilePhotoUrl} onChange={(event) => setForm((current) => ({ ...current, profilePhotoUrl: event.target.value }))} placeholder="Profile photo URL" aria-label="Profile photo URL" /><input value={form.linkedinUrl} onChange={(event) => setForm((current) => ({ ...current, linkedinUrl: event.target.value }))} placeholder="LinkedIn URL" aria-label="LinkedIn URL" /><input value={form.githubUrl} onChange={(event) => setForm((current) => ({ ...current, githubUrl: event.target.value }))} placeholder="GitHub URL" aria-label="GitHub URL" /><textarea value={form.bio} onChange={(event) => setForm((current) => ({ ...current, bio: event.target.value }))} placeholder="Short bio" aria-label="Bio" /><button className="primary-button" disabled={isSaving} onClick={() => void saveProfile()}>{isSaving ? 'Saving...' : 'Save profile →'}</button>{message && <p className="entry-message">{message}</p>}</section><section className="panel import-panel"><div><h2>Documents</h2><p>Uploads require configured object storage. Resume headings are extracted asynchronously after upload.</p></div><label>Profile photo<input type="file" accept="image/jpeg,image/png" disabled={uploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadDocument(file, 'photo') }} /></label><label>Resume<input type="file" accept="application/pdf,.docx" disabled={uploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadDocument(file, file.type === 'application/pdf' ? 'resume_pdf' : 'resume_docx') }} /></label>{documents.map((document) => <div className="activity-row" key={document.id}><strong>{document.file_name ?? document.doc_type}</strong><small>{document.status} · {document.parsed_headings?.map((heading) => heading.heading).join(', ') || 'Parsing headings'}</small></div>)}{message && <p className="entry-message">{message}</p>}</section></div>
 }
 
 function StudentOverview({ setActiveNav, profile, profileStrength, marks, notifications, marksheets }: { setActiveNav: (nav: string) => void; profile: { full_name: string; profile_photo_url: string | null; bio: string | null; linkedin_url: string | null; github_url: string | null; class_name: string | null; department_name: string | null; roll_number: string } | null; profileStrength: number | null; marks: Array<{ subject_name: string; marks_obtained: string; max_marks: string }>; notifications: Array<{ title: string; body: string | null }>; marksheets: Array<{ sgpa: string | null }> }) {
