@@ -130,13 +130,13 @@ function App() {
           <p className="nav-label">Workspace</p>
           {roleNav[role].map((item, index) => <button className={activeNav === item ? 'nav-item active' : 'nav-item'} key={item} onClick={() => setActiveNav(item)}><span className="nav-icon">{['◒', '▦', '↗', '⌁'][index]}</span>{item}{(item === 'Analytics' || item === 'College analytics') && <span className="nav-badge">New</span>}</button>)}
           <p className="nav-label nav-spacer">Manage</p>
-          <button className="nav-item" onClick={() => setActiveNav(role === 'student' ? 'My profile' : 'Users')}><span className="nav-icon">♧</span>{role === 'student' ? 'My documents' : 'Students'}</button>
+          <button className="nav-item" onClick={() => setActiveNav(role === 'student' ? 'My profile' : role === 'teacher' ? 'My classes' : 'Users')}><span className="nav-icon">♧</span>{role === 'student' ? 'My documents' : 'Students'}</button>
           <button className={activeNav === 'Settings' ? 'nav-item active' : 'nav-item'} onClick={() => setActiveNav('Settings')}><span className="nav-icon">⚙</span>Settings</button>
         </nav>
         <div className="sidebar-bottom"><div className="help-icon">?</div><div><strong>Need a hand?</strong><small>Visit the help center</small></div><span>↗</span></div>
       </aside>
       <main className="main-content">
-        <header className="topbar"><div className="breadcrumb"><span>{roleLabels[role]}</span><b>/</b><strong>{activeNav}</strong></div><div className="top-actions"><button className="icon-button" aria-label="Notifications" onClick={() => { if (roleNav[role].includes('Notifications')) setActiveNav('Notifications') }}>♢<i></i></button><button className="profile-chip" onClick={() => { sessionStorage.removeItem('student-profile-session'); setSession(null) }}><span className="avatar avatar-orange">{initials}</span><span>{session.user.email}</span><span>↪</span></button></div></header>
+        <header className="topbar"><div className="breadcrumb"><span>{roleLabels[role]}</span><b>/</b><strong>{activeNav}</strong></div><div className="top-actions">{roleNav[role].includes('Notifications') && <button className="icon-button" aria-label="Notifications" onClick={() => setActiveNav('Notifications')}>♢<i></i></button>}<button className="profile-chip" onClick={() => { sessionStorage.removeItem('student-profile-session'); setSession(null) }}><span className="avatar avatar-orange">{initials}</span><span>{session.user.email}</span><span>↪</span></button></div></header>
         <section className="content-wrap">
           <div className="welcome-row"><div><p className="eyebrow">{new Date().toLocaleDateString()}</p><h1>Welcome back, {name.split(' ')[0]}.</h1><p className="subheading">{role === 'student' ? 'Keep your academic record and professional profile up to date.' : role === 'admin' ? 'Manage your college workspace and academic records.' : 'Review your assigned classes and student performance.'}</p></div></div>
           {dataNotice && <div className="data-notice">{dataNotice}</div>}
