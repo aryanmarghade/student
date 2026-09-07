@@ -277,7 +277,7 @@
 @media (max-width: 620px) { .sidebar { width: 60px; flex-basis: 60px; padding: var(--space-5) var(--space-2); }.brand { padding: 0 var(--space-2) var(--space-6); }.workspace { padding: var(--space-2); }.nav-item { padding: 12px 0; }.content-wrap { padding: var(--space-5) var(--space-4) var(--space-6); }.welcome-row h1 { font-size: 24px; }.panel { padding: var(--space-4); }.records-page-heading { align-items: start; }.records-page-heading h2 { font-size: 21px; }.stat-number { font-size: 24px; } }
 
 /* Dashboard hierarchy: one primary metric, quieter support, and visual comparisons. */
-.stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: stretch; }
+.stats-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: stretch; }
 .stat-card { min-height: 132px; }
 .stat-card.hero-stat { grid-column: span 2; background: var(--accent); border-color: var(--accent); box-shadow: 0 14px 28px rgb(39 107 94 / 18%); }
 .hero-stat .stat-label, .hero-stat .stat-foot, .hero-stat .stat-foot span { color: rgb(255 255 255 / 74%); }
