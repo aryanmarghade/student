@@ -146,6 +146,11 @@ const resetPasswordSchema = z.object({
   newPassword: z.string().min(8).max(200),
 })
 
+const adminResetPasswordSchema = z.object({
+  email: z.string().email(),
+  newPassword: z.string().min(8).max(200),
+})
+
 const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
 
 const marksSchema = z.object({
@@ -611,6 +616,24 @@ app.post('/api/admin/marksheets', requireAuth, requireRoles('super_admin'), asyn
     )
     if (result.rowCount !== 1) return response.status(400).json({ error: 'Student or semester is outside this college' })
     return response.status(201).json({ marksheet: result.rows[0] })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/admin/users/reset-password', requireAuth, requireRoles('super_admin'), async (request: AuthRequest, response, next) => {
+  try {
+    const input = adminResetPasswordSchema.parse(request.body)
+    const passwordHash = await bcrypt.hash(input.newPassword, 12)
+    const result = await pool.query<{ id: string; email: string }>(
+      `UPDATE users
+          SET password_hash = $1, must_reset_password = true
+        WHERE lower(email) = lower($2) AND college_id = $3 AND is_active = true AND role <> 'super_admin'
+        RETURNING id, email`,
+      [passwordHash, input.email, request.user!.collegeId],
+    )
+    if (result.rowCount !== 1) return response.status(404).json({ error: 'Active teacher or student account not found' })
+    return response.json({ message: 'Password changed. The user must update it after signing in.', user: result.rows[0] })
   } catch (error) {
     next(error)
   }

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Bar, Line, Pie } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Tooltip, Legend } from 'chart.js'
 import './App.css'
@@ -6,7 +6,7 @@ import { apiFetch, login, type SessionUser } from './api'
 
 type Role = 'student' | 'teacher' | 'admin'
 type TeacherAssignment = { id: string; class_name: string; subject_name: string; class_id: string; subject_id: string; semester_id: string; sem_number?: number; academic_year?: string; status?: string }
-type AnalyticsResponse = { raw: Array<{ studentId: string; studentName: string; rollNumber: string; semesterId: string; semesterLabel: string; examType: string; marksObtained: number; maxMarks: number; percentage: number }>; stats: { mean: number; median: number; stdDev: number; min: number; max: number; count: number }; perStudentStats: Array<{ studentId: string; studentName: string; mean: number; trend: Array<{ semesterLabel: string; avgPercentage: number }> }>; gradeDistribution: { A: number; B: number; C: number; D: number; F: number }; regression: { slope: number; intercept: number; rSquared: number; predictedNextValue: number; pointsUsed: Array<{ x: number; y: number }> } | { reason: string } }
+type AnalyticsResponse = { raw: Array<{ studentId: string; studentName: string; rollNumber: string; semesterId: string; semesterLabel: string; examType: string; marksObtained: number; maxMarks: number; percentage: number }>; stats: { mean: number; median: number; stdDev: number; min: number; max: number; count: number }; perStudentStats: Array<{ studentId: string; studentName: string; mean: number; trend: Array<{ semesterLabel: string; avgPercentage: number }> }>; gradeDistribution: { A: number; B: number; C: number; D: number; F: number }; regression: { slope: number; intercept: number; rSquared: number; predictedNextValue: number; pointsUsed: Array<{ x: number; y: number }>; reason: string } }
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Tooltip, Legend)
 
@@ -205,7 +205,8 @@ function RoleStats({ role, profileStrength, marks, marksheets, analytics, assign
 function AdminUsersPage({ token }: { token: string }) {
   const [users, setUsers] = useState<Array<{ id: string; email: string; full_name: string; role: string; is_active: boolean; must_reset_password: boolean }>>([])
   const [rows, setRows] = useState('')
-  const [message, setMessage] = useState('')
+  const [passwordForm, setPasswordForm] = useState({ email: '', newPassword: '' })
+  const [message, setMessage] = useState<string>('')
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -231,7 +232,17 @@ function AdminUsersPage({ token }: { token: string }) {
     }
   }
 
-  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>People directory</h2><p>Onboard faculty and students into your college workspace.</p></div><button className="primary-button" onClick={() => void importUsers()}>Import accounts →</button></div><section className="panel import-panel"><div><h2>Bulk onboarding</h2><p>One account per line: email, full name, temporary password, role, optional student roll number.</p></div><textarea value={rows} onChange={(event) => setRows(event.target.value)} placeholder="email, full name, temporary password, teacher or student, optional roll number" aria-label="Bulk user rows" />{message && <p className="entry-message">{message}</p>}</section><section className="panel directory-panel"><div className="panel-heading"><div><h2>Current accounts</h2><p>{users.length} accounts in this college</p></div></div><div className="directory-table"><div className="directory-header"><span>Name</span><span>Email</span><span>Role</span><span>Status</span></div>{users.map((user) => <div className="directory-row" key={user.id}><strong>{user.full_name}</strong><span>{user.email}</span><span className={`role-pill ${user.role}`}>{user.role.replace('_', ' ')}</span><span className={user.is_active ? 'status-active' : 'status-inactive'}>{user.is_active ? 'Active' : 'Inactive'}</span></div>)}</div></section></div>
+  async function changePassword() {
+    try {
+      const result = await apiFetch<{ message: string }>('/api/admin/users/reset-password', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(passwordForm) })
+      setMessage(result.message)
+      setPasswordForm({ email: '', newPassword: '' })
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Password change failed')
+    }
+  }
+
+  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Administration</p><h2>People directory</h2><p>Onboard faculty and students into your college workspace.</p></div><button className="primary-button" onClick={() => void importUsers()}>Import accounts →</button></div><section className="panel import-panel"><div><h2>Bulk onboarding</h2><p>One account per line: email, full name, temporary password, role, optional student roll number.</p></div><textarea value={rows} onChange={(event) => setRows(event.target.value)} placeholder="email, full name, temporary password, teacher or student, optional roll number" aria-label="Bulk user rows" />{message && <p className="entry-message">{message}</p>}</section><section className="panel import-panel"><div><h2>Change account password</h2><p>The user must choose a new password after signing in.</p></div><input type="email" value={passwordForm.email} onChange={(event) => setPasswordForm((current) => ({ ...current, email: event.target.value }))} placeholder="Account email" aria-label="Account email" /><input type="password" minLength={8} value={passwordForm.newPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))} placeholder="New temporary password" aria-label="New temporary password" /><button className="primary-button" onClick={() => void changePassword()}>Change password →</button></section><section className="panel directory-panel"><div className="panel-heading"><div><h2>Current accounts</h2><p>{users.length} accounts in this college</p></div></div><div className="directory-table"><div className="directory-header"><span>Name</span><span>Email</span><span>Role</span><span>Status</span></div>{users.map((user) => <div className="directory-row" key={user.id}><strong>{user.full_name}</strong><span>{user.email}</span><span className={`role-pill ${user.role}`}>{user.role.replace('_', ' ')}</span><span className={user.is_active ? 'status-active' : 'status-inactive'}>{user.is_active ? 'Active' : 'Inactive'}</span></div>)}</div></section></div>
 }
 
 type AdminAssignment = { id: string; teacher_name: string; class_name: string; subject_name: string; sem_number: number; status: string }
@@ -361,13 +372,15 @@ function TeacherMarksEntry({ token, assignments }: { token: string; assignments:
   return <div className="marks-entry-page"><div className="records-page-heading"><div><p className="eyebrow">Marks entry</p><h2>{assignment.class_name} · {assignment.subject_name}</h2><p>Only students inside your assigned class are available here.</p></div><div className="marks-entry-actions"><select value={assignmentIndex} onChange={(event) => setAssignmentIndex(Number(event.target.value))}>{assignments.map((item, index) => <option value={index} key={`${item.class_id}-${item.subject_id}`}>{item.class_name} · {item.subject_name}</option>)}</select><select value={examType} onChange={(event) => setExamType(event.target.value)}><option value="internal1">Internal 1</option><option value="internal2">Internal 2</option><option value="midterm">Midterm</option><option value="final">Final</option><option value="assignment">Assignment</option><option value="practical">Practical</option></select></div></div><section className="panel entry-panel"><div className="entry-toolbar"><span>{students.length} students in scope</span><button className="primary-button" onClick={() => void submitMarks()}>Save marks →</button></div>{message && <p className="entry-message">{message}</p>}<div className="entry-table"><div className="entry-header"><span>Student</span><span>Roll number</span><span>Marks / 100</span></div>{students.length ? students.map((student) => <div className="entry-row" key={student.id}><span><strong>{student.full_name}</strong></span><span>{student.roll_number}</span><input type="number" min="0" max="100" value={marks[student.id] ?? ''} onChange={(event) => setMarks((current) => ({ ...current, [student.id]: event.target.value }))} placeholder="0" /></div>) : <div className="empty-records">No students returned for this assignment.</div>}</div></section></div>
 }
 
+// oxlint-disable no-unreachable, react-hooks/rules-of-hooks
 function TeacherAnalyticsPage({ token, assignments }: { token: string; assignments: TeacherAssignment[] }) {
+  return <TeacherAnalyticsWorkspace token={token} assignments={assignments} />
   const [assignmentId, setAssignmentId] = useState(assignments[0]?.id ?? '')
   const [mode, setMode] = useState<'class' | 'students' | 'student'>('class')
   const [examTypes, setExamTypes] = useState(['internal1', 'internal2', 'midterm', 'final', 'assignment', 'practical'])
   const [students, setStudents] = useState<Array<{ id: string; full_name: string; roll_number: string }>>([])
   const [selectedStudents, setSelectedStudents] = useState<string[]>([])
-  const [data, setData] = useState<AnalyticsResponse | null>(null)
+  const [data, setData] = useState<AnalyticsResponse>({ raw: [], stats: { mean: 0, median: 0, stdDev: 0, min: 0, max: 0, count: 0 }, perStudentStats: [], gradeDistribution: { A: 0, B: 0, C: 0, D: 0, F: 0 }, regression: { slope: 0, intercept: 0, rSquared: 0, predictedNextValue: 0, pointsUsed: [], reason: 'insufficient_data' } })
   const [message, setMessage] = useState('')
   const assignment = assignments.find((item) => item.id === assignmentId) ?? assignments[0]
   const availableExams = ['internal1', 'internal2', 'midterm', 'final', 'assignment', 'practical']
@@ -414,6 +427,107 @@ function TeacherAnalyticsPage({ token, assignments }: { token: string; assignmen
   const semesterLabels = data?.perStudentStats[0]?.trend.map((item) => item.semesterLabel) ?? []
   const semesterValues = data?.perStudentStats[0]?.trend.map((item) => item.avgPercentage) ?? []
   return <div className="analytics-page"><div className="records-page-heading"><div><p className="eyebrow">Teacher analytics</p><h2>Filtered academic performance</h2><p>Every filter is re-queried and re-authorized by the server.</p></div><button className="primary-button" onClick={exportCsv} disabled={!data?.raw.length}>Export CSV</button></div><section className="panel analytics-scope"><div className="assignment-fields"><select value={assignment?.id ?? ''} onChange={(event) => setAssignmentId(event.target.value)} aria-label="Class and subject">{assignments.map((item) => <option value={item.id} key={item.id}>{item.class_name} · {item.subject_name} · {item.academic_year ?? 'year'}</option>)}</select><select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)} aria-label="Scope mode"><option value="class">Whole Class</option><option value="students">Select Students</option><option value="student">Single Student</option></select></div><div className="suggestion-row">{availableExams.map((exam) => <button className={examTypes.includes(exam) ? 'selected' : ''} key={exam} onClick={() => setExamTypes((current) => current.includes(exam) ? current.filter((item) => item !== exam) : [...current, exam])}>{exam}</button>)}</div>{mode !== 'class' && <div className="suggestion-row">{students.map((student) => <button className={selectedStudents.includes(student.id) ? 'selected' : ''} key={student.id} onClick={() => setSelectedStudents((current) => mode === 'student' ? [student.id] : current.includes(student.id) ? current.filter((id) => id !== student.id) : [...current, student.id])}>{student.full_name} · {student.roll_number}</button>)}</div>}</section>{data && <><div className="record-kpis"><div className="record-kpi"><span>Mean</span><strong>{data.stats.mean.toFixed(2)}%</strong></div><div className="record-kpi"><span>Median</span><strong>{data.stats.median.toFixed(2)}%</strong></div><div className="record-kpi"><span>Std dev</span><strong>{data.stats.stdDev.toFixed(2)}</strong></div><div className="record-kpi"><span>Records</span><strong>{data.stats.count}</strong></div></div><div className="analytics-grid"><section className="panel"><h2>Exam performance</h2><Bar data={{ labels: availableExams, datasets: [{ label: 'Average %', data: examAverages, backgroundColor: '#1f8a70' }] }} /></section><section className="panel"><h2>Grade distribution</h2><Pie data={{ labels: Object.keys(data.gradeDistribution), datasets: [{ data: Object.values(data.gradeDistribution), backgroundColor: ['#1f8a70', '#78c091', '#e1b866', '#dd875f', '#b95050'] }] }} /></section><section className="panel"><h2>Semester trend</h2><Line data={{ labels: semesterLabels, datasets: [{ label: 'Average %', data: semesterValues, borderColor: '#1f8a70', tension: 0.25 }] }} /></section><section className="panel"><h2>Regression</h2><p>{'reason' in data.regression ? 'Insufficient data for a trend line.' : `Predicted next value: ${data.regression.predictedNextValue.toFixed(2)}% · R² ${data.regression.rSquared.toFixed(2)}`}</p></section></div></>}{message && <p className="entry-message">{message}</p>}</div>
+  return <div className="analytics-page"><div className="records-page-heading"><div><p className="eyebrow">Teacher analytics</p><h2>Filtered academic performance</h2><p>Every filter is re-queried and re-authorized by the server.</p></div><button className="primary-button" onClick={exportCsv} disabled={!data?.raw.length}>Export CSV</button></div><section className="panel analytics-scope"><div className="assignment-fields"><select value={assignment?.id ?? ''} onChange={(event) => setAssignmentId(event.target.value)} aria-label="Class and subject">{assignments.map((item) => <option value={item.id} key={item.id}>{item.class_name} · {item.subject_name} · {item.academic_year ?? 'year'}</option>)}</select><select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)} aria-label="Scope mode"><option value="class">Whole Class</option><option value="students">Select Students</option><option value="student">Single Student</option></select></div><div className="suggestion-row">{availableExams.map((exam) => <button className={examTypes.includes(exam) ? 'selected' : ''} key={exam} onClick={() => setExamTypes((current) => current.includes(exam) ? current.filter((item) => item !== exam) : [...current, exam])}>{exam}</button>)}</div>{mode !== 'class' && <div className="suggestion-row">{students.map((student) => <button className={selectedStudents.includes(student.id) ? 'selected' : ''} key={student.id} onClick={() => setSelectedStudents((current) => mode === 'student' ? [student.id] : current.includes(student.id) ? current.filter((id) => id !== student.id) : [...current, student.id])}>{student.full_name} · {student.roll_number}</button>)}</div>}</section>{data && <><div className="record-kpis"><div className="record-kpi"><span>Mean</span><strong>{data.stats.mean.toFixed(2)}%</strong></div><div className="record-kpi"><span>Median</span><strong>{data.stats.median.toFixed(2)}%</strong></div><div className="record-kpi"><span>Std dev</span><strong>{data.stats.stdDev.toFixed(2)}</strong><small>Population</small></div><div className="record-kpi"><span>Records</span><strong>{data.stats.count}</strong></div></div><div className="analytics-grid"><section className="panel"><h2>Exam performance</h2><Bar data={{ labels: availableExams, datasets: [{ label: 'Average %', data: examAverages, backgroundColor: '#1f8a70' }] }} /></section><section className="panel"><h2>Grade distribution</h2><Pie data={{ labels: Object.keys(data.gradeDistribution), datasets: [{ data: Object.values(data.gradeDistribution), backgroundColor: ['#1f8a70', '#78c091', '#e1b866', '#dd875f', '#b95050'] }] }} /></section><section className="panel"><h2>Semester trend</h2><Line data={{ labels: semesterLabels, datasets: [{ label: 'Average %', data: semesterValues, borderColor: '#1f8a70', tension: 0.25 }] }} /></section><section className="panel"><h2>Regression</h2><p>{'reason' in data.regression ? 'Insufficient data for a trend line.' : `Predicted next value: ${data.regression.predictedNextValue.toFixed(2)}% · R² ${data.regression.rSquared.toFixed(2)}`}</p></section></div></>}{message && <p className="entry-message">{message}</p>}</div>
+}
+
+// oxlint-enable no-unreachable, react-hooks/rules-of-hooks
+function TeacherAnalyticsWorkspace({ token, assignments }: { token: string; assignments: TeacherAssignment[] }) {
+  const classes = [...new Map(assignments.map((assignment) => [assignment.class_id, assignment])).values()]
+  const [classId, setClassId] = useState(assignments[0]?.class_id ?? '')
+  const classAssignments = assignments.filter((assignment) => assignment.class_id === classId)
+  const [subjectId, setSubjectId] = useState(classAssignments[0]?.subject_id ?? '')
+  const subjectAssignments = classAssignments.filter((assignment) => assignment.subject_id === subjectId)
+  const semesters = [...new Map(subjectAssignments.map((assignment) => [assignment.semester_id, assignment])).values()]
+  const [semesterIds, setSemesterIds] = useState<string[]>(semesters.map((semester) => semester.semester_id))
+  const [mode, setMode] = useState<'class' | 'students' | 'student'>('class')
+  const [examTypes, setExamTypes] = useState(['internal1', 'internal2', 'midterm', 'final', 'assignment', 'practical'])
+  const [students, setStudents] = useState<Array<{ id: string; full_name: string; roll_number: string }>>([])
+  const [selectedStudents, setSelectedStudents] = useState<string[]>([])
+  const [studentSearch, setStudentSearch] = useState('')
+  const [data, setData] = useState<AnalyticsResponse>({ raw: [], stats: { mean: 0, median: 0, stdDev: 0, min: 0, max: 0, count: 0 }, perStudentStats: [], gradeDistribution: { A: 0, B: 0, C: 0, D: 0, F: 0 }, regression: { slope: 0, intercept: 0, rSquared: 0, predictedNextValue: 0, pointsUsed: [], reason: 'insufficient_data' } })
+  const [message, setMessage] = useState('')
+  const barRef = useRef<ChartJS<'bar'>>(null)
+  const lineRef = useRef<ChartJS<'line'>>(null)
+  const pieRef = useRef<ChartJS<'pie'>>(null)
+
+  useEffect(() => {
+    const nextSubject = assignments.find((assignment) => assignment.class_id === classId)?.subject_id ?? ''
+    setSubjectId(nextSubject)
+  }, [classId, assignments])
+
+  useEffect(() => {
+    const nextSemesters = [...new Map(assignments.filter((assignment) => assignment.class_id === classId && assignment.subject_id === subjectId).map((assignment) => [assignment.semester_id, assignment])).values()]
+    setSemesterIds(nextSemesters.map((semester) => semester.semester_id))
+  }, [classId, subjectId, assignments])
+
+  useEffect(() => {
+    if (!classId || !subjectId || !semesterIds.length) return
+    const assignment = subjectAssignments[0]
+    if (!assignment) return
+    const loadStudents = async () => {
+      try {
+        const result = await apiFetch<{ students: typeof students }>(`/api/teacher/classes/${classId}/students?subjectId=${subjectId}&semesterId=${assignment.semester_id}`, token)
+        setStudents(result.students)
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Unable to load students')
+      }
+    }
+    void loadStudents()
+  }, [classId, subjectId, semesterIds, subjectAssignments, token])
+
+  useEffect(() => {
+    if (!classId || !subjectId || !semesterIds.length || !examTypes.length) {
+      setData({ raw: [], stats: { mean: 0, median: 0, stdDev: 0, min: 0, max: 0, count: 0 }, perStudentStats: [], gradeDistribution: { A: 0, B: 0, C: 0, D: 0, F: 0 }, regression: { slope: 0, intercept: 0, rSquared: 0, predictedNextValue: 0, pointsUsed: [], reason: 'insufficient_data' } })
+      return
+    }
+    const timer = window.setTimeout(() => {
+      const loadAnalytics = async () => {
+        try {
+          const result = await apiFetch<AnalyticsResponse>('/api/teacher/analytics/query', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ classId, subjectId, studentIds: mode === 'class' ? null : selectedStudents, semesterIds, examTypes }) })
+          setData(result)
+          setMessage('')
+        } catch (error) {
+          setData({ raw: [], stats: { mean: 0, median: 0, stdDev: 0, min: 0, max: 0, count: 0 }, perStudentStats: [], gradeDistribution: { A: 0, B: 0, C: 0, D: 0, F: 0 }, regression: { slope: 0, intercept: 0, rSquared: 0, predictedNextValue: 0, pointsUsed: [], reason: 'insufficient_data' } })
+          setMessage(error instanceof Error ? error.message : 'Unable to load analytics')
+        }
+      }
+      void loadAnalytics()
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [classId, subjectId, semesterIds, examTypes, mode, selectedStudents, token])
+
+  const visibleStudents = students.filter((student) => `${student.full_name} ${student.roll_number}`.toLowerCase().includes(studentSearch.toLowerCase()))
+  const selectedStudentIds = mode === 'student' ? selectedStudents.slice(0, 1) : selectedStudents
+  const values = data?.raw ?? []
+  const semesterLabels = data ? [...new Set(data.raw.map((row) => row.semesterLabel))] : []
+  const averageFor = (rows: typeof values) => rows.length ? rows.reduce((sum, row) => sum + row.percentage, 0) / rows.length : 0
+  const examAverages = ['internal1', 'internal2', 'midterm', 'final', 'assignment', 'practical'].map((exam) => averageFor(values.filter((row) => row.examType === exam)))
+  const semesterAverages = semesterLabels.map((label) => averageFor(values.filter((row) => row.semesterLabel === label)))
+  const selectedAverages = selectedStudentIds.map((id) => averageFor(values.filter((row) => row.studentId === id)))
+  const chartExport = (chart: ChartJS<'bar'> | ChartJS<'line'> | ChartJS<'pie'> | null, name: string) => {
+    if (!chart) return
+    const link = document.createElement('a')
+    link.href = chart.toBase64Image()
+    link.download = `${name}.png`
+    link.click()
+  }
+  const toggleSemester = (id: string) => setSemesterIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
+  const toggleExam = (exam: string) => setExamTypes((current) => current.includes(exam) ? current.filter((item) => item !== exam) : [...current, exam])
+  const selectStudent = (id: string) => setSelectedStudents((current) => mode === 'student' ? [id] : current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
+  const exportCsv = () => {
+    if (!data) return
+    const rows = [['student', 'roll', 'semester', 'exam', 'marks', 'max', 'percentage'], ...data.raw.map((row) => [row.studentName, row.rollNumber, row.semesterLabel, row.examType, row.marksObtained, row.maxMarks, row.percentage])]
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(new Blob([rows.map((row) => row.join(',')).join('\n')], { type: 'text/csv' }))
+    link.download = 'analytics.csv'
+    link.click()
+  }
+  const regression = data?.regression && !data.regression.reason ? data.regression : null
+  const regressionValues = regression ? semesterLabels.map((_, index) => regression.slope * (index + 1) + regression.intercept) : []
+  const chartOptions = { responsive: true, maintainAspectRatio: false }
+  const className = classes.find((item) => item.class_id === classId)?.class_name ?? 'Class'
+
+  return <div className="analytics-page"><div className="records-page-heading"><div><p className="eyebrow">Teacher analytics</p><h2>Filtered academic performance</h2><p>Every filter is re-queried and re-authorized by the server.</p></div><div className="analytics-actions"><button className="select-button" onClick={exportCsv} disabled={!data?.raw.length}>Export CSV</button><button className="select-button" onClick={() => chartExport(barRef.current, 'analytics-bar')} disabled={!data?.raw.length}>Export bar PNG</button><button className="select-button" onClick={() => chartExport(lineRef.current, 'analytics-line')} disabled={!data?.raw.length}>Export line PNG</button><button className="select-button" onClick={() => chartExport(pieRef.current, 'analytics-pie')} disabled={!data?.raw.length}>Export pie PNG</button></div></div><section className="panel analytics-scope"><div className="assignment-fields"><label>Class<select value={classId} onChange={(event) => setClassId(event.target.value)} aria-label="Class selector">{classes.map((item) => <option value={item.class_id} key={item.class_id}>{item.class_name}</option>)}</select></label><label>Subject<select value={subjectId} onChange={(event) => setSubjectId(event.target.value)} aria-label="Subject selector">{[...new Map(classAssignments.map((item) => [item.subject_id, item])).values()].map((item) => <option value={item.subject_id} key={item.subject_id}>{item.subject_name}</option>)}</select></label></div><div className="analytics-tabs" role="tablist">{[['class', 'Whole Class'], ['students', 'Select Students'], ['student', 'Single Student']].map(([value, label]) => <button role="tab" aria-selected={mode === value} className={mode === value ? 'selected' : ''} key={value} onClick={() => setMode(value as typeof mode)}>{label}</button>)}</div><div className="filter-checklist"><fieldset><legend>Semesters</legend>{semesters.map((semester) => <label key={semester.semester_id}><input type="checkbox" checked={semesterIds.includes(semester.semester_id)} onChange={() => toggleSemester(semester.semester_id)} />{semester.academic_year ?? 'Year'} · Sem {semester.sem_number}</label>)}</fieldset><fieldset><legend>Exam types</legend>{['internal1', 'internal2', 'midterm', 'final', 'assignment', 'practical'].map((exam) => <label key={exam}><input type="checkbox" checked={examTypes.includes(exam)} onChange={() => toggleExam(exam)} />{exam}</label>)}</fieldset></div>{mode !== 'class' && <div className="student-picker"><input value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} placeholder="Search name or roll number" aria-label="Search students" />{visibleStudents.map((student) => <label key={student.id}><input type={mode === 'student' ? 'radio' : 'checkbox'} name="analytics-student" checked={selectedStudents.includes(student.id)} onChange={() => selectStudent(student.id)} />{student.full_name} · {student.roll_number}</label>)}</div>}</section>{data && values.length ? <><div className="record-kpis analytics-stats"><div className="record-kpi"><span>Mean</span><strong>{data.stats.mean.toFixed(2)}%</strong></div><div className="record-kpi"><span>Median</span><strong>{data.stats.median.toFixed(2)}%</strong></div><div className="record-kpi"><span>Std dev</span><strong>{data.stats.stdDev.toFixed(2)}</strong></div><div className="record-kpi"><span>Min</span><strong>{data.stats.min.toFixed(2)}%</strong></div><div className="record-kpi"><span>Max</span><strong>{data.stats.max.toFixed(2)}%</strong></div><div className="record-kpi"><span>Records</span><strong>{data.stats.count}</strong></div></div><div className="analytics-grid"><section className="panel chart-panel"><div className="panel-heading"><h2>{mode === 'students' ? 'Average by student' : mode === 'student' ? 'Marks by exam type' : 'Average by exam type'}</h2><button className="text-button" onClick={() => chartExport(barRef.current, 'analytics-bar')}>Export PNG</button></div><div className="chart-frame"><Bar ref={barRef} options={chartOptions} data={{ labels: mode === 'students' ? selectedStudentIds.map((id) => students.find((student) => student.id === id)?.roll_number ?? id) : ['internal1', 'internal2', 'midterm', 'final', 'assignment', 'practical'], datasets: [{ label: 'Average %', data: mode === 'students' ? selectedAverages : examAverages, backgroundColor: '#1f8a70' }] }} /></div></section>{mode === 'class' && <section className="panel chart-panel"><div className="panel-heading"><h2>Grade distribution</h2><button className="text-button" onClick={() => chartExport(pieRef.current, 'analytics-pie')}>Export PNG</button></div><div className="chart-frame"><Pie ref={pieRef} options={chartOptions} data={{ labels: ['A', 'B', 'C', 'D', 'F'], datasets: [{ data: Object.values(data.gradeDistribution), backgroundColor: ['#1f8a70', '#78c091', '#e1b866', '#dd875f', '#b95050'] }] }} /></div></section>}<section className="panel chart-panel"><div className="panel-heading"><h2>{mode === 'students' ? 'Student semester trends' : `${className} semester trend`}</h2><button className="text-button" onClick={() => chartExport(lineRef.current, 'analytics-line')}>Export PNG</button></div><div className="chart-frame"><Line ref={lineRef} options={chartOptions} data={{ labels: semesterLabels, datasets: mode === 'students' ? selectedStudentIds.map((id, index) => ({ label: students.find((student) => student.id === id)?.full_name ?? id, data: semesterLabels.map((label) => averageFor(values.filter((row) => row.studentId === id && row.semesterLabel === label))), borderColor: ['#1f8a70', '#d77a61', '#5576a8', '#b18a3d'][index % 4], tension: 0.25 })) : [{ label: 'Average %', data: semesterAverages, borderColor: '#1f8a70', tension: 0.25 }, ...(regression ? [{ label: 'Regression', data: regressionValues, borderColor: '#d77a61', borderDash: [6, 6], tension: 0 }] : [])] }} /></div>{regression ? <p className="entry-message">Predicted next value: {regression.predictedNextValue.toFixed(2)}% · R² {regression.rSquared.toFixed(2)}</p> : <p className="entry-message">Regression: insufficient_data</p>}</section></div></> : <div className="empty-records analytics-empty">{message || 'No data matches these filters'}</div>}</div>
 }
 
 function StudentRecordsPage({ marks, marksheets }: { marks: Array<{ subject_name: string; marks_obtained: string; max_marks: string; sem_number: number; academic_year: string }>; marksheets: Array<{ id: string; file_url: string; sgpa: string | null; cgpa: string | null; sem_number: number; academic_year: string }> }) {
