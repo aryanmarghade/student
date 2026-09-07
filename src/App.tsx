@@ -41,12 +41,15 @@ function App() {
   const [liveAdminAssignments, setLiveAdminAssignments] = useState<Array<{ id: string; status: string }>>([])
   const [liveAdminOverview, setLiveAdminOverview] = useState<{ student_count: number; teacher_count: number; class_count: number; active_semester_count: number } | null>(null)
   const [dataNotice, setDataNotice] = useState('')
+  const [isDashboardLoading, setIsDashboardLoading] = useState(false)
   const name = session?.user.fullName ?? ''
   const initials = name.split(' ').map((part) => part[0]).join('')
 
   useEffect(() => {
     if (!session || session.user.mustResetPassword) return
     const loadDashboardData = async () => {
+      setIsDashboardLoading(true)
+      setDataNotice('')
       try {
         if (session.user.role === 'teacher') {
           const result = await apiFetch<{ assignments: TeacherAssignment[] }>('/api/teacher/assignments', session.token)
@@ -79,6 +82,8 @@ function App() {
           return
         }
         setDataNotice(error instanceof Error ? error.message : 'Live data is temporarily unavailable')
+      } finally {
+        setIsDashboardLoading(false)
       }
     }
     void loadDashboardData()
@@ -105,6 +110,7 @@ function App() {
       sessionStorage.setItem('student-profile-session', JSON.stringify(nextSession))
       setSession(nextSession)
       setRole(nextSession.user.role === 'super_admin' ? 'admin' : nextSession.user.role)
+      setActiveNav('Overview')
     }} />
   }
 
@@ -116,7 +122,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell role-${role}`}>
       <aside className="sidebar">
         <div className="brand"><span className="brand-mark">s</span><span>student profile</span></div>
         <div className="workspace"><span className="avatar avatar-teal">{initials}</span><span><strong>{name}</strong><small>{roleLabels[role]}</small></span><span className="chevron">⌄</span></div>
@@ -125,18 +131,18 @@ function App() {
           {roleNav[role].map((item, index) => <button className={activeNav === item ? 'nav-item active' : 'nav-item'} key={item} onClick={() => setActiveNav(item)}><span className="nav-icon">{['◒', '▦', '↗', '⌁'][index]}</span>{item}{(item === 'Analytics' || item === 'College analytics') && <span className="nav-badge">New</span>}</button>)}
           <p className="nav-label nav-spacer">Manage</p>
           <button className="nav-item" onClick={() => setActiveNav(role === 'student' ? 'My profile' : 'Users')}><span className="nav-icon">♧</span>{role === 'student' ? 'My documents' : 'Students'}</button>
-          <button className="nav-item"><span className="nav-icon">⚙</span>Settings</button>
+          <button className={activeNav === 'Settings' ? 'nav-item active' : 'nav-item'} onClick={() => setActiveNav('Settings')}><span className="nav-icon">⚙</span>Settings</button>
         </nav>
         <div className="sidebar-bottom"><div className="help-icon">?</div><div><strong>Need a hand?</strong><small>Visit the help center</small></div><span>↗</span></div>
       </aside>
       <main className="main-content">
-        <header className="topbar"><div className="breadcrumb"><span>{roleLabels[role]}</span><b>/</b><strong>{activeNav}</strong></div><div className="top-actions"><button className="icon-button" aria-label="Notifications">♢<i></i></button><button className="profile-chip" onClick={() => { sessionStorage.removeItem('student-profile-session'); setSession(null) }}><span className="avatar avatar-orange">{initials}</span><span>{session.user.email}</span><span>↪</span></button></div></header>
+        <header className="topbar"><div className="breadcrumb"><span>{roleLabels[role]}</span><b>/</b><strong>{activeNav}</strong></div><div className="top-actions"><button className="icon-button" aria-label="Notifications" onClick={() => { if (roleNav[role].includes('Notifications')) setActiveNav('Notifications') }}>♢<i></i></button><button className="profile-chip" onClick={() => { sessionStorage.removeItem('student-profile-session'); setSession(null) }}><span className="avatar avatar-orange">{initials}</span><span>{session.user.email}</span><span>↪</span></button></div></header>
         <section className="content-wrap">
           <div className="welcome-row"><div><p className="eyebrow">{new Date().toLocaleDateString()}</p><h1>Welcome back, {name.split(' ')[0]}.</h1><p className="subheading">{role === 'student' ? 'Keep your academic record and professional profile up to date.' : role === 'admin' ? 'Manage your college workspace and academic records.' : 'Review your assigned classes and student performance.'}</p></div></div>
           {dataNotice && <div className="data-notice">{dataNotice}</div>}
           <LiveDataSummary role={role} notifications={liveNotifications} marks={liveMarks} analytics={liveAnalytics} />
-          <RoleStats role={role} profileStrength={liveProfileStrength} marks={liveMarks} marksheets={liveMarksheets} analytics={liveAnalytics} assignments={liveAssignments} adminOverview={liveAdminOverview} />
-          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' && activeNav === 'Notifications' ? <StudentNotificationsPage token={session.token} notifications={liveNotifications} /> : role === 'student' && activeNav === 'My profile' ? <StudentProfilePage token={session.token} profile={liveProfile} onSaved={(profile) => { setLiveProfile((current) => current ? { ...current, ...profile } : current); setLiveProfileStrength(profile.profile_strength) }} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profile={liveProfile} profileStrength={liveProfileStrength} marks={liveMarks} notifications={liveNotifications} marksheets={liveMarksheets} /> : role === 'teacher' && activeNav === 'My classes' ? <TeacherAssignmentsPage assignments={liveAssignments} selectedAssignmentId={selectedAssignment?.id ?? ''} onSelect={setSelectedAssignmentId} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={orderedAssignments} /> : role === 'teacher' && activeNav === 'Analytics' ? <TeacherAnalyticsPage token={session.token} assignments={orderedAssignments} /> : role === 'admin' && activeNav === 'Users' ? <AdminUsersPage token={session.token} /> : role === 'admin' && activeNav === 'Assignments' ? <AdminAssignmentsPage token={session.token} /> : role === 'admin' && activeNav === 'Marksheets' ? <AdminMarksheetsPage token={session.token} /> : role === 'admin' && activeNav === 'Notifications' ? <AdminNotificationsPage token={session.token} /> : <FacultyOverview role={role} assignments={liveAssignments} analytics={liveAnalytics} adminUsers={liveAdminUsers} adminAssignments={liveAdminAssignments} setActiveNav={setActiveNav} />}
+          <RoleStats role={role} profileStrength={liveProfileStrength} marks={liveMarks} marksheets={liveMarksheets} analytics={liveAnalytics} assignments={liveAssignments} adminOverview={liveAdminOverview} notifications={liveNotifications} loading={isDashboardLoading} />
+          {role === 'student' && activeNav === 'Academic records' ? <StudentRecordsPage marks={liveMarks} marksheets={liveMarksheets} /> : role === 'student' && activeNav === 'Notifications' ? <StudentNotificationsPage token={session.token} notifications={liveNotifications} /> : role === 'student' && activeNav === 'My profile' ? <StudentProfilePage token={session.token} profile={liveProfile} onSaved={(profile) => { setLiveProfile((current) => current ? { ...current, ...profile } : current); setLiveProfileStrength(profile.profile_strength) }} /> : role === 'student' && activeNav === 'Settings' ? <SettingsPage user={session.user} /> : role === 'student' ? <StudentOverview setActiveNav={setActiveNav} profile={liveProfile} profileStrength={liveProfileStrength} marks={liveMarks} notifications={liveNotifications} marksheets={liveMarksheets} /> : role === 'teacher' && activeNav === 'My classes' ? <TeacherAssignmentsPage assignments={liveAssignments} selectedAssignmentId={selectedAssignment?.id ?? ''} onSelect={setSelectedAssignmentId} /> : role === 'teacher' && activeNav === 'Marks entry' ? <TeacherMarksEntry token={session.token} assignments={orderedAssignments} /> : role === 'teacher' && activeNav === 'Analytics' ? <TeacherAnalyticsPage token={session.token} assignments={orderedAssignments} /> : role === 'teacher' && activeNav === 'Settings' ? <SettingsPage user={session.user} /> : role === 'admin' && activeNav === 'Users' ? <AdminUsersPage token={session.token} /> : role === 'admin' && activeNav === 'Assignments' ? <AdminAssignmentsPage token={session.token} /> : role === 'admin' && activeNav === 'Marksheets' ? <AdminMarksheetsPage token={session.token} /> : role === 'admin' && activeNav === 'Notifications' ? <AdminNotificationsPage token={session.token} /> : role === 'admin' && activeNav === 'Settings' ? <SettingsPage user={session.user} /> : <FacultyOverview role={role} assignments={liveAssignments} analytics={liveAnalytics} adminUsers={liveAdminUsers} adminAssignments={liveAdminAssignments} setActiveNav={setActiveNav} />}
         </section>
       </main>
     </div>
@@ -193,13 +199,19 @@ function ResetPasswordScreen({ token, onComplete }: { token: string; onComplete:
   return <main className="login-shell"><section className="login-panel"><div className="brand login-brand"><span className="brand-mark">s</span><span>student profile</span></div><p className="eyebrow">Password update required</p><h1>Set a new password before continuing.</h1><p className="login-copy">Your account must use a new password before you can access the workspace.</p><form onSubmit={submit}><label>New password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label><label>Confirm new password<input type="password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} minLength={8} required /></label>{error && <p className="login-error">{error}</p>}<button className="primary-button login-button" disabled={isLoading}>{isLoading ? 'Updating password...' : 'Update password →'}</button></form></section><aside className="login-aside"><div className="aside-mark">✦</div><p className="eyebrow">Account security</p><h2>A quick update keeps your college account protected.</h2></aside></main>
 }
 
-function RoleStats({ role, profileStrength, marks, marksheets, analytics, assignments, adminOverview }: { role: Role; profileStrength: number | null; marks: Array<{ sem_number: number }>; marksheets: Array<{ cgpa: string | null }>; analytics: { average_percentage: string | null; top_percentage: string | null; student_count: number } | null; assignments: Array<{ class_name: string; subject_name: string }>; adminOverview: { student_count: number; teacher_count: number; class_count: number; active_semester_count: number } | null }) {
+function SettingsPage({ user }: { user: SessionUser }) {
+  return <div className="admin-users-page"><div className="records-page-heading"><div><p className="eyebrow">Workspace settings</p><h2>Account details</h2><p>Your role and sign-in identity are managed by your college administrator.</p></div></div><section className="panel import-panel"><div><h2>Signed-in account</h2><p>Email and permissions currently applied to this session.</p></div><div className="settings-details"><strong>{user.fullName}</strong><span>{user.email}</span><span>{user.role === 'super_admin' ? 'College admin' : user.role}</span></div></section></div>
+}
+
+function RoleStats({ role, profileStrength, marks, marksheets, analytics, assignments, adminOverview, notifications, loading }: { role: Role; profileStrength: number | null; marks: Array<{ sem_number: number }>; marksheets: Array<{ cgpa: string | null }>; analytics: { average_percentage: string | null; top_percentage: string | null; student_count: number } | null; assignments: Array<{ class_name: string; subject_name: string }>; adminOverview: { student_count: number; teacher_count: number; class_count: number; active_semester_count: number } | null; notifications: Array<{ is_read: boolean }>; loading: boolean }) {
+  const value = (nextValue: string) => loading ? '...' : nextValue
+  const heroIndex = role === 'teacher' ? 1 : role === 'student' ? 1 : 0
   const stats = role === 'student'
-    ? [['Profile strength', profileStrength === null ? '—' : `${profileStrength}%`, 'Live', 'from your profile'], ['Current CGPA', marksheets[0]?.cgpa ?? '—', 'Official', 'latest result'], ['Semesters complete', marks.length ? String(new Set(marks.map((mark) => mark.sem_number)).size) : '—', 'Recorded', 'in academic records'], ['Unread updates', '—', 'Open inbox', 'to view status']]
+    ? [['Profile strength', value(profileStrength === null ? '—' : `${profileStrength}%`), 'Live', 'from your profile'], ['Current CGPA', value(marksheets[0]?.cgpa ?? '—'), 'Official', 'latest result'], ['Semesters complete', value(marks.length ? String(new Set(marks.map((mark) => mark.sem_number)).size) : '—'), 'Recorded', 'in academic records'], ['Unread updates', value(String(notifications.filter((notification) => !notification.is_read).length)), 'Open inbox', 'to view status']]
     : role === 'admin'
-      ? [['Total students', String(adminOverview?.student_count ?? 0), 'Live', 'in this college'], ['Faculty members', String(adminOverview?.teacher_count ?? 0), 'Live', 'in this college'], ['Classes', String(adminOverview?.class_count ?? 0), 'Live', 'in this college'], ['Active semesters', String(adminOverview?.active_semester_count ?? 0), 'Live', 'currently running']]
-      : [['Assigned subjects', String(assignments.length), 'Live', 'from assignments'], ['Class average', analytics?.average_percentage ? `${analytics.average_percentage}%` : '—', 'Live', 'selected assignment'], ['Students in scope', analytics ? String(analytics.student_count) : '—', 'Live', 'selected assignment'], ['Top score', analytics?.top_percentage ? `${analytics.top_percentage}%` : '—', 'Live', 'selected assignment']]
-  return <div className="stats-grid">{stats.map(([label, number, change, detail], index) => <div className="stat-card" key={label}><div className="stat-label">{label} <span className={`stat-dot ${['mint', 'purple', 'orange', 'red'][index]}`}></span></div><div className="stat-number">{number}</div><div className={`stat-foot ${change.startsWith('↑') ? 'positive' : change.startsWith('↓') ? 'warning' : 'neutral'}`}>{change} <span>{detail}</span></div></div>)}</div>
+      ? [['Total students', value(String(adminOverview?.student_count ?? 0)), 'Live', 'in this college'], ['Faculty members', value(String(adminOverview?.teacher_count ?? 0)), 'Live', 'in this college'], ['Classes', value(String(adminOverview?.class_count ?? 0)), 'Live', 'in this college'], ['Active semesters', value(String(adminOverview?.active_semester_count ?? 0)), 'Live', 'currently running']]
+      : [['Assigned subjects', value(String(assignments.length)), 'Live', 'from assignments'], ['Class average', value(analytics?.average_percentage ? `${analytics.average_percentage}%` : '—'), 'Live', 'selected assignment'], ['Students in scope', value(analytics ? String(analytics.student_count) : '—'), 'Live', 'selected assignment'], ['Top score', value(analytics?.top_percentage ? `${analytics.top_percentage}%` : '—'), 'Live', 'selected assignment']]
+  return <div className="stats-grid">{stats.map(([label, number, change, detail], index) => <div className={index === heroIndex ? 'stat-card hero-stat' : 'stat-card'} key={label}><div className="stat-label">{label}</div><div className="stat-number">{number}</div><div className={`stat-foot ${change.startsWith('↑') ? 'positive' : change.startsWith('↓') ? 'warning' : 'neutral'}`}>{change} <span>{detail}</span></div></div>)}</div>
 }
 
 function AdminUsersPage({ token }: { token: string }) {
@@ -270,6 +282,10 @@ function AdminAssignmentsPage({ token }: { token: string }) {
   }, [token])
 
   async function saveAssignment() {
+    if (!form.teacherId || !form.classId || !form.subjectId || !form.semesterId) {
+      setMessage('Select a teacher, class, subject, and semester before saving.')
+      return
+    }
     try {
       await apiFetch('/api/admin/assignments', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
       setMessage('Assignment saved and teacher access updated.')
@@ -542,16 +558,25 @@ function StudentRecordsPage({ marks, marksheets }: { marks: Array<{ subject_name
 
 function StudentNotificationsPage({ token, notifications: initialNotifications }: { token: string; notifications: Array<{ id: string; title: string; body: string | null; created_at: string; is_read: boolean }> }) {
   const [notifications, setNotifications] = useState(initialNotifications)
+  const [message, setMessage] = useState('')
   async function markRead(id: string) {
-    await apiFetch(`/api/students/me/notifications/${id}/read`, token, { method: 'POST' })
-    setNotifications((current) => current.map((notification) => notification.id === id ? { ...notification, is_read: true } : notification))
+    try {
+      await apiFetch(`/api/students/me/notifications/${id}/read`, token, { method: 'POST' })
+      setNotifications((current) => current.map((notification) => notification.id === id ? { ...notification, is_read: true } : notification))
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to mark notification as read')
+    }
   }
   async function markAllRead() {
-    await apiFetch('/api/students/me/notifications/read-all', token, { method: 'POST' })
-    setNotifications((current) => current.map((notification) => ({ ...notification, is_read: true })))
+    try {
+      await apiFetch('/api/students/me/notifications/read-all', token, { method: 'POST' })
+      setNotifications((current) => current.map((notification) => ({ ...notification, is_read: true })))
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to mark notifications as read')
+    }
   }
   const unreadCount = notifications.filter((notification) => !notification.is_read).length
-  return <div className="notifications-page"><div className="records-page-heading"><div><p className="eyebrow">Student inbox</p><h2>College notifications</h2><p>Stay current with announcements for your role and class.</p></div><div className="notification-heading-actions"><span className="notification-count">{unreadCount} unread</span>{unreadCount > 0 && <button className="text-button" onClick={() => void markAllRead()}>Mark all read →</button>}</div></div><section className="panel notification-list">{notifications.length ? notifications.map((notification) => <article className={notification.is_read ? 'notification-row' : 'notification-row unread'} key={notification.id}><div className="notification-status">{notification.is_read ? '✓' : '!'}</div><div><h3>{notification.title}</h3><p>{notification.body ?? 'College announcement'}</p><time>{new Date(notification.created_at).toLocaleDateString()}</time></div>{!notification.is_read && <button onClick={() => void markRead(notification.id)}>Mark read</button>}</article>) : <div className="empty-records">You are all caught up. New college updates will appear here.</div>}</section></div>
+  return <div className="notifications-page"><div className="records-page-heading"><div><p className="eyebrow">Student inbox</p><h2>College notifications</h2><p>Stay current with announcements for your role and class.</p></div><div className="notification-heading-actions"><span className="notification-count">{unreadCount} unread</span>{unreadCount > 0 && <button className="text-button" onClick={() => void markAllRead()}>Mark all read →</button>}</div></div>{message && <p className="data-notice">{message}</p>}<section className="panel notification-list">{notifications.length ? notifications.map((notification) => <article className={notification.is_read ? 'notification-row' : 'notification-row unread'} key={notification.id}><div className="notification-status">{notification.is_read ? '✓' : '!'}</div><div><h3>{notification.title}</h3><p>{notification.body ?? 'College announcement'}</p><time>{new Date(notification.created_at).toLocaleDateString()}</time></div>{!notification.is_read && <button onClick={() => void markRead(notification.id)}>Mark read</button>}</article>) : <div className="empty-records">You are all caught up. New college updates will appear here.</div>}</section></div>
 }
 
 function LiveDataSummary({ role, notifications, marks, analytics }: { role: Role; notifications: Array<{ title: string; is_read: boolean }>; marks: Array<{ subject_name: string; marks_obtained: string; max_marks: string }>; analytics: { average_percentage: string | null; top_percentage: string | null; student_count: number } | null }) {
@@ -570,7 +595,7 @@ function StudentProfilePage({ token, profile, onSaved }: { token: string; profil
   const [message, setMessage] = useState('')
   const [uploading, setUploading] = useState(false)
   const [documents, setDocuments] = useState<Array<{ id: string; doc_type: string; file_name: string | null; parsed_headings: Array<{ heading: string; content: string }> | null; status: string }>>([])
-  useEffect(() => { void apiFetch<{ documents: typeof documents }>('/api/students/me/documents', token).then((result) => setDocuments(result.documents)).catch(() => undefined) }, [token])
+  useEffect(() => { void apiFetch<{ documents: typeof documents }>('/api/students/me/documents', token).then((result) => setDocuments(result.documents)).catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'Unable to load documents')) }, [token])
   async function saveProfile() {
     try {
       const result = await apiFetch<{ profile: typeof profile }>('/api/students/me', token, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
@@ -602,14 +627,22 @@ function StudentProfilePage({ token, profile, onSaved }: { token: string; profil
 }
 
 function StudentOverview({ setActiveNav, profile, profileStrength, marks, notifications, marksheets }: { setActiveNav: (nav: string) => void; profile: { full_name: string; profile_photo_url: string | null; bio: string | null; linkedin_url: string | null; github_url: string | null; class_name: string | null; department_name: string | null; roll_number: string } | null; profileStrength: number | null; marks: Array<{ subject_name: string; marks_obtained: string; max_marks: string }>; notifications: Array<{ title: string; body: string | null }>; marksheets: Array<{ sgpa: string | null }> }) {
+  const [photoFailed, setPhotoFailed] = useState(false)
   const latestMarksheet = marksheets[0]
-  return <div className="student-grid"><section className="panel profile-panel"><div className="profile-hero"><div className="profile-photo">{profile?.profile_photo_url ? <img src={profile.profile_photo_url} alt="Profile" /> : profile?.full_name?.split(' ').map((part) => part[0]).join('')}</div><div><p className="eyebrow">Professional profile</p><h2>{profile?.full_name ?? 'Profile unavailable'}</h2><p>{profile?.class_name ?? 'Class not assigned'} · {profile?.department_name ?? 'Department not assigned'}</p></div><button className="select-button" onClick={() => setActiveNav('My profile')}>Edit profile</button></div><div className="profile-progress"><div><strong>{profileStrength ?? 0}%</strong><span>Profile strength</span></div><div className="progress-track"><i style={{ width: `${profileStrength ?? 0}%` }}></i></div><small>{profile?.bio ? 'Profile bio added' : 'Add a bio to improve your profile'}</small></div><div className="profile-links"><span>{profile?.linkedin_url ? 'LinkedIn connected' : 'LinkedIn not added'}</span><span>{profile?.github_url ? 'GitHub connected' : 'GitHub not added'}</span><span>{profile?.profile_photo_url ? 'Photo added' : 'Photo not added'}</span></div></section><section className="panel records-panel"><div className="panel-heading"><div><h2>Academic snapshot</h2><p>Records currently stored for your account</p></div><button className="text-button" onClick={() => setActiveNav('Academic records')}>View records →</button></div><div className="grade-row"><div className="grade-circle">{latestMarksheet?.sgpa ?? '—'}<small>SGPA</small></div><div><strong>{marks.length} mark records</strong><p>{profile?.roll_number ?? 'Roll number not assigned'}</p><span className="positive">Live database records</span></div></div><div className="subject-mini">{marks.slice(0, 4).map((mark) => <Fragment key={mark.subject_name}><span>{mark.subject_name}</span><b>{mark.marks_obtained}/{mark.max_marks}</b></Fragment>)}</div></section><section className="panel activity-panel"><div className="panel-heading"><div><h2>Notifications</h2><p>{notifications.length} updates in your inbox</p></div><button className="text-button" onClick={() => setActiveNav('Notifications')}>View all</button></div><div className="activity-list">{notifications.slice(0, 3).map((notification) => <div className="activity-row" key={notification.title}><span className="activity-icon blue">!</span><span><strong>{notification.title}</strong><small>{notification.body ?? 'College update'}</small></span></div>)}</div></section></div>
+  return <div className="student-grid"><section className="panel profile-panel"><div className="profile-hero"><div className="profile-photo">{profile?.profile_photo_url && !photoFailed ? <img src={profile.profile_photo_url} alt="Profile" onError={() => setPhotoFailed(true)} /> : profile?.full_name?.split(' ').map((part) => part[0]).join('')}</div><div><p className="eyebrow">Professional profile</p><h2>{profile?.full_name ?? 'Profile unavailable'}</h2><p>{profile?.class_name ?? 'Class not assigned'} · {profile?.department_name ?? 'Department not assigned'}</p></div><button className="select-button" onClick={() => setActiveNav('My profile')}>Edit profile</button></div><div className="profile-progress"><div><strong>{profileStrength ?? 0}%</strong><span>Profile strength</span></div><div className="progress-track"><i style={{ width: `${profileStrength ?? 0}%` }}></i></div><small>{profile?.bio ? 'Profile bio added' : 'Add a bio to improve your profile'}</small></div><div className="profile-links"><span>{profile?.linkedin_url ? 'LinkedIn connected' : 'LinkedIn not added'}</span><span>{profile?.github_url ? 'GitHub connected' : 'GitHub not added'}</span><span>{profile?.profile_photo_url ? 'Photo added' : 'Photo not added'}</span></div></section><section className="panel records-panel"><div className="panel-heading"><div><h2>Academic snapshot</h2><p>Records currently stored for your account</p></div><button className="text-button" onClick={() => setActiveNav('Academic records')}>View records →</button></div><div className="grade-row"><div className="grade-circle">{latestMarksheet?.sgpa ?? '—'}<small>SGPA</small></div><div><strong>{marks.length} mark records</strong><p>{profile?.roll_number ?? 'Roll number not assigned'}</p><span className="positive">Live database records</span></div></div><div className="subject-mini">{marks.slice(0, 4).map((mark) => <Fragment key={mark.subject_name}><span>{mark.subject_name}</span><b>{mark.marks_obtained}/{mark.max_marks}</b></Fragment>)}</div></section><section className="panel activity-panel"><div className="panel-heading"><div><h2>Notifications</h2><p>{notifications.length} updates in your inbox</p></div><button className="text-button" onClick={() => setActiveNav('Notifications')}>View all</button></div><div className="activity-list">{notifications.slice(0, 3).map((notification) => <div className="activity-row" key={notification.title}><span className="activity-icon blue">!</span><span><strong>{notification.title}</strong><small>{notification.body ?? 'College update'}</small></span></div>)}</div></section></div>
 }
 
 function FacultyOverview({ role, assignments, analytics, adminUsers, adminAssignments, setActiveNav }: { role: Role; assignments: Array<{ class_name: string; subject_name: string; status?: string }>; analytics: { average_percentage: string | null; top_percentage: string | null; student_count: number } | null; adminUsers: Array<{ full_name: string; role: string }>; adminAssignments: Array<{ status: string }>; setActiveNav: (nav: string) => void }) {
   const isAdmin = role === 'admin'
   const groups = isAdmin ? adminUsers.filter((user) => user.role === 'teacher').map((user) => `${user.full_name} · Faculty`) : assignments.map((assignment) => `${assignment.class_name} · ${assignment.subject_name}`)
-  return <><div className="dashboard-grid"><section className="panel performance-panel"><div className="panel-heading"><div><h2>{isAdmin ? 'College workspace' : 'Assignment performance'}</h2><p>{isAdmin ? `${adminUsers.length} accounts · ${adminAssignments.length} assignments` : 'Live values from your selected assignment'}</p></div></div><div className="record-kpis"><div className="record-kpi"><span>{isAdmin ? 'Accounts' : 'Class average'}</span><strong>{isAdmin ? adminUsers.length : analytics?.average_percentage ? `${analytics.average_percentage}%` : '—'}</strong><small>Database value</small></div><div className="record-kpi"><span>{isAdmin ? 'Active assignments' : 'Students in scope'}</span><strong>{isAdmin ? adminAssignments.filter((assignment) => assignment.status === 'active').length : analytics?.student_count ?? '—'}</strong><small>Database value</small></div><div className="record-kpi"><span>{isAdmin ? 'Teachers' : 'Top score'}</span><strong>{isAdmin ? adminUsers.filter((user) => user.role === 'teacher').length : analytics?.top_percentage ? `${analytics.top_percentage}%` : '—'}</strong><small>Database value</small></div></div></section><section className="panel classes-panel"><div className="panel-heading"><div><h2>{isAdmin ? 'Faculty accounts' : 'Your assignments'}</h2><p>{isAdmin ? 'Real accounts created in this college' : 'Only classes assigned to your account'}</p></div></div><div className="class-list">{groups.length ? groups.map((item) => <div className="class-row" key={item}><span className="class-icon class-0">{isAdmin ? 'F' : 'C'}</span><span className="class-name"><strong>{item.split(' · ')[0]}</strong><small>{item.split(' · ')[1]}</small></span><span className="row-arrow">›</span></div>) : <div className="empty-records">No records are assigned yet.</div>}</div><button className="text-button" onClick={() => setActiveNav(isAdmin ? 'Users' : 'My classes')}>View details <span>→</span></button></section></div></>
+  const averageValue = Math.min(100, Math.max(0, Number(analytics?.average_percentage ?? 0)))
+  const topValue = Math.min(100, Math.max(0, Number(analytics?.top_percentage ?? 0)))
+  const adminBars = [
+    ['Accounts', adminUsers.length, 100],
+    ['Active assignments', adminAssignments.filter((assignment) => assignment.status === 'active').length, Math.max(1, adminAssignments.length)],
+    ['Faculty', adminUsers.filter((user) => user.role === 'teacher').length, Math.max(1, adminUsers.length)],
+  ] as const
+  return <><div className="dashboard-grid"><section className="panel performance-panel"><div className="panel-heading"><div><h2>{isAdmin ? 'College activity' : 'Assignment performance'}</h2><p>{isAdmin ? 'A visual read on the workspace currently in use' : 'Selected assignment compared at a glance'}</p></div></div>{isAdmin ? <div className="performance-bars">{adminBars.map(([label, current, total]) => <div className="performance-bar" key={label}><div><span>{label}</span><small>{current === 0 ? 'No activity yet' : 'Active in workspace'}</small></div><i style={{ width: `${Math.min(100, (current / total) * 100)}%` }} /></div>)}</div> : <div className="performance-bars"><div className="performance-bar"><div><span>Class average</span><small>Selected assignment</small></div><i style={{ width: `${averageValue}%` }} /></div><div className="performance-bar"><div><span>Top score</span><small>Highest recorded result</small></div><i className="top-score-bar" style={{ width: `${topValue}%` }} /></div><p className="performance-note">The class is being measured against its strongest result.</p></div>}</section><section className="panel classes-panel"><div className="panel-heading"><div><h2>{isAdmin ? 'Faculty accounts' : 'Your assignments'}</h2><p>{isAdmin ? 'Real accounts created in this college' : 'Only classes assigned to your account'}</p></div></div><div className="class-list">{groups.length ? groups.map((item, index) => <div className="class-row" key={item}><span className={`class-icon class-${index % 3}`}>{isAdmin ? 'F' : 'C'}</span><span className="class-name"><strong>{item.split(' · ')[0]}</strong><small>{item.split(' · ')[1]}</small></span><span className="row-arrow">›</span></div>) : <div className="empty-records">No records are assigned yet.</div>}</div><button className="text-button" onClick={() => setActiveNav(isAdmin ? 'Users' : 'My classes')}>View details <span>→</span></button></section></div></>
 }
 
 export default App
