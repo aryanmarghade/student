@@ -585,7 +585,7 @@ function LiveDataSummary({ role, notifications, marks, analytics }: { role: Role
     return <div className="live-summary"><span className="live-pulse"></span><strong>{unreadCount} unread update{unreadCount === 1 ? '' : 's'}</strong><span>{marks.length} academic records loaded</span></div>
   }
   if (role === 'teacher' && analytics) {
-    return <div className="live-summary"><span className="live-pulse"></span><strong>Live class average {analytics.average_percentage ?? 0}%</strong><span>{analytics.student_count} students · top score {analytics.top_percentage ?? 0}%</span></div>
+    return <div className="live-summary"><span className="live-pulse"></span><strong>Live assignment data</strong><span>Updates when you change assignment</span></div>
   }
   return null
 }
