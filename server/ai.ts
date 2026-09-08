@@ -118,6 +118,30 @@ async function assertStudentScope(context: ToolContext, studentId: string) {
   if (result.rowCount !== 1) throw new AiScopeError('That student is outside your college.')
 }
 
+async function assertTeacherStudentScope(context: ToolContext, studentId: string, args: Record<string, unknown>) {
+  if (context.user.role !== 'teacher') return
+  const classId = stringArg(args, 'classId')
+  const subjectId = stringArg(args, 'subjectId')
+  const semesterId = stringArg(args, 'semesterId')
+  const result = await context.pool.query(
+    `SELECT 1
+       FROM students st
+       JOIN users u ON u.id = st.id AND u.college_id = $2
+      WHERE st.id = $1
+        AND EXISTS (
+          SELECT 1 FROM teacher_class_assignments a
+           WHERE a.teacher_id = $3
+             AND a.class_id = st.class_id
+             AND ($4::uuid IS NULL OR a.class_id = $4)
+             AND ($5::uuid IS NULL OR a.subject_id = $5)
+             AND ($6::uuid IS NULL OR a.semester_id = $6)
+             AND a.status IN ('active', 'past')
+        )`,
+    [studentId, context.user.collegeId, context.user.id, classId ?? null, subjectId ?? null, semesterId ?? null],
+  )
+  if (result.rowCount !== 1) throw new AiScopeError('That student is outside your assigned scope.')
+}
+
 async function getClassTopper(context: ToolContext, args: Record<string, unknown>) {
   const scope = await assertClassScope(context, args)
   if (!scope) {
@@ -182,6 +206,7 @@ async function getStudentPerformance(context: ToolContext, args: Record<string, 
   const studentId = context.user.role === 'student' ? context.user.id : stringArg(args, 'studentId')
   if (!studentId) throw new AiScopeError('This tool requires studentId.')
   await assertStudentScope(context, studentId)
+  await assertTeacherStudentScope(context, studentId, args)
   const classId = stringArg(args, 'classId')
   const subjectId = stringArg(args, 'subjectId')
   const semesterId = stringArg(args, 'semesterId')
@@ -191,12 +216,13 @@ async function getStudentPerformance(context: ToolContext, args: Record<string, 
             sem.sem_number, ay.label AS academic_year,
             ROUND((m.marks_obtained / NULLIF(m.max_marks, 0) * 100)::numeric, 2) AS percentage
        FROM marks m JOIN subjects s ON s.id = m.subject_id
+      JOIN students st ON st.id = m.student_id AND st.id = $2 AND ($5::uuid IS NULL OR st.class_id = $5)
        JOIN semesters sem ON sem.id = m.semester_id
        JOIN academic_years ay ON ay.id = sem.academic_year_id AND ay.college_id = $1
-      WHERE m.student_id = $2 AND ($3::uuid IS NULL OR m.subject_id = $3)
+      WHERE ($3::uuid IS NULL OR m.subject_id = $3)
         AND ($4::uuid IS NULL OR m.semester_id = $4)
       ORDER BY ay.label, sem.sem_number, s.name, m.exam_type`,
-    [context.user.collegeId, studentId, subjectId ?? null, semesterId ?? null],
+    [context.user.collegeId, studentId, subjectId ?? null, semesterId ?? null, classId ?? null],
   )
   return { studentId, marks: result.rows }
 }
@@ -233,16 +259,23 @@ async function getWeakestStudents(context: ToolContext, args: Record<string, unk
 
 async function compareStudents(context: ToolContext, args: Record<string, unknown>) {
   if (context.user.role === 'student') throw new AiScopeError('Students may not compare other students.')
+  const scope = await assertClassScope(context, args)
   const studentIds = stringArrayArg(args, 'studentIds')
   if (!studentIds.length || studentIds.length > 10) throw new AiScopeError('Provide between one and ten studentIds.')
   for (const studentId of studentIds) await assertStudentScope(context, studentId)
+  if (context.user.role === 'teacher') {
+    for (const studentId of studentIds) await assertTeacherStudentScope(context, studentId, args)
+  }
   const result = await context.pool.query(
     `SELECT u.full_name AS student_name, st.roll_number,
             ROUND((AVG(m.marks_obtained / NULLIF(m.max_marks, 0)) * 100)::numeric, 2) AS average_percentage
        FROM marks m JOIN students st ON st.id = m.student_id JOIN users u ON u.id = st.id
       WHERE m.student_id = ANY($1::uuid[]) AND u.college_id = $2
+        AND ($3::uuid IS NULL OR st.class_id = $3)
+        AND ($4::uuid IS NULL OR m.subject_id = $4)
+        AND ($5::uuid IS NULL OR m.semester_id = $5)
       GROUP BY u.full_name, st.roll_number ORDER BY average_percentage DESC`,
-    [studentIds, context.user.collegeId],
+    [studentIds, context.user.collegeId, scope?.classId ?? null, scope?.subjectId ?? null, scope?.semesterId ?? null],
   )
   return { students: result.rows }
 }
@@ -251,6 +284,7 @@ async function predictNextScore(context: ToolContext, args: Record<string, unkno
   const studentId = context.user.role === 'student' ? context.user.id : stringArg(args, 'studentId')
   if (!studentId) throw new AiScopeError('This tool requires studentId.')
   await assertStudentScope(context, studentId)
+  await assertTeacherStudentScope(context, studentId, args)
   const result = await context.pool.query(
     `SELECT sem.sem_number, ay.label AS academic_year,
             AVG(m.marks_obtained / NULLIF(m.max_marks, 0) * 100)::float AS percentage

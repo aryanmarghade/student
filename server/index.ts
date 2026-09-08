@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import cors from 'cors'
 import bcrypt from 'bcryptjs'
 import express, { type NextFunction, type Request, type Response } from 'express'
@@ -14,6 +14,11 @@ import { parseResume } from './documents.js'
 const app = express()
 const port = Number(process.env.API_PORT ?? 4000)
 const jwtSecret = process.env.JWT_SECRET
+const configuredWebOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5173'
+const allowedWebOrigins = new Set([
+  configuredWebOrigin,
+  ...(process.env.NODE_ENV === 'production' ? [] : ['http://localhost:5173', 'http://127.0.0.1:5173']),
+])
 
 if (!jwtSecret && process.env.NODE_ENV === 'production') {
   throw new Error('JWT_SECRET is required in production')
@@ -48,7 +53,13 @@ type AuthUser = { id: string; collegeId: string; role: Role; email: string; full
 
 type AuthRequest = Request & { user?: AuthUser }
 
-app.use(cors({ origin: process.env.WEB_ORIGIN ?? 'http://localhost:5173' }))
+app.use(cors({ origin: (origin, callback) => {
+  if (!origin || allowedWebOrigins.has(origin)) {
+    callback(null, true)
+    return
+  }
+  callback(new Error('Origin is not allowed'))
+} }))
 app.use(express.json({ limit: '1mb' }))
 
 function signAccessToken(user: AuthUser) {
@@ -149,6 +160,10 @@ const resetPasswordSchema = z.object({
 const adminResetPasswordSchema = z.object({
   email: z.string().email(),
   newPassword: z.string().min(8).max(200),
+})
+
+const accountStatusSchema = z.object({
+  isActive: z.boolean(),
 })
 
 const uuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
@@ -258,6 +273,12 @@ function validateDocument(input: z.infer<typeof documentSchema>) {
 function objectKeyFromUrl(fileUrl: string) {
   const pathname = new URL(fileUrl).pathname.replace(/^\/+/, '')
   return pathname.startsWith(`${storageBucket}/`) ? pathname.slice(storageBucket.length + 1) : pathname
+}
+
+function assertStudentObjectKey(objectKey: string | undefined, user: AuthUser) {
+  if (!objectKey || !objectKey.startsWith(`${user.collegeId}/students/${user.id}/`)) {
+    throw new DocumentValidationError(400, 'Document storage key is outside the student account scope')
+  }
 }
 
 app.get('/api/health', (_request, response) => {
@@ -394,6 +415,7 @@ app.post('/api/students/me/documents', requireAuth, requireRoles('student'), asy
   try {
     const input = documentSchema.parse(request.body)
     validateDocument(input)
+    assertStudentObjectKey(input.objectKey, request.user!)
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -437,6 +459,48 @@ app.get('/api/students/me/documents', requireAuth, requireRoles('student'), asyn
       [request.user!.id],
     )
     return response.json({ documents: result.rows })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/students/me/documents/:documentId/download', requireAuth, requireRoles('student'), async (request: AuthRequest, response, next) => {
+  try {
+    const documentId = uuidSchema.parse(request.params.documentId)
+    const result = await pool.query<{ file_url: string; file_name: string | null }>(
+      `SELECT file_url, file_name FROM student_documents
+        WHERE id = $1 AND student_id = $2 AND status <> 'archived'`,
+      [documentId, request.user!.id],
+    )
+    const document = result.rows[0]
+    if (!document) return response.status(404).json({ error: 'Document not found' })
+    if (!storageEndpoint || !storageAccessKey || !storageSecretKey) return response.status(503).json({ error: 'Object storage is not configured' })
+    const objectKey = objectKeyFromUrl(document.file_url)
+    const downloadUrl = await getSignedUrl(storageClient, new GetObjectCommand({ Bucket: storageBucket, Key: objectKey }), { expiresIn: 900 })
+    return response.json({ downloadUrl, expiresInSeconds: 900, fileName: document.file_name })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.delete('/api/students/me/documents/:documentId', requireAuth, requireRoles('student'), async (request: AuthRequest, response, next) => {
+  try {
+    const documentId = uuidSchema.parse(request.params.documentId)
+    const result = await pool.query<{ file_url: string; doc_type: string }>(
+      `UPDATE student_documents
+          SET status = 'archived'
+        WHERE id = $1 AND student_id = $2 AND status <> 'archived'
+        RETURNING file_url, doc_type`,
+      [documentId, request.user!.id],
+    )
+    const document = result.rows[0]
+    if (!document) return response.status(404).json({ error: 'Document not found' })
+    if (storageEndpoint && storageAccessKey && storageSecretKey) {
+      await storageClient.send(new DeleteObjectCommand({ Bucket: storageBucket, Key: objectKeyFromUrl(document.file_url) }))
+    }
+    if (document.doc_type === 'photo') await pool.query('UPDATE students SET profile_photo_url = NULL WHERE id = $1 AND profile_photo_url = $2', [request.user!.id, document.file_url])
+    if (document.doc_type === 'resume_pdf' || document.doc_type === 'resume_docx') await pool.query('UPDATE students SET resume_url = NULL WHERE id = $1 AND resume_url = $2', [request.user!.id, document.file_url])
+    return response.json({ deleted: true })
   } catch (error) {
     next(error)
   }
@@ -634,6 +698,25 @@ app.post('/api/admin/users/reset-password', requireAuth, requireRoles('super_adm
     )
     if (result.rowCount !== 1) return response.status(404).json({ error: 'Active teacher or student account not found' })
     return response.json({ message: 'Password changed. The user must update it after signing in.', user: result.rows[0] })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.patch('/api/admin/users/:userId/status', requireAuth, requireRoles('super_admin'), async (request: AuthRequest, response, next) => {
+  try {
+    const userId = uuidSchema.parse(request.params.userId)
+    const input = accountStatusSchema.parse(request.body)
+    if (userId === request.user!.id) return response.status(400).json({ error: 'You cannot disable your own account' })
+    const result = await pool.query<{ id: string; email: string; is_active: boolean }>(
+      `UPDATE users
+          SET is_active = $1
+        WHERE id = $2 AND college_id = $3 AND role <> 'super_admin'
+        RETURNING id, email, is_active`,
+      [input.isActive, userId, request.user!.collegeId],
+    )
+    if (result.rowCount !== 1) return response.status(404).json({ error: 'Teacher or student account not found' })
+    return response.json({ user: result.rows[0] })
   } catch (error) {
     next(error)
   }

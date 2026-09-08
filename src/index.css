@@ -1,4 +1,39 @@
-:root { font-family: 'Trebuchet MS', 'Segoe UI', sans-serif; color: #202326; background: #f8f9f8; font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
+:root {
+	font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	color: var(--ink-900);
+	background: var(--surface-page);
+	font-synthesis: none;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	--ink-950: #182522;
+	--ink-900: #24332f;
+	--ink-700: #4d5f58;
+	--ink-500: #75857e;
+	--ink-400: #94a29c;
+	--ink-300: #b4c0bb;
+	--line: #dfe7e2;
+	--line-soft: #ebf0ed;
+	--surface-page: #f3f6f4;
+	--surface: #ffffff;
+	--surface-muted: #f8faf9;
+	--accent: #276b5e;
+	--accent-strong: #1d554a;
+	--accent-soft: #e2f0eb;
+	--success: #277a55;
+	--warning: #9b6b27;
+	--error: #ae504b;
+	--info: #3d6489;
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 12px;
+	--space-4: 16px;
+	--space-5: 24px;
+	--space-6: 32px;
+	--space-7: 48px;
+	--radius: 8px;
+	--shadow: 0 1px 2px rgb(24 37 34 / 5%), 0 8px 24px rgb(24 37 34 / 4%);
+}
+
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; }
-button { font: inherit; }
+body { margin: 0; min-width: 320px; background: var(--surface-page); }
+button, input, select, textarea { font: inherit; }
