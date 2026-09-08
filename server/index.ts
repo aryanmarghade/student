@@ -184,7 +184,11 @@ const profileUpdateSchema = z.object({
   profilePhotoUrl: z.string().url().or(z.literal('')).nullable().optional(),
   linkedinUrl: z.string().url().or(z.literal('')).nullable().optional(),
   githubUrl: z.string().url().or(z.literal('')).nullable().optional(),
+  portfolioUrl: z.string().url().or(z.literal('')).nullable().optional(),
   bio: z.string().max(1000).optional(),
+  skills: z.array(z.string().trim().min(1).max(60)).max(30).optional(),
+  projects: z.array(z.string().trim().min(1).max(160)).max(20).optional(),
+  achievements: z.array(z.string().trim().min(1).max(160)).max(20).optional(),
 })
 
 const documentSchema = z.object({
@@ -349,8 +353,9 @@ app.post('/api/auth/reset-password', requireAuth, async (request: AuthRequest, r
 app.get('/api/students/me', requireAuth, requireRoles('student'), async (request: AuthRequest, response, next) => {
   try {
     const result = await pool.query(
-      `SELECT u.id, u.email, u.full_name, st.roll_number, st.linkedin_url, st.github_url,
-              st.profile_photo_url, st.resume_url, st.bio, st.profile_strength,
+            `SELECT u.id, u.email, u.full_name, st.roll_number, st.linkedin_url, st.github_url,
+              st.portfolio_url, st.profile_photo_url, st.resume_url, st.bio,
+              st.skills, st.projects, st.achievements, st.profile_strength,
               c.name AS class_name, d.name AS department_name
          FROM users u
          JOIN students st ON st.id = u.id AND st.college_id = u.college_id
@@ -392,17 +397,24 @@ app.put('/api/students/me', requireAuth, requireRoles('student'), async (request
           SET profile_photo_url = COALESCE($1, profile_photo_url),
               linkedin_url = COALESCE($2, linkedin_url),
               github_url = COALESCE($3, github_url),
-              bio = COALESCE($4, bio),
+              portfolio_url = COALESCE($4, portfolio_url),
+              bio = COALESCE($5, bio),
+              skills = COALESCE($6::jsonb, skills),
+              projects = COALESCE($7::jsonb, projects),
+              achievements = COALESCE($8::jsonb, achievements),
               profile_strength = LEAST(100,
                 (CASE WHEN COALESCE($1, profile_photo_url) IS NOT NULL AND COALESCE($1, profile_photo_url) <> '' THEN 20 ELSE 0 END) +
                 (CASE WHEN resume_url IS NOT NULL THEN 25 ELSE 0 END) +
                 (CASE WHEN COALESCE($2, linkedin_url) IS NOT NULL AND COALESCE($2, linkedin_url) <> '' THEN 15 ELSE 0 END) +
                 (CASE WHEN COALESCE($3, github_url) IS NOT NULL AND COALESCE($3, github_url) <> '' THEN 15 ELSE 0 END) +
-                (CASE WHEN COALESCE($4, bio) IS NOT NULL AND COALESCE($4, bio) <> '' THEN 10 ELSE 0 END) +
+                (CASE WHEN COALESCE($4, portfolio_url) IS NOT NULL AND COALESCE($4, portfolio_url) <> '' THEN 10 ELSE 0 END) +
+                (CASE WHEN COALESCE($5, bio) IS NOT NULL AND COALESCE($5, bio) <> '' THEN 10 ELSE 0 END) +
+                (CASE WHEN jsonb_array_length(COALESCE($6::jsonb, skills)) > 0 THEN 5 ELSE 0 END) +
+                (CASE WHEN jsonb_array_length(COALESCE($7::jsonb, projects)) > 0 THEN 5 ELSE 0 END) +
                 (CASE WHEN EXISTS (SELECT 1 FROM marks WHERE student_id = students.id) THEN 15 ELSE 0 END))
-        WHERE id = $5 AND college_id = $6
-      RETURNING profile_photo_url, linkedin_url, github_url, bio, profile_strength`,
-      [input.profilePhotoUrl, input.linkedinUrl, input.githubUrl, input.bio, request.user!.id, request.user!.collegeId],
+        WHERE id = $9 AND college_id = $10
+      RETURNING profile_photo_url, linkedin_url, github_url, portfolio_url, bio, skills, projects, achievements, profile_strength`,
+      [input.profilePhotoUrl, input.linkedinUrl, input.githubUrl, input.portfolioUrl, input.bio, input.skills ? JSON.stringify(input.skills) : null, input.projects ? JSON.stringify(input.projects) : null, input.achievements ? JSON.stringify(input.achievements) : null, request.user!.id, request.user!.collegeId],
     )
     if (result.rowCount !== 1) return response.status(404).json({ error: 'Student profile not found' })
     return response.json({ profile: result.rows[0] })
@@ -874,6 +886,116 @@ app.get('/api/teacher/classes/:classId/students', requireAuth, requireRoles('tea
       [classId, request.user!.collegeId, request.user!.id, subjectId, semesterId],
     )
     return response.json({ students: result.rows })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/teacher/students', requireAuth, requireRoles('teacher'), async (request: AuthRequest, response, next) => {
+  try {
+    const query = typeof request.query.query === 'string' ? request.query.query.trim() : ''
+    const classId = typeof request.query.classId === 'string' && request.query.classId ? uuidSchema.parse(request.query.classId) : null
+    const result = await pool.query(
+      `SELECT st.id, u.full_name, st.roll_number, st.profile_strength,
+              st.linkedin_url, st.github_url, st.portfolio_url, st.skills,
+              c.name AS class_name, c.year, d.name AS department_name,
+              ROUND(AVG(m.marks_obtained / NULLIF(m.max_marks, 0) * 100)::numeric, 2) AS average_percentage,
+              COUNT(m.id)::int AS mark_count
+         FROM students st
+         JOIN users u ON u.id = st.id AND u.college_id = $1 AND u.is_active = true
+         LEFT JOIN classes c ON c.id = st.class_id
+         LEFT JOIN departments d ON d.id = st.department_id
+         LEFT JOIN marks m ON m.student_id = st.id AND EXISTS (
+           SELECT 1 FROM teacher_class_assignments ma
+            WHERE ma.teacher_id = $2 AND ma.class_id = st.class_id
+              AND ma.subject_id = m.subject_id AND ma.semester_id = m.semester_id
+              AND ma.status IN ('active', 'past')
+         )
+        WHERE EXISTS (
+          SELECT 1 FROM teacher_class_assignments a
+           WHERE a.teacher_id = $2 AND a.class_id = st.class_id
+             AND a.status IN ('active', 'past')
+             AND ($3::uuid IS NULL OR a.class_id = $3)
+        )
+          AND ($4 = '' OR u.full_name ILIKE '%' || $4 || '%' OR st.roll_number ILIKE '%' || $4 || '%')
+        GROUP BY st.id, u.full_name, st.roll_number, st.profile_strength, st.linkedin_url,
+                 st.github_url, st.portfolio_url, st.skills, c.name, c.year, d.name
+        ORDER BY u.full_name`,
+      [request.user!.collegeId, request.user!.id, classId, query],
+    )
+    return response.json({ students: result.rows })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/teacher/students/:studentId', requireAuth, requireRoles('teacher'), async (request: AuthRequest, response, next) => {
+  try {
+    const studentId = uuidSchema.parse(request.params.studentId)
+    const profile = await pool.query(
+      `SELECT u.id, u.full_name, st.roll_number, st.profile_strength, st.linkedin_url,
+              st.github_url, st.portfolio_url, st.bio, st.skills, st.projects, st.achievements,
+              c.name AS class_name, c.year, d.name AS department_name
+         FROM students st
+         JOIN users u ON u.id = st.id AND u.college_id = $2 AND u.is_active = true
+         LEFT JOIN classes c ON c.id = st.class_id
+         LEFT JOIN departments d ON d.id = st.department_id
+        WHERE st.id = $1 AND EXISTS (
+          SELECT 1 FROM teacher_class_assignments a
+           WHERE a.teacher_id = $3 AND a.class_id = st.class_id
+             AND a.status IN ('active', 'past')
+        )`,
+      [studentId, request.user!.collegeId, request.user!.id],
+    )
+    if (profile.rowCount !== 1) return response.status(404).json({ error: 'Student not found in your assigned scope' })
+    const marks = await pool.query(
+      `SELECT s.name AS subject_name, m.exam_type, m.marks_obtained, m.max_marks,
+              sem.sem_number, ay.label AS academic_year
+         FROM marks m
+         JOIN subjects s ON s.id = m.subject_id
+         JOIN semesters sem ON sem.id = m.semester_id
+         JOIN academic_years ay ON ay.id = sem.academic_year_id AND ay.college_id = $2
+        WHERE m.student_id = $1 AND EXISTS (
+          SELECT 1 FROM teacher_class_assignments a
+           WHERE a.teacher_id = $3 AND a.class_id = (SELECT class_id FROM students WHERE id = $1)
+             AND a.subject_id = m.subject_id AND a.semester_id = m.semester_id
+             AND a.status IN ('active', 'past')
+        )
+        ORDER BY ay.label DESC, sem.sem_number DESC, s.name, m.exam_type`,
+      [studentId, request.user!.collegeId, request.user!.id],
+    )
+    const documents = await pool.query(
+      `SELECT id, doc_type, file_name, uploaded_at, status
+         FROM student_documents WHERE student_id = $1 AND status <> 'archived' ORDER BY uploaded_at DESC`,
+      [studentId],
+    )
+    return response.json({ profile: profile.rows[0], marks: marks.rows, documents: documents.rows })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/teacher/students/:studentId/documents/:documentId/download', requireAuth, requireRoles('teacher'), async (request: AuthRequest, response, next) => {
+  try {
+    const studentId = uuidSchema.parse(request.params.studentId)
+    const documentId = uuidSchema.parse(request.params.documentId)
+    const result = await pool.query<{ file_url: string; file_name: string | null }>(
+      `SELECT d.file_url, d.file_name
+         FROM student_documents d
+        WHERE d.id = $1 AND d.student_id = $2 AND d.status <> 'archived'
+          AND EXISTS (
+            SELECT 1 FROM students st
+            JOIN users u ON u.id = st.id AND u.college_id = $4
+            JOIN teacher_class_assignments a ON a.class_id = st.class_id
+            WHERE st.id = d.student_id AND a.teacher_id = $3 AND a.status IN ('active', 'past')
+          )`,
+      [documentId, studentId, request.user!.id, request.user!.collegeId],
+    )
+    const document = result.rows[0]
+    if (!document) return response.status(404).json({ error: 'Document not found in your assigned scope' })
+    if (!storageEndpoint || !storageAccessKey || !storageSecretKey) return response.status(503).json({ error: 'Object storage is not configured' })
+    const downloadUrl = await getSignedUrl(storageClient, new GetObjectCommand({ Bucket: storageBucket, Key: objectKeyFromUrl(document.file_url) }), { expiresIn: 900 })
+    return response.json({ downloadUrl, fileName: document.file_name, expiresInSeconds: 900 })
   } catch (error) {
     next(error)
   }

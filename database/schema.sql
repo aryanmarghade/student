@@ -71,9 +71,13 @@ CREATE TABLE students (
     admission_year INT,
     linkedin_url TEXT,
     github_url TEXT,
+    portfolio_url TEXT,
     profile_photo_url TEXT,
     resume_url TEXT,
     bio TEXT,
+    skills JSONB NOT NULL DEFAULT '[]'::jsonb,
+    projects JSONB NOT NULL DEFAULT '[]'::jsonb,
+    achievements JSONB NOT NULL DEFAULT '[]'::jsonb,
     profile_strength INT NOT NULL DEFAULT 0 CHECK (profile_strength BETWEEN 0 AND 100),
     UNIQUE (college_id, roll_number),
     FOREIGN KEY (id, college_id) REFERENCES users(id, college_id)
