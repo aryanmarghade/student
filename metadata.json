@@ -1,0 +1,6 @@
+{
+  "name": "Vission Academy",
+  "description": "Comprehensive College Student Profile & Academic Analytics Platform for Vission Academy with role-based dashboards, marks entry, linear regression analytics, marksheet management, and AI query assistants.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

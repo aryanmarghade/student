@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+:root {
+  /* Brand Color Palette - Vission Academy */
+  --color-primary: #1B2A4A;
+  --color-primary-hover: #14213d;
+  --color-primary-light: #243b66;
+  --color-accent: #C9A34E;
+  --color-accent-hover: #b8913d;
+  --color-accent-light: #fef9ee;
+
+  /* Neutrals 10-step scale */
+  --color-neutral-50: #FAFAF8;
+  --color-neutral-100: #F3F3F0;
+  --color-neutral-200: #E6E6E1;
+  --color-neutral-300: #D3D3CB;
+  --color-neutral-400: #A2A297;
+  --color-neutral-500: #737368;
+  --color-neutral-600: #52524A;
+  --color-neutral-700: #383832;
+  --color-neutral-800: #22221E;
+  --color-neutral-900: #11110E;
+
+  /* Semantic Status Colors */
+  --color-success: #15803D;
+  --color-success-bg: #DCFCE7;
+  --color-warning: #B45309;
+  --color-warning-bg: #FEF3C7;
+  --color-error: #B91C1C;
+  --color-error-bg: #FEE2E2;
+  --color-info: #1D4ED8;
+  --color-info-bg: #DBEAFE;
+
+  /* Radii */
+  --radius-standard: 8px;
+}
+
+body {
+  background-color: var(--color-neutral-50);
+  color: var(--color-neutral-900);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+h1, h2, h3, .font-serif {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
