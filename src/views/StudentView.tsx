@@ -59,7 +59,7 @@ export const StudentView: React.FC = () => {
 
   // Document Upload Modal State
   const [showAddDocModal, setShowAddDocModal] = useState(false);
-  const [newDoc, setNewDoc] = useState({ title: '', description: '', category: 'Certificate', file_name: '', file_url: '' });
+  const [newDoc, setNewDoc] = useState({ title: '', description: '', category: 'Certificate', file: null as File | null });
 
   // Academic Records State
   const [semestersData, setSemestersData] = useState<any[]>([]);
@@ -189,10 +189,19 @@ export const StudentView: React.FC = () => {
   const handleUploadDoc = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await api.uploadStudentDocument(newDoc);
+      if (!newDoc.file) {
+        showToast('Please select a document file.', true);
+        return;
+      }
+      const formData = new FormData();
+      formData.append('file', newDoc.file);
+      formData.append('title', newDoc.title);
+      formData.append('description', newDoc.description);
+      formData.append('category', newDoc.category);
+      const res = await api.uploadStudentDocument(formData);
       setDocuments(prev => [res.document, ...prev]);
       setShowAddDocModal(false);
-      setNewDoc({ title: '', description: '', category: 'Certificate', file_name: '', file_url: '' });
+      setNewDoc({ title: '', description: '', category: 'Certificate', file: null });
       showToast('Document archived in your vault!');
     } catch (err: any) {
       showToast(err.message || 'Failed to save document', true);
@@ -1320,13 +1329,12 @@ export const StudentView: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">File Name</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Document File</label>
                   <input
-                    type="text"
+                    type="file"
                     required
-                    placeholder="e.g. transcript_sem3.pdf"
-                    value={newDoc.file_name}
-                    onChange={e => setNewDoc({ ...newDoc, file_name: e.target.value })}
+                    accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.txt"
+                    onChange={e => setNewDoc({ ...newDoc, file: e.target.files?.[0] || null })}
                     className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
                   />
                 </div>

@@ -7,4 +7,6 @@ coverage/
 .env*
 !.env.example
 scratch/
-uploads/marksheets/
+db/cleanup-legacy.sql
+db/seed-qa.sql
+uploads/

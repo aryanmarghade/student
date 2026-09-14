@@ -17,7 +17,7 @@ const pool = new Pool({
 async function init() {
   try {
     const schema = fs.readFileSync(path.join(__dirname, 'db/schema.sql'), 'utf8');
-    const seed = fs.readFileSync(path.join(__dirname, 'db/seed.sql'), 'utf8');
+    const seed = fs.readFileSync(path.join(__dirname, 'db/seed-qa.sql'), 'utf8');
     console.log('Running schema...');
     await pool.query(schema);
     console.log('Running seed...');

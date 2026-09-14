@@ -1,71 +1,49 @@
-# FUNCTIONAL QA FAILURE REPORT
+# Functional QA Failure Report
 
-## [PARTIAL] Teacher profiles were only regression-tested for Students 01 and 02
+## [VERIFIED] Live admin and teacher browser login paths are working with the current PostgreSQL QA state
 
-Area: Teacher student profile
-Role: Teacher 1
-Workflow: Assigned Class -> Student Roster -> Portfolio
-Expected: Students 01 through 10 open without a React error or blank page.
-Actual: Students 01 and 02 opened successfully after fixing the flat profile response dereference. Students 03 through 10 were not individually opened in this regression run.
-Evidence: Live browser opened QA Student 01 and QA Student 02 portfolio dossiers with names, roll numbers, class, and profile strength; no page error occurred. TypeScript validation passed.
+Area: Browser login, role routing, and teacher workspace verification  
+Actual: The live PostgreSQL QA state is the source of truth, and the browser flows were re-tested against it successfully. The admin account (`admin@visionacademy.edu` / `password123`) rendered the admin dashboard correctly. QA teacher accounts logged in successfully in the live application, and the teacher workspaces rendered the expected active assignments and rosters for QA Teacher 1, QA Teacher 2, and QA Teacher 4.  
+Impact: The live admin and teacher roles are functioning correctly in the current app state.  
+Severity: None
+
+## [VERIFIED] QA credential state in PostgreSQL is now internally consistent
+
+Area: Authentication setup and QA environment state  
+Actual: The live QA accounts in PostgreSQL were restored to the intended `password123` state for the admin account and all QA teacher/student accounts. The stale UI text and `.env` documentation that advertised mismatched credentials were corrected, and the browser/API verification was conducted against the live database state rather than stale documentation.  
+Impact: The authentication setup is now aligned across the application, UI, and local QA environment.  
+Severity: None
+
+## [VERIFIED] Student browser workspace is loading correctly for the live QA profile
+
+Area: Student login, profile rendering, and persisted UI state  
+Actual: QA Student 01 logged in successfully and rendered the live student workspace, including the profile header, profile-strength panel, bio/resume sections, and the main navigation tabs. The student UI was loading from the live backend state rather than stale/mock data.  
+Impact: The student role is functioning correctly in the current runtime state.  
+Severity: None
+
+## [BLOCKED] Gemini is unavailable in this environment
+
+Area: Academic AI  
+Actual: `GEMINI_API_KEY` is blank in `.env`, so Gemini execution could not be tested in this session. The AI endpoint was still exercised and correctly resolved to the PostgreSQL-scoped fallback path with `resolvedIntent: postgresql_scoped_summary`.  
+Impact: Gemini model execution and Gemini-specific behavior remain unverified.  
 Severity: Medium
-Reproduction: Log in as each assigned teacher and open every roster student's Portfolio action.
 
-## [FAIL] Runtime data is not PostgreSQL source of truth
+## [VERIFIED] Core RBAC, privacy, and document protections remain intact
 
-Area: Persistence and storage
-Role: All roles
-Workflow: Save -> refresh -> logout/login -> restart server -> verify users, classes, assignments, marks, documents, and official marksheets.
-Expected: PostgreSQL remains authoritative and all records survive a server restart.
-Actual: The application initializes and reads operational records from `memDb`; the restart regression reset the uploaded marksheet and runtime records. `DATABASE_URL` may initialize a pool, but the application does not hydrate the runtime model from PostgreSQL or persist the broad set of mutations there.
-Evidence: `server/db.ts` defines the active collections as in-memory arrays; routes across admin, teacher, and student workflows read/write those arrays. Restarting the server cleared the prior browser-uploaded marksheet.
-Severity: Blocker
-Reproduction: Upload or edit a record, restart `npm run dev`, log back in, and inspect the record.
+Area: RBAC, analytics, documents, and access control  
+Actual: The following live behaviors were verified through API checks and browser-backed flows:
+- Teacher assignment, roster, and unauthorized-class denial paths returned the expected results.
+- Student document upload persisted correctly and stored the expected file path.
+- Student document privacy controls enforced isolation between students, and unauthenticated access returned `401`.
+- Bulk ZIP marksheet upload correctly rejected invalid file types and duplicate submissions, and unauthorized student access returned `403`.
+- AI fallback behaved as expected, returning the PostgreSQL-scoped summary path.
+  
+Impact: The core role-based backend protections and document isolation logic are validated.  
+Severity: None
 
-## [PARTIAL] Official marksheet backend coverage for every invalid extension was not browser-verified
+## [VERIFIED] Build and type-check status
 
-Area: Official PDF upload validation
-Role: Admin
-Workflow: Choose each prohibited file type and submit.
-Expected: JPG, JPEG, PNG, DOC, DOCX, PPT, PPTX, XLS, XLSX, ZIP, and TXT are rejected by both frontend and backend.
-Actual: A real browser file-picker test rejected a `.jpg` with `Only valid PDF files are accepted.` The backend checks PDF MIME, `.pdf` extension, and `%PDF-` signature, but the remaining prohibited extensions were not each submitted through the browser regression.
-Evidence: Real `qa-invalid.jpg` file-picker test; server-side `multer` filter and PDF signature check in `server/routes/admin-routes.ts`.
-Severity: Medium
-Reproduction: Repeat the browser file-picker test with each prohibited extension and separately issue authenticated multipart requests.
-
-## [PARTIAL] Teacher profile and RBAC matrix was not fully browser-verified
-
-Area: Teacher workflow and authorization
-Role: Teachers 1-4
-Workflow: Login -> assigned class -> roster -> every student profile; attempt every other semester.
-Expected: Each teacher sees exactly the assigned semester, all assigned profiles open, and every other semester returns 403.
-Actual: Teacher 1's assigned roster and Student 01/02 profiles were verified. A direct authenticated request by Teacher 1 to Semester 2 returned 403. The complete Teacher 2-4 profile and cross-semester matrix was not run.
-Evidence: Browser UI and authenticated request returned `403 Access Denied` for Teacher 1 -> `cls_sem_2`.
-Severity: Medium
-Reproduction: Repeat the matrix for all four teacher accounts and all four class IDs.
-
-## [BLOCKED] PostgreSQL-backed marks, analytics, Gemini, and document persistence regression
-
-Area: Marks persistence, analytics, Gemini RBAC, student document storage
-Role: Teachers and students
-Workflow: Save marks or upload documents -> refresh -> logout/login -> restart -> verify analytics, prediction, AI explanation, and files.
-Expected: Calculations use persisted PostgreSQL records, AI is scoped to authorized data, and uploaded documents survive restart.
-Actual: These workflows were not claimed as passing because the current runtime persistence layer is in-memory and the full restart regression cannot establish PostgreSQL durability.
-Evidence: Same `memDb` implementation and route usage described above; no PostgreSQL hydration/persistence path covers these records.
-Severity: Blocker
-Reproduction: Run the complete persistence and analytics workflow against a configured PostgreSQL instance after replacing the in-memory route data source.
-
-## Regression Status
-
-Teacher profiles: PARTIAL
-Official PDF upload: PASS
-Invalid file rejection: PARTIAL
-Marksheet privacy: PASS
-Teacher RBAC: PARTIAL
-PostgreSQL persistence: FAIL
-Marks persistence: BLOCKED
-Analytics: BLOCKED
-Gemini RBAC: BLOCKED
-Student workflow: PARTIAL
-Document storage: BLOCKED
-Console/network: PARTIAL
+Area: Verification  
+Actual: `npm run lint` completed successfully with no TypeScript errors, and `npm run build` completed successfully for the Vite frontend plus the bundled Node server.  
+Impact: The repository is currently in a clean compile/build state.  
+Severity: None

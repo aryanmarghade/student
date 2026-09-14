@@ -155,7 +155,8 @@ export const AdminView: React.FC = () => {
       }
       const students = usersData.filter(u => u.role === 'student');
       if (students.length > 0) {
-        setMarksheetData(prev => ({ ...prev, student_id: students[0].student_id || students[0].id }));
+        const firstStudent = students.find(student => student.role === 'student' && student.student_id);
+        setMarksheetData(prev => ({ ...prev, student_id: firstStudent?.student_id || '' }));
       }
     } catch (err: any) {
       setActionError(err.message || 'Failed to load institutional records');
@@ -229,8 +230,10 @@ export const AdminView: React.FC = () => {
       const reader = new FileReader();
       reader.onload = async () => {
         try {
-          const base64 = (reader.result as string).split(',')[1] || (reader.result as string);
-          const res = await api.bulkUploadMarksheetsZip(base64, zipSemesterId);
+          const formData = new FormData();
+          formData.append('file', zipFile);
+          formData.append('semester_id', zipSemesterId);
+          const res = await api.bulkUploadMarksheetsZip(formData);
           setZipUploadReport(res);
           showToast(`Uploaded ZIP: ${res.summary.matched} marksheets matched!`);
           loadAllAdminData();

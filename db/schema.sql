@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_reset_password BOOLEAN DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
@@ -112,8 +113,85 @@ CREATE TABLE IF NOT EXISTS student_documents (
     status VARCHAR(64) DEFAULT 'processed',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE student_documents ADD COLUMN IF NOT EXISTS title VARCHAR(255);
+ALTER TABLE student_documents ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE student_documents ADD COLUMN IF NOT EXISTS category VARCHAR(64) DEFAULT 'Other';
 
 CREATE INDEX IF NOT EXISTS idx_student_documents_student ON student_documents(student_id);
+
+CREATE TABLE IF NOT EXISTS projects (
+    id VARCHAR(64) PRIMARY KEY,
+    student_id VARCHAR(64) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    technologies JSONB NOT NULL DEFAULT '[]',
+    github_url TEXT,
+    live_url TEXT,
+    date DATE,
+    team_members JSONB NOT NULL DEFAULT '[]',
+    image_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_projects_student ON projects(student_id);
+
+CREATE TABLE IF NOT EXISTS achievements (
+    id VARCHAR(64) PRIMARY KEY,
+    student_id VARCHAR(64) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    organization VARCHAR(255) NOT NULL,
+    date DATE,
+    link TEXT,
+    certificate_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_achievements_student ON achievements(student_id);
+
+CREATE TABLE IF NOT EXISTS certifications (
+    id VARCHAR(64) PRIMARY KEY,
+    student_id VARCHAR(64) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    issuer VARCHAR(255) NOT NULL,
+    issue_date DATE,
+    credential_id VARCHAR(255),
+    credential_url TEXT,
+    certificate_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_certifications_student ON certifications(student_id);
+
+CREATE TABLE IF NOT EXISTS hackathons (
+    id VARCHAR(64) PRIMARY KEY,
+    student_id VARCHAR(64) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    organizer VARCHAR(255) NOT NULL,
+    date DATE,
+    position_result VARCHAR(255),
+    team_name VARCHAR(255),
+    project_name VARCHAR(255),
+    project_description TEXT,
+    github_url TEXT,
+    demo_url TEXT,
+    certificate_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_hackathons_student ON hackathons(student_id);
+
+CREATE TABLE IF NOT EXISTS events (
+    id VARCHAR(64) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    organizer VARCHAR(255) NOT NULL,
+    event_date DATE NOT NULL,
+    registration_deadline DATE,
+    location VARCHAR(255) NOT NULL,
+    registration_link TEXT,
+    banner_url TEXT,
+    eligibility TEXT NOT NULL DEFAULT 'All Students',
+    status VARCHAR(32) NOT NULL DEFAULT 'upcoming',
+    created_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
 
 -- 8. TEACHER CLASS ASSIGNMENTS (Single source of truth for Teacher authorization)
 CREATE TABLE IF NOT EXISTS teacher_class_assignments (
@@ -145,6 +223,7 @@ CREATE TABLE IF NOT EXISTS marks (
 CREATE INDEX IF NOT EXISTS idx_marks_student ON marks(student_id);
 CREATE INDEX IF NOT EXISTS idx_marks_subject_semester ON marks(subject_id, semester_id);
 CREATE INDEX IF NOT EXISTS idx_marks_student_semester ON marks(student_id, semester_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_marks_student_subject_semester_exam ON marks(student_id, subject_id, semester_id, exam_type);
 
 -- 10. MARKSHEETS (Official documents uploaded by admin)
 CREATE TABLE IF NOT EXISTS marksheets (
@@ -198,3 +277,14 @@ CREATE TABLE IF NOT EXISTS ai_query_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ai_query_logs_user ON ai_query_logs(user_id);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    action VARCHAR(128) NOT NULL,
+    entity_type VARCHAR(128) NOT NULL,
+    entity_id VARCHAR(64),
+    details TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC);

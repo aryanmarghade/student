@@ -161,10 +161,10 @@ export const api = {
       body: data,
     }),
 
-  bulkUploadMarksheetsZip: (zipBase64: string, semester_id: string) =>
-    request<{ summary: any; matchedFiles: any[]; unmatchedFiles: any[] }>('/api/admin/marksheets/bulk-zip', {
+  bulkUploadMarksheetsZip: (data: FormData) =>
+    request<{ summary: any; details: any[] }>('/api/admin/marksheets/bulk-zip', {
       method: 'POST',
-      body: JSON.stringify({ zipBase64, semester_id }),
+      body: data,
     }),
 
   getAdminNotifications: () => request<NotificationItem[]>('/api/admin/notifications'),
@@ -301,10 +301,10 @@ export const api = {
 
   // Student Documents Vault
   getStudentDocuments: () => request<any[]>('/api/student/documents'),
-  uploadStudentDocument: (payload: { title: string; description?: string; category: string; file_name: string; file_url?: string }) =>
+  uploadStudentDocument: (data: FormData) =>
     request<{ message: string; document: any }>('/api/student/documents', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: data,
     }),
   deleteStudentDocument: (id: string) =>
     request<{ message: string }>(`/api/student/documents/${id}`, {

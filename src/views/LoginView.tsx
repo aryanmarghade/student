@@ -121,7 +121,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                       autoComplete="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="admin@vissionacademy.edu"
+                      placeholder="admin@visionacademy.edu"
                       className="block w-full pl-10 pr-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#0f2744] focus:border-transparent bg-slate-50 text-slate-900 placeholder:text-slate-400 transition-colors"
                     />
                   </div>
@@ -377,12 +377,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 <p className="font-semibold text-slate-800">Need a password reset or account activation?</p>
                 <p>Please contact your department coordinator or the Registrar's Office with your official roll number or employee ID.</p>
                 <p className="text-slate-500 pt-1">
-                  Email: <span className="font-mono text-slate-700">admin@vissionacademy.edu</span><br />
+                  Email: <span className="font-mono text-slate-700">admin@visionacademy.edu</span><br />
                   Office: Administration Block, Room 104 (Mon–Fri 8:30 AM – 5:00 PM)
                 </p>
               </div>
               <p>
-                <strong>Initial Administrator Credentials:</strong> The default administrator account is configured with <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-800">admin@vissionacademy.edu</span> / <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-800">admin123</span>.
+                <strong>Administrator access:</strong> Use the institutional admin account configured in the live QA environment. The password is managed through the local QA setup and is not displayed here.
               </p>
             </div>
 

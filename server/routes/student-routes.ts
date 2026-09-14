@@ -1,640 +1,251 @@
 import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { memDb, StudentDocumentRecord } from '../db.js';
+import crypto from 'crypto';
+import multer from 'multer';
+import { query, id, logActivity } from '../db.js';
 import { requireAuth, requireRole, AuthRequest, rateLimit } from '../auth.js';
 import { parseResumeContent, calculateProfileStrength } from '../resume-parser.js';
 import { processAiQuery } from '../ai-assistant.js';
 
 const router = Router();
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const marksheetDir = path.join(__dirname, '../../uploads/marksheets');
-
-// Middleware: all student routes require role 'student'
 router.use(requireAuth, requireRole('student'));
 
-// Helper to resolve authenticated student record (Hard-locked to own user ID)
-function getAuthStudent(userId: string) {
-  return memDb.students.find(s => s.user_id === userId);
+const marksheetDir = path.join(process.cwd(), 'uploads', 'marksheets');
+const studentDocDir = path.join(process.cwd(), 'uploads', 'student-docs');
+fs.mkdirSync(studentDocDir, { recursive: true });
+
+const ALLOWED_MIME_TYPES = [
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain',
+];
+
+const docUpload = multer({
+  storage: multer.diskStorage({
+    destination: studentDocDir,
+    filename: (_req, file, cb) =>
+      cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${path.extname(file.originalname)}`),
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Unsupported file type: ${file.mimetype}. Allowed: PDF, images, DOC/DOCX, TXT.`));
+    }
+  },
+});
+
+async function ownStudent(userId: string) {
+  return (await query<any>(
+    `SELECT s.*,u.full_name,u.email,c.name AS "className",c.year AS "classYear",c.section AS "classSection",d.name AS "departmentName"
+     FROM students s JOIN users u ON u.id=s.user_id
+     LEFT JOIN classes c ON c.id=s.class_id
+     LEFT JOIN departments d ON d.id=s.department_id
+     WHERE s.user_id=$1`,
+    [userId],
+  )).rows[0];
 }
 
-// 1. Get My Profile
-router.get('/profile', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const user = memDb.users.find(u => u.id === req.user!.id);
-  const cls = memDb.classes.find(c => c.id === student.class_id);
-  const dept = memDb.departments.find(d => d.id === student.department_id);
-  const latestResume = memDb.student_documents.find(d => d.student_id === student.id && d.doc_type === 'resume');
-
-  const marksCount = memDb.marks.filter(m => m.student_id === student.id).length;
-  const projectsCount = memDb.projects.filter(p => p.student_id === student.id).length;
-  const achievementsCount = memDb.achievements.filter(a => a.student_id === student.id).length;
-  const certificationsCount = memDb.certifications.filter(c => c.student_id === student.id).length;
-
-  // Compute live profile strength score
-  const strength = calculateProfileStrength({
-    profile_photo_url: student.profile_photo_url,
-    resume_url: student.resume_url,
-    linkedin_url: student.linkedin_url,
-    github_url: student.github_url,
-    bio: student.bio,
-    has_marks: marksCount > 0,
-    projects_count: projectsCount,
-    achievements_count: achievementsCount,
-    certifications_count: certificationsCount
+async function strength(s: any) {
+  const counts = (await query<any>(
+    `SELECT (SELECT count(*) FROM marks WHERE student_id=$1) AS marks,
+            (SELECT count(*) FROM projects WHERE student_id=$1) AS projects,
+            (SELECT count(*) FROM achievements WHERE student_id=$1) AS achievements,
+            (SELECT count(*) FROM certifications WHERE student_id=$1) AS certifications`,
+    [s.id],
+  )).rows[0];
+  return calculateProfileStrength({
+    profile_photo_url: s.profile_photo_url,
+    resume_url: s.resume_url,
+    linkedin_url: s.linkedin_url,
+    github_url: s.github_url,
+    bio: s.bio,
+    has_marks: Number(counts.marks) > 0,
+    projects_count: Number(counts.projects),
+    achievements_count: Number(counts.achievements),
+    certifications_count: Number(counts.certifications),
   });
+}
 
-  student.profile_strength = strength;
-
-  res.json({
-    id: student.id,
-    roll_number: student.roll_number,
-    full_name: user ? user.full_name : '',
-    email: user ? user.email : '',
-    className: cls ? cls.name : '',
-    classYear: cls ? cls.year : '',
-    classSection: cls ? cls.section : '',
-    departmentName: dept ? dept.name : '',
-    linkedin_url: student.linkedin_url || '',
-    github_url: student.github_url || '',
-    profile_photo_url: student.profile_photo_url || '',
-    resume_url: student.resume_url || '',
-    bio: student.bio || '',
-    profile_strength: strength,
-    resumeDocument: latestResume || null
-  });
+router.get('/profile', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s) return res.status(404).json({ error: 'Student record not found.' });
+  const resume = (await query(`SELECT * FROM student_documents WHERE student_id=$1 AND doc_type='resume' ORDER BY created_at DESC LIMIT 1`, [s.id])).rows[0] || null;
+  const profileStrength = await strength(s);
+  await query('UPDATE students SET profile_strength=$1 WHERE id=$2', [profileStrength, s.id]);
+  res.json({ id: s.id, roll_number: s.roll_number, full_name: s.full_name, email: s.email, className: s.className || '', classYear: s.classYear || '', classSection: s.classSection || '', departmentName: s.departmentName || '', linkedin_url: s.linkedin_url || '', github_url: s.github_url || '', profile_photo_url: s.profile_photo_url || '', resume_url: s.resume_url || '', bio: s.bio || '', profile_strength: profileStrength, resumeDocument: resume });
 });
 
-// 2. Update Profile (Bio, LinkedIn, GitHub with URL validation)
-router.put('/profile', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
+router.put('/profile', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s) return res.status(404).json({ error: 'Student record not found.' });
   const { bio, linkedin_url, github_url } = req.body;
-
-  // Validation
-  if (linkedin_url && linkedin_url.trim() !== '') {
-    if (!/^https?:\/\/(www\.)?linkedin\.com\/.+/i.test(linkedin_url.trim())) {
-      return res.status(400).json({ error: 'Please enter a valid LinkedIn profile URL (e.g. https://linkedin.com/in/username).' });
-    }
-  }
-
-  if (github_url && github_url.trim() !== '') {
-    if (!/^https?:\/\/(www\.)?github\.com\/.+/i.test(github_url.trim())) {
-      return res.status(400).json({ error: 'Please enter a valid GitHub profile URL (e.g. https://github.com/username).' });
-    }
-  }
-
-  student.bio = typeof bio === 'string' ? bio.trim() : student.bio;
-  student.linkedin_url = linkedin_url !== undefined ? linkedin_url.trim() : student.linkedin_url;
-  student.github_url = github_url !== undefined ? github_url.trim() : student.github_url;
-
-  const marksCount = memDb.marks.filter(m => m.student_id === student.id).length;
-  student.profile_strength = calculateProfileStrength({
-    profile_photo_url: student.profile_photo_url,
-    resume_url: student.resume_url,
-    linkedin_url: student.linkedin_url,
-    github_url: student.github_url,
-    bio: student.bio,
-    has_marks: marksCount > 0
-  });
-
-  res.json({
-    message: 'Profile updated successfully',
-    student: {
-      bio: student.bio,
-      linkedin_url: student.linkedin_url,
-      github_url: student.github_url,
-      profile_strength: student.profile_strength
-    }
-  });
+  if (linkedin_url && !/^https?:\/\/(www\.)?linkedin\.com\/.+/i.test(linkedin_url)) return res.status(400).json({ error: 'Please enter a valid LinkedIn profile URL.' });
+  if (github_url && !/^https?:\/\/(www\.)?github\.com\/.+/i.test(github_url)) return res.status(400).json({ error: 'Please enter a valid GitHub profile URL.' });
+  await query('UPDATE students SET bio=COALESCE($1,bio),linkedin_url=COALESCE($2,linkedin_url),github_url=COALESCE($3,github_url) WHERE id=$4', [typeof bio === 'string' ? bio.trim() : null, linkedin_url === undefined ? null : String(linkedin_url).trim(), github_url === undefined ? null : String(github_url).trim(), s.id]);
+  const updated = await ownStudent(req.user!.id), profile_strength = await strength(updated);
+  await query('UPDATE students SET profile_strength=$1 WHERE id=$2', [profile_strength, s.id]);
+  res.json({ message: 'Profile updated successfully', student: { bio: updated.bio, linkedin_url: updated.linkedin_url, github_url: updated.github_url, profile_strength } });
 });
 
-// 3. Upload Profile Photo
-router.post('/upload-photo', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
+router.post('/upload-photo', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s) return res.status(404).json({ error: 'Student record not found.' });
+  if (!req.body.photo_data_url) return res.status(400).json({ error: 'Photo data is required.' });
+  await query('UPDATE students SET profile_photo_url=$1 WHERE id=$2', [req.body.photo_data_url, s.id]);
+  const updated = await ownStudent(req.user!.id), profile_strength = await strength(updated);
+  await query('UPDATE students SET profile_strength=$1 WHERE id=$2', [profile_strength, s.id]);
+  res.json({ message: 'Profile photo updated successfully', profile_photo_url: req.body.photo_data_url, profile_strength });
+});
 
-  const { photo_data_url } = req.body;
-  if (!photo_data_url) {
-    return res.status(400).json({ error: 'Photo data is required.' });
+router.post('/upload-resume', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s) return res.status(404).json({ error: 'Student record not found.' });
+  const filename = req.body.file_name || 'Resume.pdf';
+  const doc = { id: id('doc'), student_id: s.id, title: filename, description: '', category: 'Resume', doc_type: 'resume', file_url: req.body.file_url || `/uploads/resumes/${s.roll_number}_${Date.now()}.pdf`, file_name: filename, parsed_headings: parseResumeContent(req.body.file_text || '', filename), status: 'processed' };
+  await query("DELETE FROM student_documents WHERE student_id=$1 AND doc_type='resume'", [s.id]);
+  await query('INSERT INTO student_documents (id,student_id,title,description,category,doc_type,file_url,file_name,parsed_headings,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', [doc.id, doc.student_id, doc.title, doc.description, doc.category, doc.doc_type, doc.file_url, doc.file_name, JSON.stringify(doc.parsed_headings), doc.status]);
+  await query('UPDATE students SET resume_url=$1 WHERE id=$2', [doc.file_url, s.id]);
+  res.json({ message: 'Resume scanned and parsed successfully', document: doc, profile_strength: await strength(await ownStudent(req.user!.id)) });
+});
+
+router.get('/marks', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s) return res.status(404).json({ error: 'Student record not found.' });
+  const [marks, marksheets] = await Promise.all([
+    query<any>(`SELECT m.*,sem.name AS semester_name,sub.name AS subject_name,sub.code AS subject_code FROM marks m JOIN semesters sem ON sem.id=m.semester_id JOIN subjects sub ON sub.id=m.subject_id WHERE m.student_id=$1 ORDER BY m.created_at`, [s.id]),
+    query('SELECT * FROM marksheets WHERE student_id=$1 ORDER BY created_at', [s.id]),
+  ]);
+  const semesterMap: any = {};
+  for (const m of marks.rows) {
+    semesterMap[m.semester_id] ??= { semester_id: m.semester_id, semester_name: m.semester_name, subjects: {} };
+    semesterMap[m.semester_id].subjects[m.subject_id] ??= { subject_id: m.subject_id, subject_name: m.subject_name, subject_code: m.subject_code, marks: [] };
+    semesterMap[m.semester_id].subjects[m.subject_id].marks.push({ exam_type: m.exam_type, marks_obtained: Number(m.marks_obtained), max_marks: Number(m.max_marks), percentage: Number((m.marks_obtained / m.max_marks * 100).toFixed(1)) });
   }
-
-  student.profile_photo_url = photo_data_url;
-  const marksCount = memDb.marks.filter(m => m.student_id === student.id).length;
-  student.profile_strength = calculateProfileStrength({
-    profile_photo_url: student.profile_photo_url,
-    resume_url: student.resume_url,
-    linkedin_url: student.linkedin_url,
-    github_url: student.github_url,
-    bio: student.bio,
-    has_marks: marksCount > 0
-  });
-
-  res.json({
-    message: 'Profile photo updated successfully',
-    profile_photo_url: student.profile_photo_url,
-    profile_strength: student.profile_strength
-  });
+  res.json({ semestersData: Object.values(semesterMap), cgpaTrend: marksheets.rows.map((m: any) => ({ semesterId: m.semester_id, semesterName: m.semester_id, sgpa: Number(m.sgpa), cgpa: Number(m.cgpa), fileUrl: m.file_url, fileName: m.file_name })), officialMarksheets: marksheets.rows });
 });
 
-// 4. Upload Resume & Automatic Section Parser
-router.post('/upload-resume', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const { file_name, file_text, file_url } = req.body;
-  const filename = file_name || 'Resume.pdf';
-
-  // Run automated section heading scanner
-  const parsedHeadings = parseResumeContent(file_text || '', filename);
-
-  const newDoc: StudentDocumentRecord = {
-    id: `doc_${Date.now()}`,
-    student_id: student.id,
-    title: filename,
-    category: 'Resume',
-    doc_type: 'resume',
-    file_url: file_url || `/uploads/resumes/${student.roll_number}_${Date.now()}.pdf`,
-    file_name: filename,
-    parsed_headings: parsedHeadings,
-    status: 'processed',
-    created_at: new Date().toISOString()
-  };
-
-  // Replace previous resume document or add
-  const prevIdx = memDb.student_documents.findIndex(d => d.student_id === student.id && d.doc_type === 'resume');
-  if (prevIdx !== -1) {
-    memDb.student_documents[prevIdx] = newDoc;
-  } else {
-    memDb.student_documents.push(newDoc);
-  }
-
-  student.resume_url = newDoc.file_url;
-  const marksCount = memDb.marks.filter(m => m.student_id === student.id).length;
-  student.profile_strength = calculateProfileStrength({
-    profile_photo_url: student.profile_photo_url,
-    resume_url: student.resume_url,
-    linkedin_url: student.linkedin_url,
-    github_url: student.github_url,
-    bio: student.bio,
-    has_marks: marksCount > 0
-  });
-
-  res.json({
-    message: 'Resume scanned and parsed successfully',
-    document: newDoc,
-    profile_strength: student.profile_strength
-  });
+router.get('/marksheets/:marksheetId/file', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  const m = s ? (await query<any>('SELECT * FROM marksheets WHERE id=$1 AND student_id=$2', [req.params.marksheetId, s.id])).rows[0] : null;
+  if (!m) return res.status(404).json({ error: 'Marksheet not found.' });
+  const name = path.basename(m.file_url), file = path.join(marksheetDir, name);
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'Marksheet file is unavailable.' });
+  res.type('application/pdf').setHeader('Content-Disposition', `inline; filename="${m.file_name}"`).sendFile(file);
 });
 
-// 5. Academic Records & SGPA/CGPA Trend
-router.get('/marks', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const marks = memDb.marks.filter(m => m.student_id === student.id);
-  const marksheets = memDb.marksheets.filter(m => m.student_id === student.id);
-
-  // Group marks by semester
-  const semesterMap: Record<string, any> = {};
-
-  for (const m of marks) {
-    if (!semesterMap[m.semester_id]) {
-      const sem = memDb.semesters.find(s => s.id === m.semester_id);
-      semesterMap[m.semester_id] = {
-        semester_id: m.semester_id,
-        semester_name: sem ? sem.name : m.semester_id,
-        subjects: {}
-      };
-    }
-
-    if (!semesterMap[m.semester_id].subjects[m.subject_id]) {
-      const sub = memDb.subjects.find(s => s.id === m.subject_id);
-      semesterMap[m.semester_id].subjects[m.subject_id] = {
-        subject_id: m.subject_id,
-        subject_name: sub ? sub.name : m.subject_id,
-        subject_code: sub ? sub.code : '',
-        marks: []
-      };
-    }
-
-    semesterMap[m.semester_id].subjects[m.subject_id].marks.push({
-      exam_type: m.exam_type,
-      marks_obtained: m.marks_obtained,
-      max_marks: m.max_marks,
-      percentage: Number(((m.marks_obtained / m.max_marks) * 100).toFixed(1))
-    });
-  }
-
-  // CGPA & SGPA trend across completed semesters
-  const cgpaTrend = marksheets.map(ms => {
-    const sem = memDb.semesters.find(s => s.id === ms.semester_id);
-    return {
-      semesterId: ms.semester_id,
-      semesterName: sem ? sem.name : ms.semester_id,
-      sgpa: ms.sgpa,
-      cgpa: ms.cgpa,
-      fileUrl: ms.file_url,
-      fileName: ms.file_name
-    };
-  });
-
-  res.json({
-    semestersData: Object.values(semesterMap),
-    cgpaTrend,
-    officialMarksheets: marksheets
-  });
+router.get('/notifications', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  const rows = await query(`SELECT DISTINCT n.*,(nr.id IS NOT NULL) AS is_read FROM notifications n LEFT JOIN notification_reads nr ON nr.notification_id=n.id AND nr.user_id=$1 WHERE n.target_role IN ('all','all_students') OR (n.target_role='class' AND n.target_class_id=$2) ORDER BY n.created_at DESC`, [req.user!.id, s?.class_id || null]);
+  res.json(rows.rows);
 });
 
-router.get('/marksheets/:marksheetId/file', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  const marksheet = student
-    ? memDb.marksheets.find(m => m.id === req.params.marksheetId && m.student_id === student.id)
-    : undefined;
-  if (!marksheet) return res.status(404).json({ error: 'Marksheet not found.' });
-
-  const storedName = path.basename(marksheet.file_url);
-  const fileName = storedName === 'file'
-    ? fs.readdirSync(marksheetDir).find(name => name.toLowerCase().endsWith(marksheet.file_name.toLowerCase()))
-    : storedName;
-  if (!fileName) return res.status(404).json({ error: 'Marksheet file is unavailable.' });
-  const filePath = path.join(marksheetDir, fileName);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Marksheet file is unavailable.' });
-
-  res.type('application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${marksheet.file_name}"`);
-  res.sendFile(filePath);
-});
-
-// 6. Notifications (Targeted to student, all, or student's class)
-router.get('/notifications', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  const classId = student ? student.class_id : null;
-  const userId = req.user!.id;
-
-  const relevant = memDb.notifications.filter(n => {
-    if (n.target_role === 'all') return true;
-    if (n.target_role === 'all_students') return true;
-    if (n.target_role === 'class' && n.target_class_id === classId) return true;
-    return false;
-  });
-
-  const withReadStatus = relevant.map(n => {
-    const isRead = memDb.notification_reads.some(r => r.notification_id === n.id && r.user_id === userId);
-    return {
-      ...n,
-      is_read: isRead
-    };
-  });
-
-  res.json(withReadStatus);
-});
-
-// Mark single notification as read
-router.post('/notifications/:id/read', (req: AuthRequest, res) => {
-  const userId = req.user!.id;
-  const notifId = req.params.id;
-
-  const existing = memDb.notification_reads.find(r => r.notification_id === notifId && r.user_id === userId);
-  if (!existing) {
-    memDb.notification_reads.push({
-      id: `nr_${Date.now()}`,
-      notification_id: notifId,
-      user_id: userId,
-      read_at: new Date().toISOString()
-    });
-  }
-
+router.post('/notifications/:id/read', async (req: AuthRequest, res) => {
+  await query('INSERT INTO notification_reads (id,notification_id,user_id) VALUES ($1,$2,$3) ON CONFLICT (notification_id,user_id) DO NOTHING', [id('nr'), req.params.id, req.user!.id]);
   res.json({ message: 'Marked as read' });
 });
 
-// Mark all as read
-router.post('/notifications/read-all', (req: AuthRequest, res) => {
-  const userId = req.user!.id;
-  const student = getAuthStudent(userId);
-  const classId = student ? student.class_id : null;
-
-  const relevant = memDb.notifications.filter(n => {
-    return n.target_role === 'all' || n.target_role === 'all_students' || (n.target_role === 'class' && n.target_class_id === classId);
-  });
-
-  for (const n of relevant) {
-    if (!memDb.notification_reads.some(r => r.notification_id === n.id && r.user_id === userId)) {
-      memDb.notification_reads.push({
-        id: `nr_${Date.now()}_${n.id}`,
-        notification_id: n.id,
-        user_id: userId,
-        read_at: new Date().toISOString()
-      });
-    }
-  }
-
+router.post('/notifications/read-all', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  await query(`INSERT INTO notification_reads (id,notification_id,user_id) SELECT $1||n.id,n.id,$2 FROM notifications n WHERE n.target_role IN ('all','all_students') OR (n.target_role='class' AND n.target_class_id=$3) ON CONFLICT (notification_id,user_id) DO NOTHING`, [id('nr'), req.user!.id, s?.class_id || null]);
   res.json({ message: 'All notifications marked as read' });
 });
 
-// 7. Student Document Vault (Upload, List, Delete)
-router.get('/documents', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
+// ── Document Vault ────────────────────────────────────────────────────────────
 
-  const docs = memDb.student_documents.filter(d => d.student_id === student.id);
-  res.json(docs);
+/** List own documents */
+router.get('/documents', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  res.json((await query('SELECT * FROM student_documents WHERE student_id=$1 ORDER BY created_at DESC', [s.id])).rows);
 });
 
-router.post('/documents', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const { title, description, category, file_name, file_url } = req.body;
-  if (!title || !category || !file_name) {
-    return res.status(400).json({ error: 'Title, category, and file are required.' });
-  }
-
-  const newDoc: StudentDocumentRecord = {
-    id: `doc_${Date.now()}`,
-    student_id: student.id,
+/** Upload a real file (multipart/form-data). Fields: file, title, description, category */
+router.post('/documents', docUpload.single('file'), async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s) return res.status(404).json({ error: 'Student record not found.' });
+  if (!req.file) return res.status(400).json({ error: 'A file is required. Supported types: PDF, images, DOC/DOCX, TXT.' });
+  const { title, description, category } = req.body;
+  if (!title || !category) return res.status(400).json({ error: 'Title and category are required.' });
+  const ext = path.extname(req.file.originalname).slice(1).toLowerCase() || 'bin';
+  const fileUrl = `/uploads/student-docs/${req.file.filename}`;
+  const d = {
+    id: id('doc'),
+    student_id: s.id,
     title: String(title).trim(),
-    description: description ? String(description).trim() : '',
-    category: category || 'Other',
-    doc_type: (file_name.split('.').pop() || 'doc').toLowerCase(),
-    file_url: file_url || `/uploads/documents/${student.roll_number}_${Date.now()}_${file_name}`,
-    file_name,
+    description: description || '',
+    category,
+    doc_type: ext,
+    file_url: fileUrl,
+    file_name: req.file.originalname,
     status: 'processed',
-    created_at: new Date().toISOString()
   };
-
-  memDb.student_documents.unshift(newDoc);
-  res.status(201).json({ message: 'Document uploaded successfully', document: newDoc });
+  await query(
+    'INSERT INTO student_documents (id,student_id,title,description,category,doc_type,file_url,file_name,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+    [d.id, d.student_id, d.title, d.description, d.category, d.doc_type, d.file_url, d.file_name, d.status],
+  );
+  await logActivity(req.user!.id, 'DOCUMENT_UPLOAD', 'STUDENT_DOCUMENT', d.id, `Student uploaded document: ${req.file.originalname} (${req.file.size} bytes).`);
+  res.status(201).json({ message: 'Document uploaded successfully', document: { ...d, mime_type: req.file.mimetype, size_bytes: req.file.size } });
 });
 
-router.delete('/documents/:id', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
+/** Serve own document file (authenticated) */
+router.get('/documents/:docId/file', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s) return res.status(403).json({ error: 'Access denied.' });
+  const doc = (await query<any>('SELECT * FROM student_documents WHERE id=$1 AND student_id=$2', [req.params.docId, s.id])).rows[0];
+  if (!doc) return res.status(404).json({ error: 'Document not found or access denied.' });
+  const filename = path.basename(doc.file_url);
+  const filePath = path.join(studentDocDir, filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Document file is unavailable on disk.' });
+  res.setHeader('Content-Disposition', `inline; filename="${doc.file_name}"`);
+  res.sendFile(filePath);
+});
 
-  const index = memDb.student_documents.findIndex(d => d.id === req.params.id && d.student_id === student.id);
-  if (index === -1) return res.status(404).json({ error: 'Document not found or unauthorized' });
-
-  memDb.student_documents.splice(index, 1);
+/** Delete own document and its physical file */
+router.delete('/documents/:id', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  const doc = (await query<any>('SELECT * FROM student_documents WHERE id=$1 AND student_id=$2', [req.params.id, s.id])).rows[0];
+  if (!doc) return res.status(404).json({ error: 'Document not found or unauthorized' });
+  const filename = path.basename(doc.file_url);
+  const filePath = path.join(studentDocDir, filename);
+  if (fs.existsSync(filePath)) { try { fs.unlinkSync(filePath); } catch (_) { /* best-effort */ } }
+  await query('DELETE FROM student_documents WHERE id=$1 AND student_id=$2', [req.params.id, s.id]);
   res.json({ message: 'Document removed successfully' });
 });
 
-// 8. Projects (CRUD)
-router.get('/projects', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
+// ── Portfolio items ───────────────────────────────────────────────────────────
 
-  const list = memDb.projects.filter(p => p.student_id === student.id);
-  res.json(list);
-});
-
-router.post('/projects', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const { title, description, technologies, github_url, live_url, date, team_members, image_url } = req.body;
-  if (!title || !description) {
-    return res.status(400).json({ error: 'Project title and description are required.' });
-  }
-
-  const newProject = {
-    id: `proj_${Date.now()}`,
-    student_id: student.id,
-    title: String(title).trim(),
-    description: String(description).trim(),
-    technologies: Array.isArray(technologies) ? technologies : String(technologies || '').split(',').map(t => t.trim()).filter(Boolean),
-    github_url: github_url ? String(github_url).trim() : '',
-    live_url: live_url ? String(live_url).trim() : '',
-    date: date || new Date().toISOString().split('T')[0],
-    team_members: Array.isArray(team_members) ? team_members : String(team_members || '').split(',').map(m => m.trim()).filter(Boolean),
-    image_url: image_url || '',
-    created_at: new Date().toISOString()
-  };
-
-  memDb.projects.unshift(newProject);
-  res.status(201).json({ message: 'Project created successfully', project: newProject });
-});
-
-router.put('/projects/:id', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const project = memDb.projects.find(p => p.id === req.params.id && p.student_id === student.id);
-  if (!project) return res.status(404).json({ error: 'Project not found' });
-
-  const { title, description, technologies, github_url, live_url, date, team_members, image_url } = req.body;
-  if (title) project.title = String(title).trim();
-  if (description) project.description = String(description).trim();
-  if (technologies !== undefined) {
-    project.technologies = Array.isArray(technologies) ? technologies : String(technologies).split(',').map(t => t.trim()).filter(Boolean);
-  }
-  if (github_url !== undefined) project.github_url = String(github_url).trim();
-  if (live_url !== undefined) project.live_url = String(live_url).trim();
-  if (date !== undefined) project.date = date;
-  if (team_members !== undefined) {
-    project.team_members = Array.isArray(team_members) ? team_members : String(team_members).split(',').map(m => m.trim()).filter(Boolean);
-  }
-  if (image_url !== undefined) project.image_url = image_url;
-
-  res.json({ message: 'Project updated successfully', project });
-});
-
-router.delete('/projects/:id', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const index = memDb.projects.findIndex(p => p.id === req.params.id && p.student_id === student.id);
-  if (index === -1) return res.status(404).json({ error: 'Project not found' });
-
-  memDb.projects.splice(index, 1);
-  res.json({ message: 'Project removed successfully' });
-});
-
-// 9. Achievements (CRUD)
-router.get('/achievements', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const list = memDb.achievements.filter(a => a.student_id === student.id);
-  res.json(list);
-});
-
-router.post('/achievements', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const { title, description, organization, date, link, certificate_url } = req.body;
-  if (!title || !description || !organization) {
-    return res.status(400).json({ error: 'Title, description, and issuing organization are required.' });
-  }
-
-  const newAch = {
-    id: `ach_${Date.now()}`,
-    student_id: student.id,
-    title: String(title).trim(),
-    description: String(description).trim(),
-    organization: String(organization).trim(),
-    date: date || new Date().toISOString().split('T')[0],
-    link: link ? String(link).trim() : '',
-    certificate_url: certificate_url || '',
-    created_at: new Date().toISOString()
-  };
-
-  memDb.achievements.unshift(newAch);
-  res.status(201).json({ message: 'Achievement recorded successfully', achievement: newAch });
-});
-
-router.delete('/achievements/:id', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const index = memDb.achievements.findIndex(a => a.id === req.params.id && a.student_id === student.id);
-  if (index === -1) return res.status(404).json({ error: 'Achievement not found' });
-
-  memDb.achievements.splice(index, 1);
-  res.json({ message: 'Achievement deleted successfully' });
-});
-
-// 10. Certifications (CRUD)
-router.get('/certifications', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const list = memDb.certifications.filter(c => c.student_id === student.id);
-  res.json(list);
-});
-
-router.post('/certifications', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const { name, issuer, issue_date, credential_id, credential_url, certificate_url } = req.body;
-  if (!name || !issuer) {
-    return res.status(400).json({ error: 'Certificate name and issuer are required.' });
-  }
-
-  const newCert = {
-    id: `cert_${Date.now()}`,
-    student_id: student.id,
-    name: String(name).trim(),
-    issuer: String(issuer).trim(),
-    issue_date: issue_date || new Date().toISOString().split('T')[0],
-    credential_id: credential_id ? String(credential_id).trim() : '',
-    credential_url: credential_url ? String(credential_url).trim() : '',
-    certificate_url: certificate_url || '',
-    created_at: new Date().toISOString()
-  };
-
-  memDb.certifications.unshift(newCert);
-  res.status(201).json({ message: 'Certification added successfully', certification: newCert });
-});
-
-router.delete('/certifications/:id', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const index = memDb.certifications.findIndex(c => c.id === req.params.id && c.student_id === student.id);
-  if (index === -1) return res.status(404).json({ error: 'Certification not found' });
-
-  memDb.certifications.splice(index, 1);
-  res.json({ message: 'Certification deleted successfully' });
-});
-
-// 11. Hackathons (CRUD)
-router.get('/hackathons', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const list = memDb.hackathons.filter(h => h.student_id === student.id);
-  res.json(list);
-});
-
-router.post('/hackathons', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const {
-    name,
-    organizer,
-    date,
-    position_result,
-    team_name,
-    project_name,
-    project_description,
-    github_url,
-    demo_url,
-    certificate_url
-  } = req.body;
-
-  if (!name || !organizer) {
-    return res.status(400).json({ error: 'Hackathon name and organizer are required.' });
-  }
-
-  const newHack = {
-    id: `hack_${Date.now()}`,
-    student_id: student.id,
-    name: String(name).trim(),
-    organizer: String(organizer).trim(),
-    date: date || new Date().toISOString().split('T')[0],
-    position_result: position_result ? String(position_result).trim() : 'Participant',
-    team_name: team_name ? String(team_name).trim() : '',
-    project_name: project_name ? String(project_name).trim() : '',
-    project_description: project_description ? String(project_description).trim() : '',
-    github_url: github_url ? String(github_url).trim() : '',
-    demo_url: demo_url ? String(demo_url).trim() : '',
-    certificate_url: certificate_url || '',
-    created_at: new Date().toISOString()
-  };
-
-  memDb.hackathons.unshift(newHack);
-  res.status(201).json({ message: 'Hackathon entry saved', hackathon: newHack });
-});
-
-router.delete('/hackathons/:id', (req: AuthRequest, res) => {
-  const student = getAuthStudent(req.user!.id);
-  if (!student) return res.status(404).json({ error: 'Student record not found.' });
-
-  const index = memDb.hackathons.findIndex(h => h.id === req.params.id && h.student_id === student.id);
-  if (index === -1) return res.status(404).json({ error: 'Hackathon entry not found' });
-
-  memDb.hackathons.splice(index, 1);
-  res.json({ message: 'Hackathon entry deleted' });
-});
-
-// 12. College Events & Hackathons (Admin posted)
-router.get('/events', (req: AuthRequest, res) => {
-  res.json(memDb.events);
-});
-
-// 13. AI Query Assistant for Students (Strictly locked to own student data)
-router.post('/ai-query', rateLimit(25, 60 * 1000, 'student-ai'), async (req: AuthRequest, res) => {
-  const { query: queryText } = req.body;
-  if (!queryText || !queryText.trim()) {
-    return res.status(400).json({ error: 'Query text is required.' });
-  }
-
-  const result = await processAiQuery(req.user!, queryText.trim());
-
-  // Log to audit table
-  memDb.ai_query_logs.push({
-    id: `log_${Date.now()}`,
-    user_id: req.user!.id,
-    query_text: queryText.trim(),
-    resolved_intent: result.resolvedIntent,
-    response_summary: result.text.slice(0, 300),
-    tool_calls: result.toolCallsExecuted,
-    created_at: new Date().toISOString()
+function portfolio(table: string, fields: string[]) {
+  router.get(`/${table}`, async (req: AuthRequest, res) => {
+    const s = await ownStudent(req.user!.id);
+    res.json((await query(`SELECT * FROM ${table} WHERE student_id=$1 ORDER BY created_at DESC`, [s.id])).rows);
   });
-
-  res.json({
-    answer: result.text,
-    toolCallsExecuted: result.toolCallsExecuted,
-    resolvedIntent: result.resolvedIntent
+  router.post(`/${table}`, async (req: AuthRequest, res) => {
+    const s = await ownStudent(req.user!.id);
+    const values = fields.map(f => req.body[f] ?? (f === 'technologies' || f === 'team_members' ? '[]' : ''));
+    const record = { id: id(table.slice(0, -1)), student_id: s.id, ...Object.fromEntries(fields.map((f, i) => [f, values[i]])) };
+    await query(`INSERT INTO ${table} (id,student_id,${fields.join(',')}) VALUES ($1,$2,${fields.map((_, i) => `$${i + 3}`).join(',')})`, [record.id, record.student_id, ...values.map(v => Array.isArray(v) ? JSON.stringify(v) : v)]);
+    res.status(201).json({ message: `${table} record created successfully`, [table.slice(0, -1)]: record });
   });
-});
+  router.delete(`/${table}/:id`, async (req: AuthRequest, res) => {
+    const s = await ownStudent(req.user!.id);
+    await query(`DELETE FROM ${table} WHERE id=$1 AND student_id=$2`, [req.params.id, s.id]);
+    res.json({ message: `${table} record removed successfully` });
+  });
+}
+
+portfolio('projects', ['title', 'description', 'technologies', 'github_url', 'live_url', 'date', 'team_members', 'image_url']);
+portfolio('achievements', ['title', 'description', 'organization', 'date', 'link', 'certificate_url']);
+portfolio('certifications', ['name', 'issuer', 'issue_date', 'credential_id', 'credential_url', 'certificate_url']);
+portfolio('hackathons', ['name', 'organizer', 'date', 'position_result', 'team_name', 'project_name', 'project_description', 'github_url', 'demo_url', 'certificate_url']);
+
+router.get('/events', async (_req, res) => res.json((await query('SELECT * FROM events ORDER BY event_date DESC')).rows));
+router.post('/ai-query', rateLimit(25, 60000, 'student-ai'), async (req: AuthRequest, res) => res.json(await processAiQuery(req.user!, String(req.body.query || ''))));
 
 export default router;
