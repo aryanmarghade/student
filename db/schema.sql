@@ -91,12 +91,18 @@ CREATE TABLE IF NOT EXISTS students (
     department_id VARCHAR(64) REFERENCES departments(id) ON DELETE SET NULL,
     linkedin_url TEXT,
     github_url TEXT,
+    hackerrank_url TEXT,
+    portfolio_url TEXT,
     profile_photo_url TEXT,
     resume_url TEXT,
     bio TEXT,
     profile_strength INT DEFAULT 20,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE students ADD COLUMN IF NOT EXISTS hackerrank_url TEXT;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS portfolio_url TEXT;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS github_data JSONB;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS github_synced_at TIMESTAMP WITH TIME ZONE;
 
 CREATE INDEX IF NOT EXISTS idx_students_user_id ON students(user_id);
 CREATE INDEX IF NOT EXISTS idx_students_class_id ON students(class_id);
@@ -133,6 +139,7 @@ CREATE TABLE IF NOT EXISTS projects (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_projects_student ON projects(student_id);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS verification_status VARCHAR(64) DEFAULT 'Student Submitted';
 
 CREATE TABLE IF NOT EXISTS achievements (
     id VARCHAR(64) PRIMARY KEY,
@@ -146,6 +153,7 @@ CREATE TABLE IF NOT EXISTS achievements (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_achievements_student ON achievements(student_id);
+ALTER TABLE achievements ADD COLUMN IF NOT EXISTS verification_status VARCHAR(64) DEFAULT 'Student Submitted';
 
 CREATE TABLE IF NOT EXISTS certifications (
     id VARCHAR(64) PRIMARY KEY,
@@ -159,6 +167,7 @@ CREATE TABLE IF NOT EXISTS certifications (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_certifications_student ON certifications(student_id);
+ALTER TABLE certifications ADD COLUMN IF NOT EXISTS verification_status VARCHAR(64) DEFAULT 'Student Submitted';
 
 CREATE TABLE IF NOT EXISTS hackathons (
     id VARCHAR(64) PRIMARY KEY,
@@ -176,6 +185,7 @@ CREATE TABLE IF NOT EXISTS hackathons (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_hackathons_student ON hackathons(student_id);
+ALTER TABLE hackathons ADD COLUMN IF NOT EXISTS verification_status VARCHAR(64) DEFAULT 'Student Submitted';
 
 CREATE TABLE IF NOT EXISTS events (
     id VARCHAR(64) PRIMARY KEY,
@@ -211,19 +221,38 @@ CREATE INDEX IF NOT EXISTS idx_tca_lookup ON teacher_class_assignments(teacher_u
 CREATE TABLE IF NOT EXISTS marks (
     id VARCHAR(64) PRIMARY KEY,
     student_id VARCHAR(64) REFERENCES students(id) ON DELETE CASCADE,
+    class_id VARCHAR(64) REFERENCES classes(id) ON DELETE CASCADE,
     subject_id VARCHAR(64) REFERENCES subjects(id) ON DELETE CASCADE,
     semester_id VARCHAR(64) REFERENCES semesters(id) ON DELETE CASCADE,
     teacher_user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
-    exam_type VARCHAR(64) NOT NULL CHECK (exam_type IN ('Internal 1', 'Internal 2', 'Midterm', 'Final', 'Assignment', 'Practical')),
+    exam_type VARCHAR(64) NOT NULL,
     marks_obtained NUMERIC(5, 2) NOT NULL,
     max_marks NUMERIC(5, 2) NOT NULL DEFAULT 100,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_marks_student ON marks(student_id);
+CREATE INDEX IF NOT EXISTS idx_marks_class_subject_semester ON marks(class_id, subject_id, semester_id);
 CREATE INDEX IF NOT EXISTS idx_marks_subject_semester ON marks(subject_id, semester_id);
 CREATE INDEX IF NOT EXISTS idx_marks_student_semester ON marks(student_id, semester_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_marks_student_subject_semester_exam ON marks(student_id, subject_id, semester_id, exam_type);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_marks_student_class_subject_semester_exam ON marks(student_id, class_id, subject_id, semester_id, exam_type);
+
+-- 9.1 ASSESSMENT DEFINITIONS (Dynamic, teacher-created assessments)
+CREATE TABLE IF NOT EXISTS assessment_definitions (
+    id VARCHAR(64) PRIMARY KEY,
+    class_id VARCHAR(64) REFERENCES classes(id) ON DELETE CASCADE,
+    subject_id VARCHAR(64) REFERENCES subjects(id) ON DELETE CASCADE,
+    semester_id VARCHAR(64) REFERENCES semesters(id) ON DELETE CASCADE,
+    teacher_user_id VARCHAR(64) REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(128) NOT NULL,
+    max_marks NUMERIC(5, 2) NOT NULL CHECK (max_marks > 0),
+    assessment_type VARCHAR(64) NOT NULL DEFAULT 'Other' CHECK (assessment_type IN ('Internal', 'Mid Sem', 'Final', 'Assignment', 'Practical', 'Other')),
+    status VARCHAR(32) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_assessment_definition UNIQUE (class_id, subject_id, semester_id, title)
+);
+
+CREATE INDEX IF NOT EXISTS idx_assessment_definitions_scope ON assessment_definitions(class_id, subject_id, semester_id, status);
 
 -- 10. MARKSHEETS (Official documents uploaded by admin)
 CREATE TABLE IF NOT EXISTS marksheets (
@@ -288,3 +317,27 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC);
+
+-- 14. POSTS
+CREATE TABLE IF NOT EXISTS posts (
+    id VARCHAR(64) PRIMARY KEY,
+    student_id VARCHAR(64) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    category VARCHAR(64) NOT NULL,
+    tags JSONB NOT NULL DEFAULT '[]',
+    external_link TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_posts_student ON posts(student_id);
+
+-- 15. POST ATTACHMENTS
+CREATE TABLE IF NOT EXISTS post_attachments (
+    id VARCHAR(64) PRIMARY KEY,
+    post_id VARCHAR(64) NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    file_url TEXT NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_type VARCHAR(64) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_post_attachments_post ON post_attachments(post_id);

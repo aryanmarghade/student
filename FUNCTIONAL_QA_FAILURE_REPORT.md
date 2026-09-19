@@ -41,9 +41,30 @@ Actual: The following live behaviors were verified through API checks and browse
 Impact: The core role-based backend protections and document isolation logic are validated.  
 Severity: None
 
+## [VERIFIED] Teacher student portfolio profile renders correctly in the browser
+
+Area: Teacher workspace profile experience  
+Actual: The teacher roster’s Portfolio button was opened in the live browser, and the updated student profile modal rendered with a clean LinkedIn-style layout. The duplicate student name in the modal header was removed, leaving the profile header as “Student Portfolio” while the profile body correctly displayed the student’s name, roll number, profile strength, links, and sections.  
+Impact: The teacher-facing student portfolio experience is now visually consistent and no longer repeats the student name in the header.  
+Severity: None
+
+## [VERIFIED] Class/subject/semester marks scoping is functioning in the live app
+
+Area: Browser QA and PostgreSQL-backed marks isolation  
+Actual: A live browser session for QA Teacher 2 loaded the correct scope (`QA Semester 2 Class — DBMS201 / Semester 2`) and showed the class-specific roster for Students 03–05. The live marks API for the teacher’s authorized scope returned the class-scoped grid with `CA 1` present in `cls_sem_2 / sbj_dbms / sem_2`, and the same assessment title was not present in the teacher’s other assigned scope (`cls_sem_3 / sbj_os / sem_3`). The teacher 3 API route for an unauthorized class/subject/semester returned `403` with `Access Denied: You are not assigned to this class, subject, and semester.`  
+Impact: The marks system is now correctly isolated by class, subject, and semester in runtime storage and backend access control.  
+Severity: None
+
+## [VERIFIED] Max-mark validation is enforced at the backend
+
+Area: Marks entry validation  
+Actual: A direct API request to save `26` for `std_03` on `CA 1` (max 25) was rejected with HTTP `400` and the server response `Validation failed on submitted marks` / `std_03 CA 1: invalid mark`. This confirms the server-side guard is active in addition to client-side validation.  
+Impact: Over-limit marks are blocked even when submitted directly through the API, preventing invalid data from reaching PostgreSQL.  
+Severity: None
+
 ## [VERIFIED] Build and type-check status
 
 Area: Verification  
-Actual: `npm run lint` completed successfully with no TypeScript errors, and `npm run build` completed successfully for the Vite frontend plus the bundled Node server.  
+Actual: `npm run lint` completed successfully with no TypeScript errors, `npm run build` completed successfully for the Vite frontend plus the bundled Node server, and the production bundle was generated successfully.  
 Impact: The repository is currently in a clean compile/build state.  
 Severity: None

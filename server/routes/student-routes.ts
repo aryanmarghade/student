@@ -24,6 +24,11 @@ const ALLOWED_MIME_TYPES = [
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'text/plain',
+  'video/mp4',
+  'video/webm',
+  'video/ogg',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 ];
 
 const docUpload = multer({
@@ -37,7 +42,7 @@ const docUpload = multer({
     if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error(`Unsupported file type: ${file.mimetype}. Allowed: PDF, images, DOC/DOCX, TXT.`));
+      cb(new Error(`Unsupported file type: ${file.mimetype}. Allowed: PDF, images, video, PPT, DOC/DOCX, TXT.`));
     }
   },
 });
@@ -86,13 +91,13 @@ router.get('/profile', async (req: AuthRequest, res) => {
 router.put('/profile', async (req: AuthRequest, res) => {
   const s = await ownStudent(req.user!.id);
   if (!s) return res.status(404).json({ error: 'Student record not found.' });
-  const { bio, linkedin_url, github_url } = req.body;
+  const { bio, linkedin_url, github_url, hackerrank_url, portfolio_url } = req.body;
   if (linkedin_url && !/^https?:\/\/(www\.)?linkedin\.com\/.+/i.test(linkedin_url)) return res.status(400).json({ error: 'Please enter a valid LinkedIn profile URL.' });
   if (github_url && !/^https?:\/\/(www\.)?github\.com\/.+/i.test(github_url)) return res.status(400).json({ error: 'Please enter a valid GitHub profile URL.' });
-  await query('UPDATE students SET bio=COALESCE($1,bio),linkedin_url=COALESCE($2,linkedin_url),github_url=COALESCE($3,github_url) WHERE id=$4', [typeof bio === 'string' ? bio.trim() : null, linkedin_url === undefined ? null : String(linkedin_url).trim(), github_url === undefined ? null : String(github_url).trim(), s.id]);
+  await query('UPDATE students SET bio=COALESCE($1,bio),linkedin_url=COALESCE($2,linkedin_url),github_url=COALESCE($3,github_url),hackerrank_url=COALESCE($4,hackerrank_url),portfolio_url=COALESCE($5,portfolio_url) WHERE id=$6', [typeof bio === 'string' ? bio.trim() : null, linkedin_url === undefined ? null : String(linkedin_url).trim(), github_url === undefined ? null : String(github_url).trim(), hackerrank_url === undefined ? null : String(hackerrank_url).trim(), portfolio_url === undefined ? null : String(portfolio_url).trim(), s.id]);
   const updated = await ownStudent(req.user!.id), profile_strength = await strength(updated);
   await query('UPDATE students SET profile_strength=$1 WHERE id=$2', [profile_strength, s.id]);
-  res.json({ message: 'Profile updated successfully', student: { bio: updated.bio, linkedin_url: updated.linkedin_url, github_url: updated.github_url, profile_strength } });
+  res.json({ message: 'Profile updated successfully', student: { bio: updated.bio, linkedin_url: updated.linkedin_url, github_url: updated.github_url, hackerrank_url: updated.hackerrank_url, portfolio_url: updated.portfolio_url, profile_strength } });
 });
 
 router.post('/upload-photo', async (req: AuthRequest, res) => {
@@ -245,7 +250,128 @@ portfolio('achievements', ['title', 'description', 'organization', 'date', 'link
 portfolio('certifications', ['name', 'issuer', 'issue_date', 'credential_id', 'credential_url', 'certificate_url']);
 portfolio('hackathons', ['name', 'organizer', 'date', 'position_result', 'team_name', 'project_name', 'project_description', 'github_url', 'demo_url', 'certificate_url']);
 
+// ── Posts & Activity Feed ─────────────────────────────────────────────────────
+
+router.get('/posts', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  const posts = await query(`
+    SELECT p.*,
+           (SELECT json_agg(a.*) FROM post_attachments a WHERE a.post_id = p.id) as attachments
+    FROM posts p
+    WHERE p.student_id = $1
+    ORDER BY p.created_at DESC
+  `, [s.id]);
+  res.json(posts.rows);
+});
+
+router.post('/posts', docUpload.array('attachments', 10), async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s) return res.status(404).json({ error: 'Student record not found.' });
+
+  const { title, description, category, tags, external_link } = req.body;
+  if (!title || !description || !category) {
+    return res.status(400).json({ error: 'Title, description, and category are required.' });
+  }
+
+  const postId = id('post');
+  let parsedTags = [];
+  try {
+    parsedTags = tags ? JSON.parse(tags) : [];
+  } catch (e) {
+    parsedTags = typeof tags === 'string' ? tags.split(',').map((t: string) => t.trim()) : [];
+  }
+
+  await query(`
+    INSERT INTO posts (id, student_id, title, description, category, tags, external_link)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+  `, [postId, s.id, title, description, category, JSON.stringify(parsedTags), external_link || null]);
+
+  const files = (req.files as Express.Multer.File[]) || [];
+  const attachments = [];
+  for (const file of files) {
+    const attachmentId = id('patt');
+    const fileUrl = `/uploads/student-docs/${file.filename}`;
+    const ext = path.extname(file.originalname).slice(1).toLowerCase() || 'bin';
+    let fileType = 'document';
+    if (file.mimetype.startsWith('image/')) fileType = 'image';
+    else if (file.mimetype.startsWith('video/')) fileType = 'video';
+    else if (file.mimetype === 'application/pdf') fileType = 'pdf';
+    else if (file.mimetype.includes('powerpoint') || file.mimetype.includes('presentation')) fileType = 'ppt';
+
+    await query(`
+      INSERT INTO post_attachments (id, post_id, file_url, file_name, file_type)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [attachmentId, postId, fileUrl, file.originalname, fileType]);
+    
+    attachments.push({ id: attachmentId, file_url: fileUrl, file_name: file.originalname, file_type: fileType });
+  }
+
+  const newPost = (await query('SELECT * FROM posts WHERE id = $1', [postId])).rows[0];
+  res.status(201).json({ message: 'Post created successfully', post: { ...newPost, attachments } });
+});
+
+router.get('/post-attachments/:id/file', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  const attachment = (await query(`
+    SELECT a.* FROM post_attachments a 
+    JOIN posts p ON a.post_id = p.id 
+    WHERE a.id=$1 AND p.student_id=$2
+  `, [req.params.id, s.id])).rows[0];
+  if (!attachment) return res.status(404).json({ error: 'Attachment not found or access denied.' });
+
+  const filename = path.basename(attachment.file_url);
+  const filePath = path.join(process.cwd(), 'uploads', 'student-docs', filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File is unavailable on disk.' });
+  res.setHeader('Content-Disposition', `inline; filename="${attachment.file_name}"`);
+  res.sendFile(filePath);
+});
+
+router.delete('/posts/:id', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  await query('DELETE FROM posts WHERE id=$1 AND student_id=$2', [req.params.id, s.id]);
+  res.json({ message: 'Post deleted successfully' });
+});
+
 router.get('/events', async (_req, res) => res.json((await query('SELECT * FROM events ORDER BY event_date DESC')).rows));
 router.post('/ai-query', rateLimit(25, 60000, 'student-ai'), async (req: AuthRequest, res) => res.json(await processAiQuery(req.user!, String(req.body.query || ''))));
+
+router.post('/github/sync', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s || !s.github_url) return res.status(400).json({ error: 'No GitHub URL linked to profile.' });
+  
+  try {
+    const match = s.github_url.match(/github\.com\/([^\/]+)/i);
+    if (!match) return res.status(400).json({ error: 'Invalid GitHub URL format.' });
+    const username = match[1];
+
+    const userRes = await fetch(`https://api.github.com/users/${username}`);
+    const reposRes = await fetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=updated`);
+
+    if (!userRes.ok) throw new Error('GitHub API error for user profile');
+    const userData = await userRes.json();
+    const reposData = reposRes.ok ? await reposRes.json() : [];
+
+    const githubData = {
+      username: userData.login,
+      followers: userData.followers,
+      public_repos: userData.public_repos,
+      stars: reposData.reduce((acc: number, r: any) => acc + (r.stargazers_count || 0), 0),
+      forks: reposData.reduce((acc: number, r: any) => acc + (r.forks_count || 0), 0),
+      languages: Array.from(new Set(reposData.map((r: any) => r.language).filter(Boolean))),
+      top_repos: reposData.slice(0, 5).map((r: any) => ({
+        name: r.name,
+        url: r.html_url,
+        description: r.description,
+        stars: r.stargazers_count,
+        language: r.language
+      }))
+    };
+
+    await query('UPDATE students SET github_data=$1, github_synced_at=NOW() WHERE id=$2', [JSON.stringify(githubData), s.id]);
+    res.json({ message: 'GitHub synchronized successfully', githubData });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to sync GitHub' });
+  }
+});
 
 export default router;

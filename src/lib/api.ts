@@ -122,9 +122,10 @@ export const api = {
       method: 'PATCH',
     }),
 
-  resetUserPassword: (userId: string) =>
+  resetUserPassword: (userId: string, newPassword?: string) =>
     request<{ message: string; tempPassword?: string }>(`/api/admin/users/${userId}/reset-password`, {
       method: 'POST',
+      body: newPassword ? JSON.stringify({ password: newPassword }) : undefined,
     }),
 
   getTeacherAssignments: () =>
@@ -248,11 +249,13 @@ export const api = {
   // Student
   getStudentProfile: () => request<StudentProfile>('/api/student/profile'),
 
-  updateStudentProfile: (payload: { bio?: string; linkedin_url?: string; github_url?: string }) =>
+  updateStudentProfile: (payload: { bio?: string; linkedin_url?: string; github_url?: string; hackerrank_url?: string; portfolio_url?: string }) =>
     request<{ message: string; student: any }>('/api/student/profile', {
       method: 'PUT',
       body: JSON.stringify(payload),
     }),
+
+  syncGitHub: () => request<{ message: string; githubData: any }>('/api/student/github/sync', { method: 'POST' }),
 
   uploadStudentPhoto: (photoDataUrl: string) =>
     request<{ message: string; profile_photo_url: string; profile_strength: number }>('/api/student/upload-photo', {
@@ -377,9 +380,31 @@ export const api = {
       method: 'DELETE',
     }),
 
+  // Student Posts
+  getStudentPosts: () => request<any[]>('/api/student/posts'),
+  createStudentPost: (data: FormData) =>
+    request<{ message: string; post: any }>('/api/student/posts', {
+      method: 'POST',
+      body: data,
+    }),
+  deleteStudentPost: (id: string) =>
+    request<{ message: string }>(`/api/student/posts/${id}`, {
+      method: 'DELETE',
+    }),
+
   // Faculty extensions
   getStudentFullProfileForTeacher: (studentId: string) =>
     request<any>(`/api/teacher/students/${studentId}/full-profile`),
+  createTeacherAssessment: (classId: string, subjectId: string, payload: { semester_id: string; title: string; max_marks: number; assessment_type?: string }) =>
+    request<{ message: string; assessment: any }>(`/api/teacher/classes/${classId}/subjects/${subjectId}/assessments`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  verifyStudentPortfolioItem: (studentId: string, type: string, itemId: string, status: string) =>
+    request<{ message: string }>(`/api/teacher/students/${studentId}/portfolio/${type}/${itemId}/verify`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    }),
   importTeacherMarks: (classId: string, subjectId: string, semesterId: string, entries: any[]) =>
     request<{ message: string; importedCount: number; errors: any[] }>(
       `/api/teacher/classes/${classId}/subjects/${subjectId}/import-marks`,

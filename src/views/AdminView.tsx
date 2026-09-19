@@ -357,8 +357,14 @@ export const AdminView: React.FC = () => {
 
   // Reset password
   const handleResetPassword = async (userId: string) => {
+    const newPassword = window.prompt('Enter new password for this user (minimum 8 characters):');
+    if (newPassword === null) return; // User cancelled
+    if (newPassword.length < 8) {
+      showToast('Password must be at least 8 characters.', true);
+      return;
+    }
     try {
-      const res = await api.resetUserPassword(userId);
+      const res = await api.resetUserPassword(userId, newPassword);
       showToast(res.message);
     } catch (err: any) {
       showToast(err.message, true);
@@ -1895,6 +1901,64 @@ export const AdminView: React.FC = () => {
                 >
                   Publish Event
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* MODAL: ADD SINGLE USER */}
+      {showAddUserModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="p-4 bg-[#0f2744] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-bold text-sm">Register New User</h3>
+              </div>
+              <button onClick={() => setShowAddUserModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleCreateUser} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
+                <input type="text" required value={newUserData.full_name} onChange={e => setNewUserData({...newUserData, full_name: e.target.value})} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+                <input type="email" required value={newUserData.email} onChange={e => setNewUserData({...newUserData, email: e.target.value})} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Role</label>
+                  <select value={newUserData.role} onChange={e => setNewUserData({...newUserData, role: e.target.value})} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50">
+                    <option value="student">Student</option>
+                    <option value="teacher">Teacher / Faculty</option>
+                    <option value="admin">Administrator</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Initial Password</label>
+                  <input type="text" required minLength={8} value={newUserData.password} onChange={e => setNewUserData({...newUserData, password: e.target.value})} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
+                </div>
+              </div>
+              {newUserData.role === 'student' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Roll Number</label>
+                    <input type="text" value={newUserData.roll_number} onChange={e => setNewUserData({...newUserData, roll_number: e.target.value})} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" placeholder="Optional" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Class Assignment</label>
+                    <select value={newUserData.class_id} onChange={e => setNewUserData({...newUserData, class_id: e.target.value})} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50">
+                      {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowAddUserModal(false)} className="px-3 py-1.5 bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold cursor-pointer">Cancel</button>
+                <button type="submit" className="px-3 py-1.5 bg-[#0f2744] text-white rounded-lg text-xs font-semibold cursor-pointer">Create Account</button>
               </div>
             </form>
           </div>

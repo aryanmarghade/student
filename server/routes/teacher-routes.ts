@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { Router } from 'express';
 import { query, logActivity, id } from '../db.js';
 import { requireAuth, requireRole, verifyTeacherClassScope, AuthRequest, rateLimit } from '../auth.js';
@@ -7,7 +9,7 @@ import { linearRegression, median, standardDeviation } from '../analytics.js';
 const router = Router();
 router.use(requireAuth, requireRole('teacher'));
 
-const exams = [
+const defaultExams = [
   { type: 'Internal 1', max: 25 },
   { type: 'Internal 2', max: 25 },
   { type: 'Midterm', max: 50 },
@@ -38,8 +40,15 @@ router.get('/classes/:classId/students', async (req: AuthRequest, res) => {
     return res.status(403).json({ error: 'Access Denied: You are not assigned to instruct or view records for this class.' });
   const cls = (await query('SELECT * FROM classes WHERE id=$1', [req.params.classId])).rows[0];
   const students = (await query(
-    `SELECT s.id,s.user_id,s.roll_number,u.full_name,u.email,s.linkedin_url,s.github_url,s.profile_strength
-     FROM students s JOIN users u ON u.id=s.user_id WHERE s.class_id=$1 ORDER BY s.roll_number`,
+    `SELECT s.id,s.user_id,s.roll_number,u.full_name,u.email,
+            s.linkedin_url,s.github_url,s.hackerrank_url,s.profile_photo_url,
+            s.profile_strength,s.bio,s.class_id, c.name AS class_name, c.year AS class_year, c.section AS class_section,
+            d.name AS department_name
+     FROM students s
+     JOIN users u ON u.id=s.user_id
+     LEFT JOIN classes c ON c.id=s.class_id
+     LEFT JOIN departments d ON d.id=s.department_id
+     WHERE s.class_id=$1 ORDER BY s.roll_number`,
     [req.params.classId],
   )).rows;
   res.json({ class: cls, students });
@@ -47,20 +56,67 @@ router.get('/classes/:classId/students', async (req: AuthRequest, res) => {
 
 router.get('/classes/:classId/subjects/:subjectId/marks', async (req: AuthRequest, res) => {
   const { classId, subjectId } = req.params;
-  if (!await verifyTeacherClassScope(classId, subjectId, undefined, req.user!.id))
-    return res.status(403).json({ error: 'Access Denied: You are not assigned to this class and subject.' });
   const semester = String(req.query.semester_id || '');
+  if (!await verifyTeacherClassScope(classId, subjectId, semester || undefined, req.user!.id))
+    return res.status(403).json({ error: 'Access Denied: You are not assigned to this class, subject, and semester.' });
   const students = (await query(`SELECT s.id,s.roll_number,u.full_name FROM students s JOIN users u ON u.id=s.user_id WHERE s.class_id=$1 ORDER BY s.roll_number`, [classId])).rows;
-  const marks = (await query<any>(`SELECT * FROM marks WHERE subject_id=$1 ${semester ? 'AND semester_id=$2' : ''}`, semester ? [subjectId, semester] : [subjectId])).rows;
+  const [marks, assessmentDefs] = await Promise.all([
+    query<any>(`SELECT * FROM marks WHERE class_id=$1 AND subject_id=$2 ${semester ? 'AND semester_id=$3' : ''}`, semester ? [classId, subjectId, semester] : [classId, subjectId]),
+    query<any>(`SELECT id, title, max_marks, assessment_type FROM assessment_definitions WHERE class_id=$1 AND subject_id=$2 AND semester_id=$3 AND status='active' ORDER BY created_at ASC`, [classId, subjectId, semester || ''] ),
+  ]);
+
+  const columnDefs = assessmentDefs.rows.length > 0
+    ? assessmentDefs.rows.map((a: any) => ({ type: a.title, max: Number(a.max_marks), assessmentType: a.assessment_type, id: a.id }))
+    : defaultExams;
+
   const grid: any = {};
   for (const s of students) {
     grid[s.id] = {};
-    for (const exam of exams) {
-      const m = marks.find((x: any) => x.student_id === s.id && x.exam_type === exam.type);
+    for (const exam of columnDefs) {
+      const m = marks.rows.find((x: any) => x.student_id === s.id && x.exam_type === exam.type);
       grid[s.id][exam.type] = { marks_obtained: m?.marks_obtained ?? null, max_marks: exam.max, id: m?.id ?? null };
     }
   }
-  res.json({ students, examColumns: exams, grid });
+  res.json({ students, examColumns: columnDefs, grid });
+});
+
+router.post('/classes/:classId/subjects/:subjectId/assessments', async (req: AuthRequest, res) => {
+  const { classId, subjectId } = req.params;
+  const { semester_id, title, max_marks, assessment_type = 'Other' } = req.body;
+
+  if (!await verifyTeacherClassScope(classId, subjectId, semester_id, req.user!.id))
+    return res.status(403).json({ error: 'Access Denied: You are not assigned to this class and subject.' });
+
+  const safeTitle = String(title || '').trim();
+  const safeMaxMarks = Number(max_marks);
+  if (!safeTitle) return res.status(400).json({ error: 'Assessment title is required.' });
+  if (!Number.isFinite(safeMaxMarks) || safeMaxMarks <= 0) return res.status(400).json({ error: 'Assessment max marks must be a positive number.' });
+
+  const existing = await query<any>(
+    `SELECT id FROM assessment_definitions WHERE class_id=$1 AND subject_id=$2 AND semester_id=$3 AND title=$4 AND status='active'`,
+    [classId, subjectId, semester_id, safeTitle],
+  );
+  if (existing.rowCount) return res.status(409).json({ error: 'An active assessment with this title already exists for this class and subject.' });
+
+  const assessment = {
+    id: id('asmt'),
+    class_id: classId,
+    subject_id: subjectId,
+    semester_id,
+    teacher_user_id: req.user!.id,
+    title: safeTitle,
+    max_marks: safeMaxMarks,
+    assessment_type: ['Internal', 'Mid Sem', 'Final', 'Assignment', 'Practical', 'Other'].includes(assessment_type) ? assessment_type : 'Other',
+    status: 'active',
+  };
+
+  await query(
+    `INSERT INTO assessment_definitions (id,class_id,subject_id,semester_id,teacher_user_id,title,max_marks,assessment_type,status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [assessment.id, assessment.class_id, assessment.subject_id, assessment.semester_id, assessment.teacher_user_id, assessment.title, assessment.max_marks, assessment.assessment_type, assessment.status],
+  );
+
+  res.status(201).json({ message: 'Assessment definition created successfully.', assessment });
 });
 
 router.post('/classes/:classId/subjects/:subjectId/marks', async (req: AuthRequest, res) => {
@@ -69,20 +125,27 @@ router.post('/classes/:classId/subjects/:subjectId/marks', async (req: AuthReque
   if (!await verifyTeacherClassScope(classId, subjectId, semester_id, req.user!.id))
     return res.status(403).json({ error: 'Access Denied: You are not authorized to update marks for this class/subject.' });
   if (!Array.isArray(updates) || !updates.length) return res.status(400).json({ error: 'Updates array is required.' });
+
+  const [assessmentDefs] = await Promise.all([
+    query<any>('SELECT title, max_marks FROM assessment_definitions WHERE class_id=$1 AND subject_id=$2 AND semester_id=$3 AND status=\'active\' ORDER BY created_at ASC', [classId, subjectId, semester_id || '']),
+  ]);
+
+  const lookup = new Map((assessmentDefs.rows || []).map((row: any) => [row.title, Number(row.max_marks)]));
   const errors: string[] = [];
   let saved = 0;
   for (const item of updates) {
     if (item.marks_obtained === null || item.marks_obtained === undefined || item.marks_obtained === '') continue;
-    const value = Number(item.marks_obtained), max = Number(item.max_marks) || 100;
+    const value = Number(item.marks_obtained);
+    const max = Number(item.max_marks) || lookup.get(item.exam_type) || 100;
     if (!Number.isFinite(value) || value < 0 || value > max) { errors.push(`${item.student_id} ${item.exam_type}: invalid mark`); continue; }
     const student = (await query('SELECT 1 FROM students WHERE id=$1 AND class_id=$2', [item.student_id, classId])).rowCount;
     if (!student) { errors.push(`${item.student_id}: student is outside this class`); continue; }
     await query(
-      `INSERT INTO marks (id,student_id,subject_id,semester_id,teacher_user_id,exam_type,marks_obtained,max_marks)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (student_id,subject_id,semester_id,exam_type)
+      `INSERT INTO marks (id,student_id,class_id,subject_id,semester_id,teacher_user_id,exam_type,marks_obtained,max_marks)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (student_id,class_id,subject_id,semester_id,exam_type)
        DO UPDATE SET marks_obtained=EXCLUDED.marks_obtained,max_marks=EXCLUDED.max_marks,teacher_user_id=EXCLUDED.teacher_user_id`,
-      [id('mrk'), item.student_id, subjectId, semester_id || 'sem_1', req.user!.id, item.exam_type, value, max],
+      [id('mrk'), item.student_id, classId, subjectId, semester_id || 'sem_1', req.user!.id, item.exam_type, value, max],
     );
     saved++;
   }
@@ -105,11 +168,11 @@ router.post('/classes/:classId/subjects/:subjectId/import-marks', async (req: Au
   let saved = 0;
   for (const u of updates) {
     await query(
-      `INSERT INTO marks (id,student_id,subject_id,semester_id,teacher_user_id,exam_type,marks_obtained,max_marks)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (student_id,subject_id,semester_id,exam_type)
+      `INSERT INTO marks (id,student_id,class_id,subject_id,semester_id,teacher_user_id,exam_type,marks_obtained,max_marks)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (student_id,class_id,subject_id,semester_id,exam_type)
        DO UPDATE SET marks_obtained=EXCLUDED.marks_obtained,max_marks=EXCLUDED.max_marks`,
-      [id('mrk'), u.student_id, subjectId, req.body.semester_id || 'sem_1', req.user!.id, u.exam_type, Number(u.marks_obtained), Number(u.max_marks)],
+      [id('mrk'), u.student_id, classId, subjectId, req.body.semester_id || 'sem_1', req.user!.id, u.exam_type, Number(u.marks_obtained), Number(u.max_marks)],
     );
     saved++;
   }
@@ -120,11 +183,15 @@ router.post('/classes/:classId/subjects/:subjectId/import-marks', async (req: Au
 
 router.post('/analytics', async (req: AuthRequest, res) => {
   const { classId, scope = 'whole_class', studentIds = [], selectedSemesters = [], selectedExamTypes = [], subjectId } = req.body;
-  if (!await verifyTeacherClassScope(classId, undefined, undefined, req.user!.id))
+  if (subjectId) {
+    if (!await verifyTeacherClassScope(classId, subjectId, undefined, req.user!.id))
+      return res.status(403).json({ error: 'Access Denied: Subject outside your assigned teaching scope.' });
+  } else if (!await verifyTeacherClassScope(classId, undefined, undefined, req.user!.id)) {
     return res.status(403).json({ error: 'Access Denied: Class outside your assigned teaching scope.' });
+  }
 
   const params: any[] = [classId];
-  const filters = ['s.class_id=$1'];
+  const filters = ['s.class_id=$1', 'm.class_id=$1'];
   if ((studentIds as string[]).length) { params.push(studentIds); filters.push(`s.id=ANY($${params.length})`); }
   if (subjectId) { params.push(subjectId); filters.push(`m.subject_id=$${params.length}`); }
   if ((selectedSemesters as string[]).length) { params.push(selectedSemesters); filters.push(`m.semester_id=ANY($${params.length})`); }
@@ -232,14 +299,78 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
   if (!s) return res.status(404).json({ error: 'Student record not found.' });
   if (!await verifyTeacherClassScope(s.class_id, undefined, undefined, req.user!.id))
     return res.status(403).json({ error: 'Access Denied: This student is not enrolled in your assigned classes.' });
-  const [projects, achievements, certifications, hackathons, documents, marks] = await Promise.all(
+  const [projects, achievements, certifications, hackathons, documents, marks, posts] = await Promise.all(
     ['projects', 'achievements', 'certifications', 'hackathons', 'student_documents', 'marks'].map(
       table => query(`SELECT * FROM ${table} WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
-    ),
+    ).concat([
+      query(`
+        SELECT p.*,
+               (SELECT json_agg(a.*) FROM post_attachments a WHERE a.post_id = p.id) as attachments
+        FROM posts p
+        WHERE p.student_id = $1
+        ORDER BY p.created_at DESC
+      `, [s.id])
+    ])
   );
-  res.json({ ...s, projects: projects.rows, achievements: achievements.rows, certifications: certifications.rows, hackathons: hackathons.rows, documents: documents.rows, marks: marks.rows, marksheets: [] });
+  res.json({
+    ...s,
+    projects: projects.rows,
+    achievements: achievements.rows,
+    certifications: certifications.rows,
+    hackathons: hackathons.rows,
+    documents: documents.rows,
+    marks: marks.rows,
+    marksheets: [],
+    profile_links: {
+      github: s.github_url,
+      linkedin: s.linkedin_url,
+      hackerrank: s.hackerrank_url,
+      portfolio: s.portfolio_url,
+      resume: s.resume_url,
+    },
+    posts: posts.rows,
+  });
+});
+router.get('/students/:studentId/documents/:documentId/file', async (req: AuthRequest, res) => {
+  const student = (await query<any>('SELECT id,class_id FROM students WHERE id=$1', [req.params.studentId])).rows[0];
+  if (!student) return res.status(404).json({ error: 'Student not found.' });
+  if (!await verifyTeacherClassScope(student.class_id, undefined, undefined, req.user!.id)) {
+    return res.status(403).json({ error: 'Access Denied: This student is not enrolled in your assigned classes.' });
+  }
+
+  const document = (await query<any>('SELECT * FROM student_documents WHERE id=$1 AND student_id=$2', [req.params.documentId, student.id])).rows[0];
+  if (!document) return res.status(404).json({ error: 'Document not found or access denied.' });
+
+  const fileName = path.basename(document.file_url);
+  const filePath = path.join(process.cwd(), 'uploads', 'student-docs', fileName);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Document file is unavailable on disk.' });
+
+  res.setHeader('Content-Disposition', `inline; filename="${document.file_name || fileName}"`);
+  res.sendFile(filePath);
 });
 
+router.get('/students/:studentId/post-attachments/:attachmentId/file', async (req: AuthRequest, res) => {
+  const student = (await query<any>('SELECT id,class_id FROM students WHERE id=$1', [req.params.studentId])).rows[0];
+  if (!student) return res.status(404).json({ error: 'Student not found.' });
+  if (!await verifyTeacherClassScope(student.class_id, undefined, undefined, req.user!.id)) {
+    return res.status(403).json({ error: 'Access Denied: This student is not enrolled in your assigned classes.' });
+  }
+
+  const attachment = (await query(`
+    SELECT a.* FROM post_attachments a 
+    JOIN posts p ON a.post_id = p.id 
+    WHERE a.id=$1 AND p.student_id=$2
+  `, [req.params.attachmentId, student.id])).rows[0];
+  
+  if (!attachment) return res.status(404).json({ error: 'Attachment not found or access denied.' });
+
+  const fileName = path.basename(attachment.file_url);
+  const filePath = path.join(process.cwd(), 'uploads', 'student-docs', fileName);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File is unavailable on disk.' });
+
+  res.setHeader('Content-Disposition', `inline; filename="${attachment.file_name}"`);
+  res.sendFile(filePath);
+});
 router.get('/notifications', async (req: AuthRequest, res) => res.json((await query(
   `SELECT DISTINCT n.*,u.full_name AS "creatorName",c.name AS "targetClassName",(nr.id IS NOT NULL) AS is_read
    FROM notifications n
@@ -269,5 +400,22 @@ router.post('/announcements', async (req: AuthRequest, res) => {
 
 router.get('/events', async (_req, res) => res.json([]));
 router.post('/ai-query', rateLimit(25, 60000, 'teacher-ai'), async (req: AuthRequest, res) => res.json(await processAiQuery(req.user!, String(req.body.query || ''))));
+
+router.post('/students/:studentId/portfolio/:type/:itemId/verify', async (req: AuthRequest, res) => {
+  const { studentId, type, itemId } = req.params;
+  const { status } = req.body;
+  
+  const student = (await query<any>('SELECT id,class_id FROM students WHERE id=$1', [studentId])).rows[0];
+  if (!student) return res.status(404).json({ error: 'Student not found.' });
+  if (!await verifyTeacherClassScope(student.class_id, undefined, undefined, req.user!.id)) {
+    return res.status(403).json({ error: 'Access Denied.' });
+  }
+
+  const validTables = ['projects', 'achievements', 'certifications', 'hackathons'];
+  if (!validTables.includes(type)) return res.status(400).json({ error: 'Invalid portfolio type.' });
+
+  await query(`UPDATE ${type} SET verification_status=$1 WHERE id=$2 AND student_id=$3`, [status, itemId, student.id]);
+  res.json({ message: 'Verification status updated successfully' });
+});
 
 export default router;

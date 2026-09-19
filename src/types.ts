@@ -75,6 +75,9 @@ export interface StudentProfile {
   departmentName: string;
   linkedin_url?: string;
   github_url?: string;
+  hackerrank_url?: string;
+  portfolio_url?: string;
+  github_data?: any;
   profile_photo_url?: string;
   resume_url?: string;
   bio?: string;
@@ -181,6 +184,7 @@ export interface ProjectItem {
   date?: string;
   team_members?: string[];
   image_url?: string;
+  verification_status?: string;
   created_at: string;
 }
 
@@ -193,6 +197,7 @@ export interface AchievementItem {
   date?: string;
   link?: string;
   certificate_url?: string;
+  verification_status?: string;
   created_at: string;
 }
 
@@ -205,6 +210,7 @@ export interface CertificationItem {
   credential_id?: string;
   credential_url?: string;
   certificate_url?: string;
+  verification_status?: string;
   created_at: string;
 }
 
@@ -221,6 +227,7 @@ export interface HackathonItem {
   github_url?: string;
   demo_url?: string;
   certificate_url?: string;
+  verification_status?: string;
   created_at: string;
 }
 
@@ -251,6 +258,27 @@ export interface CollegeEvent {
   eligibility: string;
   status: 'upcoming' | 'ongoing' | 'completed';
   created_by?: string;
+  created_at: string;
+}
+
+export interface PostAttachment {
+  id: string;
+  post_id: string;
+  file_url: string;
+  file_name: string;
+  file_type: string;
+  created_at: string;
+}
+
+export interface PostItem {
+  id: string;
+  student_id: string;
+  title: string;
+  description: string;
+  category: string;
+  tags: string[];
+  external_link?: string;
+  attachments?: PostAttachment[];
   created_at: string;
 }
 

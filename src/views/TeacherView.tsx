@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { Bar, Line, Doughnut } from 'react-chartjs-2';
 import '../lib/chart-setup';
+import { PostCard } from '../components/PostCard';
 
 export const TeacherView: React.FC = () => {
   // Assignments list
@@ -47,6 +48,7 @@ export const TeacherView: React.FC = () => {
   const [selectedStudentProfile, setSelectedStudentProfile] = useState<any | null>(null);
   const [isLoadingStudentProfile, setIsLoadingStudentProfile] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileSection, setProfileSection] = useState<'overview' | 'posts' | 'achievements' | 'projects' | 'certifications' | 'documents' | 'skills'>('overview');
 
   // Batch CSV Marks Import State
   const [showImportMarksModal, setShowImportMarksModal] = useState(false);
@@ -70,6 +72,8 @@ export const TeacherView: React.FC = () => {
   const [marksGrid, setMarksGrid] = useState<Record<string, Record<string, any>>>({});
   const [marksEdits, setMarksEdits] = useState<Record<string, Record<string, number | null>>>({});
   const [isSavingMarks, setIsSavingMarks] = useState(false);
+  const [assessmentDraft, setAssessmentDraft] = useState({ title: '', max_marks: '25', assessment_type: 'Other' });
+  const [isCreatingAssessment, setIsCreatingAssessment] = useState(false);
 
   // Analytics state
   const [analyticsScope, setAnalyticsScope] = useState<'whole_class' | 'selected_students' | 'single_student'>('whole_class');
@@ -100,6 +104,119 @@ export const TeacherView: React.FC = () => {
     } catch {
       // safe fallback
     }
+  };
+
+  const normalizeArray = (value: any) => Array.isArray(value) ? value : [];
+
+  const getAvatarInitials = (name?: string) => {
+    const parts = (name || 'ST').split(' ').filter(Boolean);
+    return parts.slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'ST';
+  };
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return 'N/A';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const getProfileLinks = (profile: any) => {
+    const links = [
+      { label: 'GitHub', url: profile?.github_url || profile?.profile_links?.github },
+      { label: 'LinkedIn', url: profile?.linkedin_url || profile?.profile_links?.linkedin },
+      { label: 'HackerRank', url: profile?.hackerrank_url || profile?.profile_links?.hackerrank },
+      { label: 'Portfolio', url: profile?.portfolio_url || profile?.profile_links?.portfolio },
+      { label: 'Resume', url: profile?.resume_url || profile?.profile_links?.resume },
+    ];
+    return links.filter((link) => link.url && String(link.url).trim());
+  };
+
+  const buildActivityPosts = (profile: any) => {
+    const posts: any[] = [];
+
+    normalizeArray(profile?.projects).forEach((project: any) => {
+      posts.push({
+        id: project.id || `project-${project.title}`,
+        category: 'Project',
+        title: project.title || 'Project',
+        description: project.description || 'No description provided.',
+        date: project.date || project.created_at,
+        tags: normalizeArray(project.technologies).map((tag: any) => typeof tag === 'string' ? tag : (tag.skill_name || tag.name || '')),
+        media: project.image_url ? [project.image_url] : [],
+        attachments: [
+          ...(project.github_url ? [{ label: 'GitHub', url: project.github_url }] : []),
+          ...(project.live_url ? [{ label: 'Live Demo', url: project.live_url }] : []),
+        ],
+      });
+    });
+
+    normalizeArray(profile?.achievements).forEach((achievement: any) => {
+      posts.push({
+        id: achievement.id || `achievement-${achievement.title}`,
+        category: 'Achievement',
+        title: achievement.title || 'Achievement',
+        description: achievement.description || 'No description provided.',
+        date: achievement.date || achievement.created_at,
+        tags: [achievement.organization || 'Achievement'],
+        media: achievement.certificate_url ? [achievement.certificate_url] : [],
+        attachments: [
+          ...(achievement.link ? [{ label: 'Verification Link', url: achievement.link }] : []),
+          ...(achievement.certificate_url ? [{ label: 'Certificate', url: achievement.certificate_url }] : []),
+        ],
+      });
+    });
+
+    normalizeArray(profile?.hackathons).forEach((hackathon: any) => {
+      posts.push({
+        id: hackathon.id || `hackathon-${hackathon.name}`,
+        category: 'Hackathon',
+        title: hackathon.name || 'Hackathon',
+        description: hackathon.project_description || hackathon.position_result || 'No description provided.',
+        date: hackathon.date || hackathon.created_at,
+        tags: [hackathon.position_result, hackathon.organizer, hackathon.project_name].filter(Boolean),
+        media: hackathon.certificate_url ? [hackathon.certificate_url] : [],
+        attachments: [
+          ...(hackathon.github_url ? [{ label: 'GitHub', url: hackathon.github_url }] : []),
+          ...(hackathon.demo_url ? [{ label: 'Demo', url: hackathon.demo_url }] : []),
+          ...(hackathon.certificate_url ? [{ label: 'Certificate', url: hackathon.certificate_url }] : []),
+        ],
+      });
+    });
+
+    return posts.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+  };
+
+  const getStudentSkills = (profile: any) => {
+    const collected = new Set<string>();
+
+    normalizeArray(profile?.skills).forEach((skill: any) => {
+      const name = typeof skill === 'string' ? skill : (skill.skill_name || skill.name || '');
+      if (name) collected.add(name);
+    });
+
+    normalizeArray(profile?.projects).forEach((project: any) => {
+      normalizeArray(project.technologies).forEach((tag: any) => {
+        const name = typeof tag === 'string' ? tag : (tag.skill_name || tag.name || '');
+        if (name) collected.add(name);
+      });
+    });
+
+    return Array.from(collected);
+  };
+
+  const openTeacherDocument = async (studentId: string, document: any) => {
+    const token = localStorage.getItem('vission_academy_jwt');
+    const response = await fetch(`/api/teacher/students/${studentId}/documents/${document.id}/file`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+
+    if (!response.ok) {
+      throw new Error('Unable to open this document right now.');
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const handlePostAnnouncement = async (e: React.FormEvent) => {
@@ -273,6 +390,31 @@ export const TeacherView: React.FC = () => {
     }));
   };
 
+  const handleCreateAssessment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAssignment || !assessmentDraft.title.trim()) return;
+
+    setIsCreatingAssessment(true);
+    setFeedbackError(null);
+    setFeedbackSuccess(null);
+
+    try {
+      const res = await api.createTeacherAssessment(selectedAssignment.class_id, selectedAssignment.subject_id, {
+        semester_id: selectedAssignment.semester_id,
+        title: assessmentDraft.title.trim(),
+        max_marks: Number(assessmentDraft.max_marks),
+        assessment_type: assessmentDraft.assessment_type,
+      });
+      setFeedbackSuccess(res.message);
+      setAssessmentDraft({ title: '', max_marks: '25', assessment_type: 'Other' });
+      await selectAssignment(selectedAssignment);
+    } catch (err: any) {
+      setFeedbackError(err.message || 'Failed to create assessment definition');
+    } finally {
+      setIsCreatingAssessment(false);
+    }
+  };
+
   // Batch Save Marks
   const handleSaveMarks = async () => {
     if (!selectedAssignment) return;
@@ -337,6 +479,17 @@ export const TeacherView: React.FC = () => {
       setShowProfileModal(false);
     } finally {
       setIsLoadingStudentProfile(false);
+    }
+  };
+
+  const handleVerifyPortfolioItem = async (studentId: string, type: 'projects' | 'achievements' | 'certifications' | 'hackathons', itemId: string) => {
+    try {
+      const res = await api.verifyStudentPortfolioItem(studentId, type, itemId);
+      setFeedbackSuccess(res.message || 'Item verified successfully');
+      const prof = await api.getStudentFullProfileForTeacher(studentId);
+      setSelectedStudentProfile(prof);
+    } catch (err: any) {
+      setFeedbackError(err.message || `Failed to verify ${type}`);
     }
   };
 
@@ -684,7 +837,23 @@ export const TeacherView: React.FC = () => {
                             />
                           </td>
                           <td className="px-4 py-3 font-mono font-bold text-[#0f2744]">{s.roll_number}</td>
-                          <td className="px-4 py-3 font-semibold text-slate-900">{s.full_name}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-full bg-slate-200 text-slate-700 border border-slate-300 flex items-center justify-center overflow-hidden shrink-0">
+                                {s.profile_photo_url ? (
+                                  <img src={s.profile_photo_url} alt={s.full_name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-[10px] font-bold uppercase">{s.full_name?.slice(0, 2) || 'ST'}</span>
+                                )}
+                              </div>
+                              <div>
+                                <div className="font-semibold text-slate-900">{s.full_name}</div>
+                                <div className="text-[10px] text-slate-500">
+                                  {s.department_name || 'Dept'} • {s.class_name || 'Class'} {s.class_year ? `• ${s.class_year}` : ''}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
                           <td className="px-4 py-3 text-slate-500">{s.email}</td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
@@ -755,6 +924,52 @@ export const TeacherView: React.FC = () => {
                   </button>
                 </div>
               </div>
+
+              <form onSubmit={handleCreateAssessment} className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col gap-3 lg:flex-row lg:items-end">
+                <div className="flex-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">Assessment Title</label>
+                  <input
+                    type="text"
+                    value={assessmentDraft.title}
+                    onChange={e => setAssessmentDraft(prev => ({ ...prev, title: e.target.value }))}
+                    placeholder="CA 1, Quiz, Viva, Seminar..."
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-[#0f2744]"
+                  />
+                </div>
+                <div className="w-full lg:w-36">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">Max Marks</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.5"
+                    value={assessmentDraft.max_marks}
+                    onChange={e => setAssessmentDraft(prev => ({ ...prev, max_marks: e.target.value }))}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-[#0f2744]"
+                  />
+                </div>
+                <div className="w-full lg:w-40">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">Assessment Type</label>
+                  <select
+                    value={assessmentDraft.assessment_type}
+                    onChange={e => setAssessmentDraft(prev => ({ ...prev, assessment_type: e.target.value }))}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-[#0f2744]"
+                  >
+                    <option value="Internal">Internal</option>
+                    <option value="Mid Sem">Mid Sem</option>
+                    <option value="Final">Final</option>
+                    <option value="Assignment">Assignment</option>
+                    <option value="Practical">Practical</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isCreatingAssessment || !assessmentDraft.title.trim()}
+                  className="px-4 py-2 bg-[#0f2744] text-white rounded-lg text-xs font-semibold disabled:opacity-50 cursor-pointer"
+                >
+                  {isCreatingAssessment ? 'Creating...' : 'Add Assessment'}
+                </button>
+              </form>
 
               {/* Spreadsheet Grid Table */}
               <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-x-auto">
@@ -1197,13 +1412,13 @@ export const TeacherView: React.FC = () => {
 
       {/* MODAL: STUDENT FULL PORTFOLIO PROFILE */}
       {showProfileModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+          <div className="w-full min-h-screen bg-white flex flex-col">
             <div className="p-4 bg-[#0f2744] text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <FileText className="w-4 h-4 text-amber-400" />
                 <h3 className="font-bold text-sm">
-                  {isLoadingStudentProfile ? 'Loading Student Dossier...' : selectedStudentProfile?.student?.full_name}
+                  {isLoadingStudentProfile ? 'Loading Student Dossier...' : 'Student Portfolio'}
                 </h3>
               </div>
               <button
@@ -1222,157 +1437,389 @@ export const TeacherView: React.FC = () => {
                 </div>
               ) : selectedStudentProfile ? (
                 <>
-                  {/* Top Header Card */}
-                  <div className="flex items-start justify-between bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <div className="space-y-1">
-                      <h4 className="font-bold text-base text-slate-900">{selectedStudentProfile.full_name}</h4>
-                      <p className="text-xs text-slate-600 font-mono font-semibold">
-                        Roll: {selectedStudentProfile.roll_number}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {selectedStudentProfile.email} • Class: {selectedStudentProfile.className}
-                      </p>
-                      {selectedStudentProfile.bio && (
-                        <p className="text-xs text-slate-700 italic pt-1 border-t border-slate-200 mt-2">
-                          "{selectedStudentProfile.bio}"
-                        </p>
-                      )}
-                    </div>
-                    <div className="text-right space-y-1">
-                      <span className="inline-block px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
-                        Profile: {selectedStudentProfile.profile_strength}%
-                      </span>
-                      {selectedStudentProfile.github_url && (
-                        <div>
-                          <a
-                            href={selectedStudentProfile.github_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[11px] text-sky-700 hover:underline inline-flex items-center gap-1"
-                          >
-                            GitHub <ExternalLink className="w-3 h-3" />
-                          </a>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                    <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                      <div className="flex items-start gap-4">
+                        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-sky-100 to-slate-300 border border-slate-300 overflow-hidden shrink-0 flex items-center justify-center">
+                          {selectedStudentProfile.profile_photo_url ? (
+                            <img src={selectedStudentProfile.profile_photo_url} alt={selectedStudentProfile.full_name} className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-base font-bold uppercase text-slate-700">{getAvatarInitials(selectedStudentProfile.full_name)}</span>
+                          )}
                         </div>
-                      )}
-                      {selectedStudentProfile.linkedin_url && (
-                        <div>
-                          <a
-                            href={selectedStudentProfile.linkedin_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[11px] text-sky-700 hover:underline inline-flex items-center gap-1"
-                          >
-                            LinkedIn <ExternalLink className="w-3 h-3" />
-                          </a>
+
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-xl font-bold text-slate-900">{selectedStudentProfile.full_name}</h4>
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                              Profile {selectedStudentProfile.profile_strength || 0}%
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                            <span className="font-mono font-semibold text-[#0f2744]">Roll: {selectedStudentProfile.roll_number}</span>
+                            <span>•</span>
+                            <span>{selectedStudentProfile.departmentName || 'Department'}</span>
+                            <span>•</span>
+                            <span>{selectedStudentProfile.className || 'Class'} • {selectedStudentProfile.classYear ? `Year ${selectedStudentProfile.classYear}` : 'Year N/A'}</span>
+                          </div>
+
+                          <div className="text-xs text-slate-500">
+                            {selectedStudentProfile.email}
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            {getProfileLinks(selectedStudentProfile).map((link) => (
+                              <a
+                                key={link.label}
+                                href={link.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-sky-700 hover:bg-sky-50"
+                              >
+                                {link.label} <ExternalLink className="w-3 h-3" />
+                              </a>
+                            ))}
+                          </div>
                         </div>
-                      )}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Skills Section */}
-                  {selectedStudentProfile.skills && selectedStudentProfile.skills.length > 0 && (
-                    <div>
-                      <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                        Technical Skills
-                      </h5>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedStudentProfile.skills.map((sk: any, idx: number) => (
-                          <span
-                            key={idx}
-                            className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-800 border border-slate-300"
-                          >
-                            {sk.skill_name || sk}
-                          </span>
-                        ))}
+                  <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+                    {[
+                      { id: 'overview', label: 'Overview' },
+                      { id: 'posts', label: 'Posts' },
+                      { id: 'achievements', label: 'Achievements' },
+                      { id: 'projects', label: 'Projects' },
+                      { id: 'certifications', label: 'Certifications' },
+                      { id: 'documents', label: 'Documents' },
+                      { id: 'skills', label: 'Skills' },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setProfileSection(tab.id as any)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                          profileSection === tab.id
+                            ? 'bg-[#0f2744] text-white border-[#0f2744]'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {profileSection === 'overview' && (
+                    <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_0.9fr] gap-5">
+                      <div className="space-y-4">
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                          <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">About</h5>
+                          <p className="text-sm text-slate-700 leading-relaxed">
+                            {selectedStudentProfile.bio?.trim() || 'Student has not added a bio yet.'}
+                          </p>
+                        </div>
+
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                          <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">Academic Snapshot</h5>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-600">
+                            <div className="bg-white border border-slate-200 rounded-lg p-3">
+                              <div className="text-[10px] uppercase tracking-wider text-slate-500">Class / Section</div>
+                              <div className="mt-1 font-semibold text-slate-900">{selectedStudentProfile.className || 'N/A'}</div>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-lg p-3">
+                              <div className="text-[10px] uppercase tracking-wider text-slate-500">Branch</div>
+                              <div className="mt-1 font-semibold text-slate-900">{selectedStudentProfile.departmentName || 'N/A'}</div>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-lg p-3">
+                              <div className="text-[10px] uppercase tracking-wider text-slate-500">Year / Semester</div>
+                              <div className="mt-1 font-semibold text-slate-900">{selectedStudentProfile.classYear || 'N/A'}</div>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-lg p-3">
+                              <div className="text-[10px] uppercase tracking-wider text-slate-500">Institutional Email</div>
+                              <div className="mt-1 font-semibold text-slate-900 break-all">{selectedStudentProfile.email || 'N/A'}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                          <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">Profile Summary</h5>
+                          <div className="space-y-3">
+                            <div>
+                              <div className="flex items-center justify-between text-[11px] text-slate-600">
+                                <span>Profile Strength</span>
+                                <span className="font-semibold text-slate-900">{selectedStudentProfile.profile_strength || 0}%</span>
+                              </div>
+                              <div className="mt-1 w-full h-2 rounded-full bg-slate-200 overflow-hidden">
+                                <div className="h-full rounded-full bg-[#b45309]" style={{ width: `${selectedStudentProfile.profile_strength || 0}%` }} />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
+                              <div className="bg-white border border-slate-200 rounded-lg p-2">
+                                <div className="text-[10px] uppercase tracking-wider text-slate-500">Posts</div>
+                                <div className="mt-1 font-bold text-slate-900">{normalizeArray(selectedStudentProfile.posts).length}</div>
+                              </div>
+                              <div className="bg-white border border-slate-200 rounded-lg p-2">
+                                <div className="text-[10px] uppercase tracking-wider text-slate-500">Projects</div>
+                                <div className="mt-1 font-bold text-slate-900">{normalizeArray(selectedStudentProfile.projects).length}</div>
+                              </div>
+                              <div className="bg-white border border-slate-200 rounded-lg p-2">
+                                <div className="text-[10px] uppercase tracking-wider text-slate-500">Achievements</div>
+                                <div className="mt-1 font-bold text-slate-900">{normalizeArray(selectedStudentProfile.achievements).length}</div>
+                              </div>
+                              <div className="bg-white border border-slate-200 rounded-lg p-2">
+                                <div className="text-[10px] uppercase tracking-wider text-slate-500">Documents</div>
+                                <div className="mt-1 font-bold text-slate-900">{normalizeArray(selectedStudentProfile.documents).length}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
 
-                  {/* Projects Section */}
-                  <div>
-                    <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2 flex items-center gap-1.5">
-                      <FolderGit2 className="w-3.5 h-3.5 text-sky-600" />
-                      Student Projects ({selectedStudentProfile.projects?.length || 0})
-                    </h5>
-                    {(!selectedStudentProfile.projects || selectedStudentProfile.projects.length === 0) ? (
-                      <p className="text-xs text-slate-400 italic">No student projects listed yet.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {selectedStudentProfile.projects.map((p: any) => (
-                          <div key={p.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                            <div className="flex items-start justify-between">
-                              <h6 className="font-bold text-xs text-slate-900">{p.title}</h6>
-                              <div className="flex gap-2 text-[11px]">
-                                {p.project_url && (
-                                  <a href={p.project_url} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline flex items-center gap-0.5">
-                                    Demo <ExternalLink className="w-2.5 h-2.5" />
+                  {profileSection === 'posts' && (
+                    <div className="space-y-3">
+                      {!selectedStudentProfile.posts || selectedStudentProfile.posts.length === 0 ? (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                          No posts yet.
+                        </div>
+                      ) : (
+                        selectedStudentProfile.posts.map((post: any) => (
+                          <PostCard 
+                            key={post.id} 
+                            post={post} 
+                            student={selectedStudentProfile} 
+                            viewerRole="teacher"
+                          />
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {profileSection === 'achievements' && (
+                    <div className="space-y-3">
+                      {normalizeArray(selectedStudentProfile.achievements).length === 0 ? (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                          No achievements added yet.
+                        </div>
+                      ) : (
+                        normalizeArray(selectedStudentProfile.achievements).map((achievement: any) => (
+                          <div key={achievement.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <Trophy className="w-4 h-4 text-amber-600" />
+                                  <h6 className="text-sm font-bold text-slate-900">{achievement.title}</h6>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-1">{achievement.organization || 'Achievement'} • {formatDate(achievement.date)}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  achievement.verification_status?.includes('Verified') 
+                                    ? 'bg-emerald-100 text-emerald-800' 
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {achievement.verification_status?.includes('Verified') ? <CheckCircle className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />} 
+                                  {achievement.verification_status || 'Submitted'}
+                                </span>
+                                {(!achievement.verification_status || !achievement.verification_status.includes('Verified')) && (
+                                  <button
+                                    onClick={() => handleVerifyPortfolioItem(selectedStudentProfile.id, 'achievements', achievement.id)}
+                                    className="px-2 py-1 bg-[#0f2744] text-white hover:bg-[#163354] rounded text-[10px] font-bold cursor-pointer"
+                                  >
+                                    Verify
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-700 leading-relaxed">{achievement.description || 'No description provided.'}</p>
+                            {achievement.link && (
+                              <a href={achievement.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline">
+                                Open Link <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {profileSection === 'projects' && (
+                    <div className="space-y-3">
+                      {normalizeArray(selectedStudentProfile.projects).length === 0 ? (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                          No projects added yet.
+                        </div>
+                      ) : (
+                        normalizeArray(selectedStudentProfile.projects).map((project: any) => (
+                          <div key={project.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h6 className="text-sm font-bold text-slate-900">{project.title}</h6>
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    project.verification_status?.includes('Verified') 
+                                      ? 'bg-emerald-100 text-emerald-800' 
+                                      : 'bg-amber-100 text-amber-800'
+                                  }`}>
+                                    {project.verification_status?.includes('Verified') ? <CheckCircle className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />} 
+                                    {project.verification_status || 'Submitted'}
+                                  </span>
+                                  {(!project.verification_status || !project.verification_status.includes('Verified')) && (
+                                    <button
+                                      onClick={() => handleVerifyPortfolioItem(selectedStudentProfile.id, 'projects', project.id)}
+                                      className="px-2 py-1 bg-[#0f2744] text-white hover:bg-[#163354] rounded text-[10px] font-bold cursor-pointer"
+                                    >
+                                      Verify
+                                    </button>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-slate-500 mt-1">{formatDate(project.date)}</p>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {project.github_url && (
+                                  <a href={project.github_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
+                                    GitHub <ExternalLink className="w-3 h-3" />
                                   </a>
                                 )}
-                                {p.repo_url && (
-                                  <a href={p.repo_url} target="_blank" rel="noreferrer" className="text-slate-700 hover:underline flex items-center gap-0.5">
-                                    Repo <ExternalLink className="w-2.5 h-2.5" />
+                                {project.live_url && (
+                                  <a href={project.live_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
+                                    Live Demo <ExternalLink className="w-3 h-3" />
                                   </a>
                                 )}
                               </div>
                             </div>
-                            <p className="text-xs text-slate-600 mt-1">{p.description}</p>
-                            {p.tech_stack && (
-                              <p className="text-[10px] font-mono text-slate-500 mt-1.5">Tech: {p.tech_stack}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
 
-                  {/* Certifications Section */}
-                  <div>
-                    <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2 flex items-center gap-1.5">
-                      <Award className="w-3.5 h-3.5 text-amber-600" />
-                      Certifications & Credentials ({selectedStudentProfile.certifications?.length || 0})
-                    </h5>
-                    {(!selectedStudentProfile.certifications || selectedStudentProfile.certifications.length === 0) ? (
-                      <p className="text-xs text-slate-400 italic">No certifications logged.</p>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {selectedStudentProfile.certifications.map((c: any) => (
-                          <div key={c.id} className="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
-                            <h6 className="font-bold text-xs text-slate-900">{c.title}</h6>
-                            <p className="text-[11px] text-slate-600">Issuer: {c.issuing_organization}</p>
-                            <p className="text-[10px] text-slate-400">Issued: {c.issue_date || 'N/A'}</p>
-                            {c.credential_url && (
-                              <a href={c.credential_url} target="_blank" rel="noreferrer" className="text-[10px] text-sky-700 hover:underline inline-flex items-center gap-1 mt-1">
-                                View Credential <ExternalLink className="w-2.5 h-2.5" />
-                              </a>
+                            {project.description && (
+                              <p className="text-xs text-slate-700 leading-relaxed">{project.description}</p>
                             )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
 
-                  {/* Resume Document Scan */}
-                  {selectedStudentProfile.resumeDocument?.parsed_headings && (
-                    <div>
-                      <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2 flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-emerald-600" /> Parsed Resume Profile
-                      </h5>
-                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs text-slate-700 space-y-2">
-                        {Object.entries(selectedStudentProfile.resumeDocument.parsed_headings).map(([section, items]) => {
-                          const list = Array.isArray(items) ? (items as string[]) : [];
-                          if (list.length === 0) return null;
-                          return (
-                            <div key={section}>
-                              <strong className="text-[11px] uppercase tracking-wider text-[#0f2744] block mb-1">{section}</strong>
-                              <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
-                                {list.map((it, idx) => (
-                                  <li key={idx}>{it}</li>
+                            {project.technologies && normalizeArray(project.technologies).length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {normalizeArray(project.technologies).map((tech: any, idx: number) => (
+                                  <span key={`${project.id}-tech-${idx}`} className="px-2 py-0.5 rounded-full text-[10px] bg-slate-200 text-slate-700 font-semibold">
+                                    {typeof tech === 'string' ? tech : (tech.skill_name || tech.name || '')}
+                                  </span>
                                 ))}
-                              </ul>
+                              </div>
+                            )}
+
+                            {project.image_url && (
+                              <img src={project.image_url} alt={project.title} className="w-full h-48 object-cover rounded-lg border border-slate-200" />
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {profileSection === 'certifications' && (
+                    <div className="space-y-3">
+                      {normalizeArray(selectedStudentProfile.certifications).length === 0 ? (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                          No certifications added yet.
+                        </div>
+                      ) : (
+                        normalizeArray(selectedStudentProfile.certifications).map((certification: any) => (
+                          <div key={certification.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Award className="w-4 h-4 text-amber-600" />
+                                <h6 className="text-sm font-bold text-slate-900">{certification.name || certification.title}</h6>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  certification.verification_status?.includes('Verified') 
+                                    ? 'bg-emerald-100 text-emerald-800' 
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {certification.verification_status?.includes('Verified') ? <CheckCircle className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />} 
+                                  {certification.verification_status || 'Submitted'}
+                                </span>
+                                {(!certification.verification_status || !certification.verification_status.includes('Verified')) && (
+                                  <button
+                                    onClick={() => handleVerifyPortfolioItem(selectedStudentProfile.id, 'certifications', certification.id)}
+                                    className="px-2 py-1 bg-[#0f2744] text-white hover:bg-[#163354] rounded text-[10px] font-bold cursor-pointer"
+                                  >
+                                    Verify
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                          );
-                        })}
-                      </div>
+                            <p className="text-xs text-slate-600">Issuer: {certification.issuer || certification.issuing_organization || 'N/A'}</p>
+                            <p className="text-[11px] text-slate-500">Issued: {formatDate(certification.issue_date || certification.created_at)}</p>
+                            {(certification.credential_url || certification.certificate_url) && (
+                              <div className="flex flex-wrap gap-2">
+                                {certification.credential_url && (
+                                  <a href={certification.credential_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline">
+                                    View Credential <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                )}
+                                {certification.certificate_url && (
+                                  <a href={certification.certificate_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 hover:underline">
+                                    Certificate <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {profileSection === 'documents' && (
+                    <div className="space-y-3">
+                      {normalizeArray(selectedStudentProfile.documents).length === 0 ? (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                          No documents uploaded.
+                        </div>
+                      ) : (
+                        normalizeArray(selectedStudentProfile.documents).map((document: any) => (
+                          <div key={document.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div>
+                              <h6 className="text-sm font-bold text-slate-900">{document.title || document.file_name || 'Document'}</h6>
+                              <p className="text-[11px] text-slate-600 mt-1">{document.description || document.category || 'Uploaded document'} • {document.doc_type || 'file'} • {formatDate(document.created_at)}</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => openTeacherDocument(selectedStudentProfile.id, document)}
+                                className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 cursor-pointer"
+                              >
+                                View/Open
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openTeacherDocument(selectedStudentProfile.id, document)}
+                                className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-slate-300 bg-[#0f2744] text-white hover:bg-[#163354] cursor-pointer"
+                              >
+                                Download
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {profileSection === 'skills' && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                      {getStudentSkills(selectedStudentProfile).length === 0 ? (
+                        <div className="text-xs text-slate-500">No skills added yet.</div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {getStudentSkills(selectedStudentProfile).map((skill: string, idx: number) => (
+                            <span key={`${skill}-${idx}`} className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-200 text-slate-700">
+                              {skill}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </>

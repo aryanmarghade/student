@@ -35,7 +35,6 @@ const zipUpload = multer({
 });
 
 router.use(requireAuth, requireRole('admin'));
-const withoutPassword = (row: any) => { const { password_hash, ...safe } = row; return safe; };
 
 router.get('/overview', async (_req, res) => {
   const [counts, pass, trends, departments, activity] = await Promise.all([
@@ -60,11 +59,13 @@ router.get('/users', async (req, res) => {
 });
 
 router.post('/users', async (req: AuthRequest, res) => {
-  const { email, full_name, role, roll_number, class_id, department_id } = req.body;
+  const { email, full_name, role, roll_number, class_id, department_id, password } = req.body;
   if (!email || !full_name || !role) return res.status(400).json({ error: 'Email, full name, and role are required.' });
+  if (password && password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
   const normalized = String(email).trim().toLowerCase();
   if ((await query('SELECT 1 FROM users WHERE lower(email)=$1', [normalized])).rowCount) return res.status(409).json({ error: 'An account with this institutional email already exists.' });
-  const tempPassword = `VA-${crypto.randomBytes(4).toString('hex').toUpperCase()}`, userId = id('usr');
+  const tempPassword = password || `VA-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+  const userId = id('usr');
   const passwordHash = await hashPassword(tempPassword);
   const client = await pool.connect();
   try {
@@ -91,11 +92,14 @@ router.patch('/users/:id/status', async (req: AuthRequest, res) => {
 });
 
 router.post('/users/:id/reset-password', async (req: AuthRequest, res) => {
-  const tempPassword = `VA-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+  const { password } = req.body;
+  if (password && password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
+  const tempPassword = password || `VA-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
   const r = await query<{ full_name: string }>('UPDATE users SET password_hash=$1,must_reset_password=TRUE WHERE id=$2 RETURNING full_name', [await hashPassword(tempPassword), req.params.id]);
   if (!r.rowCount) return res.status(404).json({ error: 'User not found.' });
   await logActivity(req.user!.id, 'ADMIN_PASSWORD_RESET', 'USER', req.params.id, `Reset password for ${r.rows[0].full_name}.`);
-  res.json({ message: `Password reset successfully for ${r.rows[0].full_name}.`, tempPassword });
+  const msg = password ? `Password reset successfully for ${r.rows[0].full_name}.` : `Password reset successfully for ${r.rows[0].full_name}. Temporary password: ${tempPassword}`;
+  res.json({ message: msg, tempPassword });
 });
 
 router.post('/users/bulk-import', async (req: AuthRequest, res) => {
