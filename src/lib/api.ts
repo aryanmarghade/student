@@ -183,6 +183,13 @@ export const api = {
 
   getAdminAnalytics: () => request<any>('/api/admin/analytics'),
 
+  getAdminAnalyticsVisibility: () => request<any>('/api/admin/analytics-visibility'),
+
+  updateAdminAnalyticsVisibility: (data: any) => request<{message: string, settings: any}>('/api/admin/analytics-visibility', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
+
   askAdminAi: (query: string) =>
     request<{ answer: string; toolCallsExecuted: any[]; resolvedIntent: string }>('/api/admin/ai-query', {
       method: 'POST',

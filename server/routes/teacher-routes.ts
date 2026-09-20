@@ -5,6 +5,7 @@ import { query, logActivity, id } from '../db.js';
 import { requireAuth, requireRole, verifyTeacherClassScope, AuthRequest, rateLimit } from '../auth.js';
 import { processAiQuery } from '../ai-assistant.js';
 import { linearRegression, median, standardDeviation } from '../analytics.js';
+import { currentMonth } from '../github-sync.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('teacher'));
@@ -248,6 +249,9 @@ router.post('/analytics', async (req: AuthRequest, res) => {
   const regressionPoints = averageByStudent.map((st, i) => ({ x: i + 1, y: st.average }));
   const regression = linearRegression(regressionPoints);
 
+  const visibilityRes = await query<any>(`SELECT * FROM analytics_visibility_settings WHERE id = 'global'`);
+  const visibility = visibilityRes.rows[0] || { github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, academic_enabled: true };
+
   // Aggregate external student activity (LinkedIn posts & GitHub stats) for students in scope
   const studentIdsInScope = Array.from(new Set(rows.map(x => x.student_id)));
   let postsByMonth: Array<{ month: string; label: string; count: number }> = [];
@@ -256,41 +260,94 @@ router.post('/analytics', async (req: AuthRequest, res) => {
   let githubTotalRepos = 0;
   let githubTotalStars = 0;
   let githubTotalContributions = 0;
+  let githubSnapshotsByMonth: Array<{ month: string; studentsSynced: number; totalRepos: number; totalStars: number; totalContributions: number }> = [];
+  let githubDataSource = 'live_github_data';
 
   if (studentIdsInScope.length > 0) {
-    const [postsRes, studentsRes] = await Promise.all([
-      query<any>(
+    if (visibility.linkedin_enabled) {
+      const postsRes = await query<any>(
         `SELECT created_at FROM posts WHERE student_id = ANY($1) ORDER BY created_at ASC`,
         [studentIdsInScope],
-      ),
-      query<any>(
+      );
+      totalPosts = postsRes.rows.length;
+      const monthMap = new Map<string, number>();
+      for (const p of postsRes.rows) {
+        const month = new Date(p.created_at).toISOString().slice(0, 7);
+        monthMap.set(month, (monthMap.get(month) ?? 0) + 1);
+      }
+      postsByMonth = Array.from(monthMap.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, count]) => {
+          const [year, m] = month.split('-');
+          const date = new Date(Number(year), Number(m) - 1, 1);
+          const label = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+          return { month, label, count };
+        });
+    }
+
+    if (visibility.github_enabled) {
+      const studentsRes = await query<any>(
         `SELECT github_data, github_url FROM students WHERE id = ANY($1)`,
         [studentIdsInScope],
-      ),
-    ]);
-
-    totalPosts = postsRes.rows.length;
-    const monthMap = new Map<string, number>();
-    for (const p of postsRes.rows) {
-      const month = new Date(p.created_at).toISOString().slice(0, 7);
-      monthMap.set(month, (monthMap.get(month) ?? 0) + 1);
-    }
-    postsByMonth = Array.from(monthMap.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, count]) => {
-        const [year, m] = month.split('-');
-        const date = new Date(Number(year), Number(m) - 1, 1);
-        const label = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-        return { month, label, count };
-      });
-
-    for (const s of studentsRes.rows) {
-      if (s.github_data) {
-        githubSyncedCount++;
-        githubTotalRepos += Number(s.github_data.public_repos ?? s.github_data.publicRepos ?? 0);
-        githubTotalStars += Number(s.github_data.stars ?? 0);
-        githubTotalContributions += Number(s.github_data.total_contributions ?? s.github_data.totalContributions ?? s.github_data.contribution_count ?? 0);
+      );
+      for (const s of studentsRes.rows) {
+        if (s.github_data) {
+          githubSyncedCount++;
+          githubTotalRepos += Number(s.github_data.public_repos ?? s.github_data.publicRepos ?? 0);
+          githubTotalStars += Number(s.github_data.stars ?? 0);
+          githubTotalContributions += Number(s.github_data.total_contributions ?? s.github_data.totalContributions ?? s.github_data.contribution_count ?? 0);
+        }
       }
+
+      // --- New: read from student_github_snapshots for current month ---
+      // Overrides the live github_data aggregation with stored snapshot data
+      const thisMonth = currentMonth();
+      const snapshotRes = await query<any>(
+        `SELECT gs.student_id, gs.public_repos, gs.total_stars, gs.total_forks,
+                gs.followers, gs.total_contributions, gs.sync_status, gs.snapshot_month
+         FROM student_github_snapshots gs
+         WHERE gs.student_id = ANY($1) AND gs.snapshot_month = $2`,
+        [studentIdsInScope, thisMonth]
+      );
+
+      // If snapshots exist for this month, use them instead of live github_data
+      if (snapshotRes.rows.length > 0) {
+        githubSyncedCount = 0;
+        githubTotalRepos = 0;
+        githubTotalStars = 0;
+        githubTotalContributions = 0;
+        for (const snap of snapshotRes.rows) {
+          if (snap.sync_status === 'synced') {
+            githubSyncedCount++;
+            githubTotalRepos += Number(snap.public_repos ?? 0);
+            githubTotalStars += Number(snap.total_stars ?? 0);
+            githubTotalContributions += Number(snap.total_contributions ?? 0);
+          }
+        }
+      }
+
+      // Monthly snapshot history (for trend charts)
+      const monthlySnapshotRes = await query<any>(
+        `SELECT gs.snapshot_month,
+                COUNT(*) FILTER (WHERE gs.sync_status='synced') AS students_synced,
+                SUM(gs.public_repos) AS total_repos,
+                SUM(gs.total_stars) AS total_stars,
+                SUM(gs.total_contributions) AS total_contributions
+         FROM student_github_snapshots gs
+         WHERE gs.student_id = ANY($1)
+         GROUP BY gs.snapshot_month
+         ORDER BY gs.snapshot_month ASC`,
+        [studentIdsInScope]
+      );
+      const githubSnapshotsByMonthData = monthlySnapshotRes.rows.map((r: any) => ({
+        month: r.snapshot_month,
+        studentsSynced: Number(r.students_synced ?? 0),
+        totalRepos: Number(r.total_repos ?? 0),
+        totalStars: Number(r.total_stars ?? 0),
+        totalContributions: Number(r.total_contributions ?? 0),
+      }));
+      githubSnapshotsByMonth = githubSnapshotsByMonthData;
+      if (githubSnapshotsByMonthData.length > 0) githubDataSource = 'snapshots';
     }
   }
 
@@ -330,6 +387,8 @@ router.post('/analytics', async (req: AuthRequest, res) => {
       githubTotalRepos,
       githubTotalStars,
       githubTotalContributions,
+      githubSnapshotsByMonth,
+      githubDataSource,
     },
     rawExportData: rows.map(x => ({
       StudentName: x.full_name,
@@ -381,6 +440,9 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
   }
 
   // Internal Marks: fetch assessment_definitions for this scope, then matching marks
+  const visibilityRes = await query<any>(`SELECT * FROM analytics_visibility_settings WHERE id = 'global'`);
+  const visibility = visibilityRes.rows[0] || { github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, academic_enabled: true };
+
   const [assessmentDefs, marksRows, postsRows] = await Promise.all([
     query<any>(
       `SELECT id, title, max_marks, assessment_type
@@ -456,7 +518,7 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
     ? internalMarks.reduce((acc, m) => acc + (m.max_marks > 0 ? (m.marks_obtained / m.max_marks) * 100 : 0), 0) / internalMarks.length
     : 0;
 
-  const internalSummary = internalMarks.length > 0
+  let internalSummary = internalMarks.length > 0
     ? {
         totalObtained: Number(totalObtained.toFixed(2)),
         totalMax: Number(totalMax.toFixed(2)),
@@ -466,30 +528,87 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
       }
     : null;
 
-  // GitHub Data
-  const githubData = student.github_data
-    ? {
+  // GitHub Data — read from monthly snapshots first, fall back to legacy github_data
+  const thisMonth = currentMonth();
+  const snapshotRes = await query<any>(
+    `SELECT * FROM student_github_snapshots
+     WHERE student_id = $1
+     ORDER BY snapshot_month DESC`,
+    [studentId]
+  );
+  const currentSnap = snapshotRes.rows.find((r: any) => r.snapshot_month === thisMonth)
+    ?? snapshotRes.rows[0] ?? null;
+
+  let githubData: any = null;
+  if (currentSnap) {
+    if (currentSnap.sync_status === 'synced') {
+      githubData = {
         synced: true,
-        syncedAt: student.github_synced_at,
-        username: student.github_data.username || student.github_data.login || null,
-        followers: student.github_data.followers ?? null,
-        publicRepos: student.github_data.public_repos ?? student.github_data.publicRepos ?? null,
-        stars: student.github_data.stars ?? null,
-        forks: student.github_data.forks ?? null,
-        languages: student.github_data.languages ?? [],
-        topRepos: student.github_data.top_repos ?? student.github_data.repos ?? [],
-        totalContributions: student.github_data.total_contributions ?? student.github_data.totalContributions ?? student.github_data.contribution_count ?? null,
-        currentStreak: student.github_data.current_streak ?? student.github_data.currentStreak ?? null,
-        longestStreak: student.github_data.longest_streak ?? student.github_data.longestStreak ?? null,
-        contributionsByMonth: student.github_data.contributions_by_month ?? student.github_data.contributionsByMonth ?? null,
+        dataSource: 'monthly_snapshot',
+        snapshotMonth: currentSnap.snapshot_month,
+        syncedAt: currentSnap.synced_at,
+        username: currentSnap.github_username,
+        followers: currentSnap.followers,
+        publicRepos: currentSnap.public_repos,
+        stars: currentSnap.total_stars,
+        forks: currentSnap.total_forks,
+        languages: currentSnap.languages ?? [],
+        topRepos: currentSnap.top_repos ?? [],
+        totalContributions: currentSnap.total_contributions, // null if no GITHUB_TOKEN
         github_url: student.github_url,
-      }
-    : (student.github_url ? { synced: false, github_url: student.github_url } : null);
+        snapshotHistory: snapshotRes.rows.map((r: any) => ({
+          month: r.snapshot_month,
+          syncStatus: r.sync_status,
+          publicRepos: r.public_repos,
+          totalStars: r.total_stars,
+          totalContributions: r.total_contributions,
+          syncedAt: r.synced_at,
+        })),
+      };
+    } else if (currentSnap.sync_status === 'failed') {
+      githubData = {
+        synced: false,
+        dataSource: 'monthly_snapshot',
+        snapshotMonth: currentSnap.snapshot_month,
+        reason: currentSnap.error_message || 'GitHub sync failed',
+        github_url: student.github_url,
+      };
+    } else {
+      // not_synced — no GitHub URL
+      githubData = null;
+    }
+  } else if (student.github_data) {
+    // Legacy fallback: no snapshot yet, use existing github_data JSONB
+    githubData = {
+      synced: true,
+      dataSource: 'legacy_github_data',
+      syncedAt: student.github_synced_at,
+      username: student.github_data.username || student.github_data.login || null,
+      followers: student.github_data.followers ?? null,
+      publicRepos: student.github_data.public_repos ?? student.github_data.publicRepos ?? null,
+      stars: student.github_data.stars ?? null,
+      forks: student.github_data.forks ?? null,
+      languages: student.github_data.languages ?? [],
+      topRepos: student.github_data.top_repos ?? student.github_data.repos ?? [],
+      totalContributions: student.github_data.total_contributions ?? student.github_data.totalContributions ?? null,
+      github_url: student.github_url,
+      snapshotHistory: [],
+    };
+  } else if (student.github_url) {
+    githubData = { synced: false, dataSource: 'not_synced', github_url: student.github_url, reason: 'Not yet synced — run monthly sync or trigger via profile' };
+  }
+
+  if (!visibility.github_enabled) {
+    githubData = { synced: false, dataSource: 'hidden', reason: 'Visibility disabled by Admin' };
+  }
 
   // HackerRank
-  const hackerrankData = student.hackerrank_url
+  let hackerrankData = student.hackerrank_url
     ? { url: student.hackerrank_url, synced: false }
     : null;
+  if (!visibility.hackathon_enabled) {
+    hackerrankData = { url: student.hackerrank_url, synced: false, reason: 'Visibility disabled by Admin' } as any;
+  }
 
   // Posts grouped by month (YYYY-MM)
   const monthMap = new Map<string, number>();
@@ -497,7 +616,7 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
     const month = new Date(p.created_at).toISOString().slice(0, 7); // YYYY-MM
     monthMap.set(month, (monthMap.get(month) ?? 0) + 1);
   }
-  const postsByMonth = Array.from(monthMap.entries())
+  let postsByMonth = Array.from(monthMap.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([month, count]) => {
       const [year, m] = month.split('-');
@@ -505,6 +624,15 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
       const label = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
       return { month, label, count };
     });
+  
+  if (!visibility.linkedin_enabled) {
+    postsByMonth = [];
+  }
+
+  if (!visibility.academic_enabled) {
+    internalMarks = [];
+    internalSummary = null;
+  }
 
   res.json({
     student: {
@@ -538,10 +666,10 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
     hackerrankData,
     hackerrankUrl: student.hackerrank_url,
     linkedinUrl: student.linkedin_url,
-    linkedinPosts: postsRows.rows,
-    recentPosts: postsRows.rows.slice(-5).reverse(),
+    linkedinPosts: visibility.linkedin_enabled ? postsRows.rows : [],
+    recentPosts: visibility.linkedin_enabled ? postsRows.rows.slice(-5).reverse() : [],
     postsByMonth,
-    totalPosts: postsRows.rows.length,
+    totalPosts: visibility.linkedin_enabled ? postsRows.rows.length : 0,
   });
 });
 

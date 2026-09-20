@@ -7,6 +7,7 @@ import adminRoutes from './server/routes/admin-routes.js';
 import teacherRoutes from './server/routes/teacher-routes.js';
 import studentRoutes from './server/routes/student-routes.js';
 import { initializeDatabase } from './server/db.js';
+import { startGitHubScheduler } from './server/github-sync.js';
 
 dotenv.config();
 
@@ -15,6 +16,12 @@ async function startServer() {
   const PORT = 3000;
 
   await initializeDatabase();
+
+  // Start the monthly GitHub data sync scheduler
+  // Fires automatically on the 1st of each month at 00:05
+  startGitHubScheduler().catch((err) =>
+    console.error('[GitHub Sync] Scheduler startup failed:', err.message)
+  );
 
   // JSON Body parsing with ample headroom for file/resume uploads
   app.use(express.json({ limit: '15mb' }));

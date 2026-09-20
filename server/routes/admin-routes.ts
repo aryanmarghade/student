@@ -7,6 +7,7 @@ import JSZip from 'jszip';
 import { query, pool, logActivity, id } from '../db.js';
 import { requireAuth, requireRole, hashPassword, AuthRequest, rateLimit } from '../auth.js';
 import { processAiQuery } from '../ai-assistant.js';
+import { runMonthlyGitHubSync, currentMonth } from '../github-sync.js';
 
 const router = Router();
 const root = process.cwd();
@@ -316,4 +317,79 @@ router.get('/analytics', async (_req, res) => {
 router.post('/ai-query', rateLimit(25, 60000, 'admin-ai'), async (req: AuthRequest, res) => res.json(await processAiQuery(req.user!, String(req.body.query || ''))));
 router.post('/dev-seed', (_req, res) => res.status(410).json({ error: 'Runtime reset/seed endpoints are disabled; database initialization is idempotent and never destructive.' }));
 router.post('/reset-to-fresh', (_req, res) => res.status(410).json({ error: 'Runtime database reset is disabled to protect persistent PostgreSQL data.' }));
+
+// ── GitHub Monthly Sync — Admin Trigger ────────────────────────────────────────
+// POST /api/admin/github/sync
+// Manually trigger a GitHub monthly sync for all students.
+// Protected: admin only. Returns structured sync result.
+// Optional query param: ?month=YYYY-MM  (defaults to current month)
+router.post('/github/sync', rateLimit(5, 60000, 'admin-github-sync'), async (req: AuthRequest, res) => {
+  const rawMonth = String(req.query.month || '').trim();
+  const month = /^\d{4}-\d{2}$/.test(rawMonth) ? rawMonth : currentMonth();
+  console.log(`[GitHub Sync] Admin-triggered sync by user=${req.user!.id} for month=${month}`);
+  try {
+    const result = await runMonthlyGitHubSync(month);
+    await logActivity(
+      req.user!.id,
+      'GITHUB_SYNC_TRIGGERED',
+      'GITHUB_SNAPSHOTS',
+      undefined,
+      `Admin triggered GitHub sync for ${month}: synced=${result.studentsSynced} failed=${result.studentsFailed} skipped=${result.studentsSkipped}`
+    );
+    res.json({ message: `GitHub sync completed for ${month}`, result });
+  } catch (err: any) {
+    console.error('[GitHub Sync] Admin-triggered sync failed:', err.message);
+    res.status(500).json({ error: 'GitHub sync failed', details: err.message });
+  }
+});
+
+// GET /api/admin/github/snapshots — list all snapshots (admin visibility)
+router.get('/github/snapshots', async (req: AuthRequest, res) => {
+  const month = String(req.query.month || currentMonth());
+  const rows = (await query<any>(
+    `SELECT gs.*, u.full_name, s.roll_number
+     FROM student_github_snapshots gs
+     JOIN students s ON s.id = gs.student_id
+     JOIN users u ON u.id = s.user_id
+     WHERE gs.snapshot_month = $1
+     ORDER BY s.roll_number`,
+    [month]
+  )).rows;
+  res.json({ month, count: rows.length, snapshots: rows });
+});
+
+// GET /api/admin/analytics-visibility
+router.get('/analytics-visibility', async (req: AuthRequest, res) => {
+  const result = await query<any>(`SELECT * FROM analytics_visibility_settings WHERE id = 'global'`);
+  if (result.rows.length === 0) {
+    // Return defaults if not initialized yet
+    return res.json({ github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, academic_enabled: true });
+  }
+  res.json(result.rows[0]);
+});
+
+// PUT /api/admin/analytics-visibility
+router.put('/analytics-visibility', async (req: AuthRequest, res) => {
+  const { github_enabled, hackathon_enabled, linkedin_enabled, academic_enabled } = req.body;
+  const result = await query<any>(
+    `INSERT INTO analytics_visibility_settings (id, github_enabled, hackathon_enabled, linkedin_enabled, academic_enabled)
+     VALUES ('global', $1, $2, $3, $4)
+     ON CONFLICT (id) DO UPDATE SET
+       github_enabled = EXCLUDED.github_enabled,
+       hackathon_enabled = EXCLUDED.hackathon_enabled,
+       linkedin_enabled = EXCLUDED.linkedin_enabled,
+       academic_enabled = EXCLUDED.academic_enabled,
+       updated_at = CURRENT_TIMESTAMP
+     RETURNING *`,
+    [
+      github_enabled ?? true,
+      hackathon_enabled ?? true,
+      linkedin_enabled ?? true,
+      academic_enabled ?? true
+    ]
+  );
+  await logActivity(req.user!.id, 'ANALYTICS_VISIBILITY_UPDATED', 'SYSTEM_SETTINGS', 'global', `Updated analytics visibility settings.`);
+  res.json({ message: 'Settings updated successfully.', settings: result.rows[0] });
+});
+
 export default router;

@@ -177,6 +177,8 @@ export interface AnalyticsResponse {
     githubTotalRepos: number;
     githubTotalStars: number;
     githubTotalContributions: number;
+    githubSnapshotsByMonth?: import('./types').GitHubMonthlyAggregate[];
+    githubDataSource?: 'live_github_data' | 'snapshots';
   };
   rawExportData: Array<Record<string, any>>;
 }
@@ -358,4 +360,44 @@ export interface TeacherStudentAnalytics {
   recentPosts?: Array<{ id?: string; title: string; description?: string; category?: string; created_at: string }>;
   postsByMonth: Array<{ month: string; label?: string; count: number }>;
   totalPosts: number;
+}
+
+// ── GitHub Monthly Snapshots ──────────────────────────────────────────────────
+
+/** A single monthly GitHub snapshot for one student */
+export interface GitHubSnapshotRecord {
+  month: string;           // YYYY-MM
+  syncStatus: 'synced' | 'failed' | 'not_synced';
+  publicRepos: number | null;
+  totalStars: number | null;
+  totalContributions: number | null;  // null if GITHUB_TOKEN not configured
+  syncedAt: string | null;
+}
+
+/** GitHub data returned from teacher analytics (snapshot-first, legacy fallback) */
+export interface GitHubAnalyticsData {
+  synced: boolean;
+  dataSource: 'monthly_snapshot' | 'legacy_github_data' | 'not_synced';
+  snapshotMonth?: string;
+  syncedAt?: string | null;
+  username?: string | null;
+  followers?: number | null;
+  publicRepos?: number | null;
+  stars?: number | null;
+  forks?: number | null;
+  languages?: string[];
+  topRepos?: Array<{ name: string; url: string; description?: string | null; stars: number; language?: string | null }>;
+  totalContributions?: number | null;
+  github_url?: string | null;
+  snapshotHistory?: GitHubSnapshotRecord[];
+  reason?: string;
+}
+
+/** Monthly GitHub aggregate across a class (for trend charts) */
+export interface GitHubMonthlyAggregate {
+  month: string;
+  studentsSynced: number;
+  totalRepos: number;
+  totalStars: number;
+  totalContributions: number;
 }

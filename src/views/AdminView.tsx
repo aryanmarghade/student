@@ -27,18 +27,20 @@ import {
   Clock,
   Trophy,
   MapPin,
-  ExternalLink
+  ExternalLink,
+  Settings
 } from 'lucide-react';
 import { Bar, Doughnut } from 'react-chartjs-2';
 import '../lib/chart-setup';
 import { PostCard } from '../components/PostCard';
 
 export const AdminView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'classes' | 'users' | 'assignments' | 'marksheets' | 'notices' | 'events' | 'audit'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'classes' | 'users' | 'assignments' | 'marksheets' | 'notices' | 'events' | 'audit' | 'settings'>('overview');
 
   // Overview Data
   const [overview, setOverview] = useState<any>(null);
   const [analytics, setAnalytics] = useState<any>(null);
+  const [analyticsVisibility, setAnalyticsVisibility] = useState<any>({ github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, academic_enabled: true });
 
   // Entities Data
   const [classes, setClasses] = useState<AcademicClass[]>([]);
@@ -192,7 +194,7 @@ export const AdminView: React.FC = () => {
   const loadAllAdminData = async () => {
     setIsLoading(true);
     try {
-      const [overviewData, analyticsData, classesData, deptsData, subjectsData, semsData, usersData, assignData, auditData, eventsData] = await Promise.all([
+      const [overviewData, analyticsData, classesData, deptsData, subjectsData, semsData, usersData, assignData, auditData, eventsData, visibilityData] = await Promise.all([
         api.getAdminOverview(),
         api.getAdminAnalytics(),
         api.getAdminClasses(),
@@ -202,11 +204,13 @@ export const AdminView: React.FC = () => {
         api.getAdminUsers(),
         api.getTeacherAssignments(),
         api.getAuditLogs(),
-        api.getAdminEvents()
+        api.getAdminEvents(),
+        api.getAdminAnalyticsVisibility()
       ]);
 
       setOverview(overviewData);
       setAnalytics(analyticsData);
+      setAnalyticsVisibility(visibilityData);
       setClasses(classesData);
       setDepartments(deptsData);
       setSubjects(subjectsData);
@@ -277,6 +281,24 @@ export const AdminView: React.FC = () => {
   };
 
   // Start new semester
+  const handleToggleVisibility = async (key: string) => {
+    if (!analyticsVisibility) return;
+    const newValue = !analyticsVisibility[key];
+    const newSettings = { ...analyticsVisibility, [key]: newValue };
+    
+    // Optimistic update
+    setAnalyticsVisibility(newSettings);
+    try {
+      const res = await api.updateAdminAnalyticsVisibility(newSettings);
+      setAnalyticsVisibility(res.settings);
+      showToast(res.message || 'Settings updated successfully');
+    } catch (err: any) {
+      // Revert on failure
+      setAnalyticsVisibility(analyticsVisibility);
+      showToast(err.message || 'Failed to update settings', true);
+    }
+  };
+
   const handleStartNewSemester = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsStartingSemester(true);
@@ -653,6 +675,7 @@ export const AdminView: React.FC = () => {
             { id: 'notices', label: 'Broadcast Notices', icon: Send },
             { id: 'events', label: 'College Events & Hackathons', icon: Trophy },
             { id: 'audit', label: 'Audit Trail & Security Logs', icon: ShieldCheck },
+            { id: 'settings', label: 'Analytics Settings', icon: Settings },
           ].map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -1559,6 +1582,47 @@ export const AdminView: React.FC = () => {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 9: SETTINGS */}
+      {activeTab === 'settings' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+            <div className="p-5 border-b border-slate-200">
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Settings className="w-5 h-5 text-[#0f2744]" /> Analytics Visibility
+              </h2>
+              <p className="text-sm text-slate-500 mt-1">
+                Control which analytics categories are visible to teachers. This does not delete student profile data.
+              </p>
+            </div>
+            <div className="p-5 space-y-6">
+              {[
+                { key: 'github_enabled', label: 'GitHub Analytics', desc: 'Show GitHub charts and repositories in teacher analytics.' },
+                { key: 'hackathon_enabled', label: 'Hackathon Analytics', desc: 'Show hackathon participation in teacher analytics.' },
+                { key: 'linkedin_enabled', label: 'LinkedIn / Professional Activity Analytics', desc: 'Show LinkedIn post tracking and professional graphs.' },
+                { key: 'academic_enabled', label: 'Academic Analytics', desc: 'Show internal examination analytics and mark distributions.' }
+              ].map(setting => (
+                <div key={setting.key} className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">{setting.label}</h4>
+                    <p className="text-xs text-slate-500 mt-1">{setting.desc}</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer" 
+                      checked={analyticsVisibility ? !!analyticsVisibility[setting.key] : false} 
+                      onChange={() => handleToggleVisibility(setting.key)} 
+                      disabled={!analyticsVisibility}
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

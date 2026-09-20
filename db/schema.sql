@@ -342,3 +342,44 @@ CREATE TABLE IF NOT EXISTS post_attachments (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_post_attachments_post ON post_attachments(post_id);
+
+-- 16. STUDENT GITHUB MONTHLY SNAPSHOTS
+-- One row per student per month (YYYY-MM). Historical rows are NEVER overwritten.
+-- Idempotent upsert via ON CONFLICT (student_id, snapshot_month) DO UPDATE.
+CREATE TABLE IF NOT EXISTS student_github_snapshots (
+    id VARCHAR(64) PRIMARY KEY,
+    student_id VARCHAR(64) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    github_username VARCHAR(255) NOT NULL,
+    snapshot_month VARCHAR(7) NOT NULL,          -- YYYY-MM  e.g. '2026-09'
+    synced_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    public_repos INT,                            -- from GET /users/{username}
+    total_stars INT,                             -- sum of stargazers_count across repos
+    total_forks INT,                             -- sum of forks_count across repos
+    followers INT,                               -- from GET /users/{username}
+    languages JSONB DEFAULT '[]',               -- unique languages across repos
+    top_repos JSONB DEFAULT '[]',               -- top 5 repos (name, url, stars, language)
+    total_contributions INT,                     -- NULL unless GITHUB_TOKEN is set (GraphQL)
+    raw_data JSONB,                              -- full GitHub API response for auditability
+    sync_status VARCHAR(32) NOT NULL DEFAULT 'synced'
+        CHECK (sync_status IN ('synced', 'failed', 'not_synced')),
+    error_message TEXT,                          -- populated when sync_status = 'failed'
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_student_github_snapshot_month UNIQUE (student_id, snapshot_month)
+);
+
+CREATE INDEX IF NOT EXISTS idx_github_snapshots_student ON student_github_snapshots(student_id);
+CREATE INDEX IF NOT EXISTS idx_github_snapshots_month ON student_github_snapshots(snapshot_month);
+CREATE INDEX IF NOT EXISTS idx_github_snapshots_status ON student_github_snapshots(sync_status);
+
+-- 17. ANALYTICS VISIBILITY SETTINGS
+-- A single row (id='global') controls what data is exposed in Teacher Analytics.
+CREATE TABLE IF NOT EXISTS analytics_visibility_settings (
+    id VARCHAR(64) PRIMARY KEY,
+    github_enabled BOOLEAN DEFAULT TRUE,
+    hackathon_enabled BOOLEAN DEFAULT TRUE,
+    linkedin_enabled BOOLEAN DEFAULT TRUE,
+    academic_enabled BOOLEAN DEFAULT TRUE,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO analytics_visibility_settings (id) VALUES ('global') ON CONFLICT (id) DO NOTHING;
