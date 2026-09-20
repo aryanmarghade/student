@@ -183,12 +183,25 @@ export const api = {
 
   getAdminAnalytics: () => request<any>('/api/admin/analytics'),
 
-  getAdminAnalyticsVisibility: () => request<any>('/api/admin/analytics-visibility'),
+  getAdminAnalyticsVisibility: () => request<any[]>('/api/admin/analytics-visibility/all'),
 
-  updateAdminAnalyticsVisibility: (data: any) => request<{message: string, settings: any}>('/api/admin/analytics-visibility', {
+  updateAdminAnalyticsVisibility: (teacherId: string, data: any) => request<{message: string, settings: any}>(`/api/admin/teachers/${teacherId}/analytics-visibility`, {
     method: 'PUT',
     body: JSON.stringify(data),
   }),
+
+  // Admin Data Syncs
+  triggerAdminGithubSync: (month?: string) =>
+    request<{ message: string; result: any }>(`/api/admin/github/sync${month ? `?month=${month}` : ''}`, { method: 'POST' }),
+
+  triggerAdminLinkedinSync: (month?: string) =>
+    request<{ message: string; result: any }>(`/api/admin/linkedin/sync${month ? `?month=${month}` : ''}`, { method: 'POST' }),
+
+  triggerAdminHackerrankSync: (month?: string) =>
+    request<{ message: string; result: any }>(`/api/admin/hackerrank/sync${month ? `?month=${month}` : ''}`, { method: 'POST' }),
+
+  triggerAdminSyncAll: (month?: string) =>
+    request<{ message: string; results: any }>(`/api/admin/analytics/sync-all${month ? `?month=${month}` : ''}`, { method: 'POST' }),
 
   askAdminAi: (query: string) =>
     request<{ answer: string; toolCallsExecuted: any[]; resolvedIntent: string }>('/api/admin/ai-query', {

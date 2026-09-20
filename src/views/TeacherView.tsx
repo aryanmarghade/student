@@ -1178,7 +1178,7 @@ export const TeacherView: React.FC = () => {
               </div>
 
               {/* Statistical Summary Cards */}
-              {analyticsData && (
+              {analyticsData?.statistics && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
                     <p className="text-[10px] font-semibold text-slate-500 uppercase">Evaluations</p>
@@ -1219,7 +1219,9 @@ export const TeacherView: React.FC = () => {
               )}
 
               {/* Charts Section */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {analyticsData?.charts && (
+                <>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* 1. Linear Regression Trend Line with Overlaid Projection */}
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs lg:col-span-2">
                   <div className="flex items-center justify-between mb-2">
@@ -1290,15 +1292,19 @@ export const TeacherView: React.FC = () => {
                   </div>
                 ) : null}
               </div>
+            </>
+          )}
 
-              {/* 4. External Student Activity: GitHub Contributions & LinkedIn Posts */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* 4A. LinkedIn / Student Posts Activity */}
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                        <Linkedin className="w-4 h-4 text-blue-600" /> LinkedIn & Student Posts Activity
+          {/* 4. External Student Activity: GitHub Contributions & LinkedIn Posts */}
+              {(analyticsData?.externalActivity?.totalPosts !== undefined || analyticsData?.externalActivity?.githubTotalRepos !== undefined) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* 4A. LinkedIn / Student Posts Activity */}
+                  {analyticsData?.externalActivity?.totalPosts !== undefined && (
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                            <Linkedin className="w-4 h-4 text-blue-600" /> LinkedIn & Student Posts Activity
                       </h3>
                       <p className="text-xs text-slate-500">Student publications and active participation</p>
                     </div>
@@ -1337,14 +1343,16 @@ export const TeacherView: React.FC = () => {
                       <p className="text-xs">No student posts published yet in this cohort.</p>
                     </div>
                   )}
-                </div>
+                    </div>
+                  )}
 
-                {/* 4B. GitHub Contributions & Repositories */}
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                        <Github className="w-4 h-4 text-slate-900" /> GitHub Contributions & Repositories
+                  {/* 4B. GitHub Contributions & Repositories */}
+                  {analyticsData?.externalActivity?.githubTotalRepos !== undefined && (
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                            <Github className="w-4 h-4 text-slate-900" /> GitHub Contributions & Repositories
                       </h3>
                       <p className="text-xs text-slate-500">Synced open source repositories & stars</p>
                     </div>
@@ -1399,8 +1407,10 @@ export const TeacherView: React.FC = () => {
                       <p className="text-xs">GitHub profiles not synced or no public repositories.</p>
                     </div>
                   )}
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -2158,7 +2168,8 @@ export const TeacherView: React.FC = () => {
                   </div>
 
                   {/* SECTION 1: INTERNAL MARKS */}
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                  {studentAnalyticsData.internalMarks !== undefined && (
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-2">
                       <div>
                         <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
@@ -2253,11 +2264,13 @@ export const TeacherView: React.FC = () => {
                           No internal assessment marks have been entered into PostgreSQL for this student in {studentAnalyticsData.context?.subjectName || selectedAssignment?.subjectName}.
                         </p>
                       </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* SECTION 2: GITHUB CONTRIBUTIONS */}
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                  {studentAnalyticsData.githubData !== undefined && (
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                       <div>
                         <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
@@ -2364,9 +2377,11 @@ export const TeacherView: React.FC = () => {
                       </div>
                     )}
                   </div>
+                  )}
 
                   {/* SECTION 3: HACKERRANK */}
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                  {studentAnalyticsData.hackerrankData !== undefined && (
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                       <div>
                         <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
@@ -2377,8 +2392,35 @@ export const TeacherView: React.FC = () => {
                     </div>
 
                     {studentAnalyticsData.hackerrankData?.synced ? (
-                      <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200 space-y-3">
-                        <p className="text-xs font-bold text-emerald-950">HackerRank Synced Statistics Available</p>
+                      <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-emerald-950">HackerRank Synced Statistics Available</p>
+                          <span className="text-[10px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full font-semibold">
+                            {studentAnalyticsData.hackerrankData.snapshotMonth}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="bg-white p-3 rounded shadow-2xs border border-emerald-100 text-center">
+                            <p className="text-[10px] text-slate-500 font-bold uppercase">Badges</p>
+                            <p className="text-xl font-bold font-mono text-emerald-700 mt-1">{studentAnalyticsData.hackerrankData.badgesCount}</p>
+                          </div>
+                          <div className="bg-white p-3 rounded shadow-2xs border border-emerald-100 text-center col-span-2 md:col-span-3 text-left">
+                            <p className="text-[10px] text-slate-500 font-bold uppercase text-center md:text-left">Verified Skills</p>
+                            <div className="flex flex-wrap gap-1 mt-2 justify-center md:justify-start">
+                              {studentAnalyticsData.hackerrankData.verifiedSkills?.map((skill: string) => (
+                                <span key={skill} className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded font-semibold">{skill}</span>
+                              ))}
+                              {(!studentAnalyticsData.hackerrankData.verifiedSkills || studentAnalyticsData.hackerrankData.verifiedSkills.length === 0) && (
+                                <span className="text-[10px] text-slate-400">No verified skills synced.</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex justify-end pt-2">
+                          <a href={studentAnalyticsData.hackerrankData.url} target="_blank" rel="noopener noreferrer" className="text-xs text-emerald-700 hover:underline font-semibold flex items-center gap-1">
+                            View Profile on HackerRank <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
                       </div>
                     ) : studentAnalyticsData.hackerrankUrl || studentAnalyticsData.student?.hackerrank_url ? (
                       <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
@@ -2413,9 +2455,11 @@ export const TeacherView: React.FC = () => {
                       </div>
                     )}
                   </div>
+                  )}
 
                   {/* SECTION 4: LINKEDIN / PROFESSIONAL ACTIVITY */}
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                  {studentAnalyticsData.linkedinData !== undefined && (
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                       <div>
                         <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
@@ -2434,6 +2478,35 @@ export const TeacherView: React.FC = () => {
                         </a>
                       )}
                     </div>
+
+                    {studentAnalyticsData.linkedinData?.synced ? (
+                      <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-blue-950">LinkedIn Synced Statistics Available</p>
+                          <span className="text-[10px] text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full font-semibold">
+                            {studentAnalyticsData.linkedinData.snapshotMonth}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="bg-white p-3 rounded shadow-2xs border border-blue-100 text-center">
+                            <p className="text-[10px] text-slate-500 font-bold uppercase">Connections</p>
+                            <p className="text-xl font-bold font-mono text-blue-700 mt-1">{studentAnalyticsData.linkedinData.connections}</p>
+                          </div>
+                          <div className="bg-white p-3 rounded shadow-2xs border border-blue-100 text-center">
+                            <p className="text-[10px] text-slate-500 font-bold uppercase">Followers</p>
+                            <p className="text-xl font-bold font-mono text-blue-700 mt-1">{studentAnalyticsData.linkedinData.followers}</p>
+                          </div>
+                          <div className="bg-white p-3 rounded shadow-2xs border border-blue-100 text-center">
+                            <p className="text-[10px] text-slate-500 font-bold uppercase">Posts</p>
+                            <p className="text-xl font-bold font-mono text-blue-700 mt-1">{studentAnalyticsData.linkedinData.postsCount}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-center">
+                        <p className="text-[11px] text-slate-500">LinkedIn statistics not synced.</p>
+                      </div>
+                    )}
 
                     {/* Dedicated Posts Activity Chart (Monthly) */}
                     {studentAnalyticsData.postsByMonth && studentAnalyticsData.postsByMonth.length > 0 ? (
@@ -2496,6 +2569,7 @@ export const TeacherView: React.FC = () => {
                       </div>
                     )}
                   </div>
+                  )}
                 </>
               ) : null}
             </div>

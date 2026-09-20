@@ -40,7 +40,7 @@ export const AdminView: React.FC = () => {
   // Overview Data
   const [overview, setOverview] = useState<any>(null);
   const [analytics, setAnalytics] = useState<any>(null);
-  const [analyticsVisibility, setAnalyticsVisibility] = useState<any>({ github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, academic_enabled: true });
+  const [analyticsVisibility, setAnalyticsVisibility] = useState<Record<string, any>>({});
 
   // Entities Data
   const [classes, setClasses] = useState<AcademicClass[]>([]);
@@ -210,7 +210,11 @@ export const AdminView: React.FC = () => {
 
       setOverview(overviewData);
       setAnalytics(analyticsData);
-      setAnalyticsVisibility(visibilityData);
+      const visMap = (visibilityData || []).reduce((acc: any, curr: any) => {
+        acc[curr.teacher_user_id] = curr;
+        return acc;
+      }, {});
+      setAnalyticsVisibility(visMap);
       setClasses(classesData);
       setDepartments(deptsData);
       setSubjects(subjectsData);
@@ -281,20 +285,20 @@ export const AdminView: React.FC = () => {
   };
 
   // Start new semester
-  const handleToggleVisibility = async (key: string) => {
-    if (!analyticsVisibility) return;
-    const newValue = !analyticsVisibility[key];
-    const newSettings = { ...analyticsVisibility, [key]: newValue };
+  const handleToggleVisibility = async (teacherId: string, key: string) => {
+    const currentSettings = analyticsVisibility[teacherId] || { github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, academic_enabled: true };
+    const newValue = !currentSettings[key];
+    const newSettings = { ...currentSettings, [key]: newValue };
     
     // Optimistic update
-    setAnalyticsVisibility(newSettings);
+    setAnalyticsVisibility(prev => ({ ...prev, [teacherId]: newSettings }));
     try {
-      const res = await api.updateAdminAnalyticsVisibility(newSettings);
-      setAnalyticsVisibility(res.settings);
+      const res = await api.updateAdminAnalyticsVisibility(teacherId, newSettings);
+      setAnalyticsVisibility(prev => ({ ...prev, [teacherId]: res.settings }));
       showToast(res.message || 'Settings updated successfully');
     } catch (err: any) {
       // Revert on failure
-      setAnalyticsVisibility(analyticsVisibility);
+      setAnalyticsVisibility(prev => ({ ...prev, [teacherId]: currentSettings }));
       showToast(err.message || 'Failed to update settings', true);
     }
   };
@@ -1598,30 +1602,114 @@ export const AdminView: React.FC = () => {
                 Control which analytics categories are visible to teachers. This does not delete student profile data.
               </p>
             </div>
-            <div className="p-5 space-y-6">
-              {[
-                { key: 'github_enabled', label: 'GitHub Analytics', desc: 'Show GitHub charts and repositories in teacher analytics.' },
-                { key: 'hackathon_enabled', label: 'Hackathon Analytics', desc: 'Show hackathon participation in teacher analytics.' },
-                { key: 'linkedin_enabled', label: 'LinkedIn / Professional Activity Analytics', desc: 'Show LinkedIn post tracking and professional graphs.' },
-                { key: 'academic_enabled', label: 'Academic Analytics', desc: 'Show internal examination analytics and mark distributions.' }
-              ].map(setting => (
-                <div key={setting.key} className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900">{setting.label}</h4>
-                    <p className="text-xs text-slate-500 mt-1">{setting.desc}</p>
+            <div className="p-5 space-y-8">
+              {users.filter(u => u.role === 'teacher').map(teacher => {
+                const settings = analyticsVisibility[teacher.id] || { github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, academic_enabled: true };
+                return (
+                  <div key={teacher.id} className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <h3 className="text-md font-bold text-slate-900 border-b border-slate-200 pb-2 mb-4">{teacher.full_name} ({teacher.email})</h3>
+                    <div className="space-y-4">
+                      {[
+                        { key: 'github_enabled', label: 'GitHub Analytics', desc: 'Show GitHub charts and repositories in teacher analytics.' },
+                        { key: 'hackathon_enabled', label: 'Hackathon Analytics', desc: 'Show hackathon participation in teacher analytics.' },
+                        { key: 'linkedin_enabled', label: 'LinkedIn / Professional Activity', desc: 'Show LinkedIn post tracking and professional graphs.' },
+                        { key: 'hackerrank_enabled', label: 'HackerRank Analytics', desc: 'Show coding platform achievements.' },
+                        { key: 'academic_enabled', label: 'Academic Analytics', desc: 'Show internal examination analytics and mark distributions.' }
+                      ].map(setting => (
+                        <div key={setting.key} className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-900">{setting.label}</h4>
+                            <p className="text-xs text-slate-500">{setting.desc}</p>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input 
+                              type="checkbox" 
+                              className="sr-only peer" 
+                              checked={!!settings[setting.key]} 
+                              onChange={() => handleToggleVisibility(teacher.id, setting.key)} 
+                            />
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer" 
-                      checked={analyticsVisibility ? !!analyticsVisibility[setting.key] : false} 
-                      onChange={() => handleToggleVisibility(setting.key)} 
-                      disabled={!analyticsVisibility}
-                    />
-                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-                  </label>
-                </div>
-              ))}
+                );
+              })}
+              {users.filter(u => u.role === 'teacher').length === 0 && (
+                <p className="text-sm text-slate-500">No teachers found to configure.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden mt-6">
+            <div className="p-5 border-b border-slate-200">
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Settings className="w-5 h-5 text-[#0f2744]" /> External Analytics Sync
+              </h2>
+              <p className="text-sm text-slate-500 mt-1">
+                Manually trigger monthly analytics data sync for all students across external platforms.
+              </p>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="flex flex-wrap gap-4">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await api.triggerAdminGithubSync();
+                      showToast(res.message);
+                    } catch (err: any) {
+                      showToast(err.message, true);
+                    }
+                  }}
+                  className="px-4 py-2 bg-slate-800 text-white hover:bg-slate-700 rounded-lg text-sm font-semibold flex items-center gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" /> Sync GitHub
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await api.triggerAdminLinkedinSync();
+                      showToast(res.message);
+                    } catch (err: any) {
+                      showToast(err.message, true);
+                    }
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-semibold flex items-center gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" /> Sync LinkedIn
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await api.triggerAdminHackerrankSync();
+                      showToast(res.message);
+                    } catch (err: any) {
+                      showToast(err.message, true);
+                    }
+                  }}
+                  className="px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg text-sm font-semibold flex items-center gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" /> Sync HackerRank
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await api.triggerAdminSyncAll();
+                      showToast(res.message);
+                    } catch (err: any) {
+                      showToast(err.message, true);
+                    }
+                  }}
+                  className="px-4 py-2 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-sm font-semibold flex items-center gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" /> Sync All
+                </button>
+              </div>
             </div>
           </div>
         </div>

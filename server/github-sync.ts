@@ -41,7 +41,7 @@ export interface GitHubSnapshotData {
 export interface SnapshotSyncResult {
   studentId: string;
   username: string | null;
-  status: 'synced' | 'failed' | 'not_synced';
+  status: 'synced' | 'failed' | 'not_synced' | 'rate_limited';
   error?: string;
 }
 
@@ -51,6 +51,7 @@ export interface MonthlySyncResult {
   studentsSynced: number;
   studentsSkipped: number;  // no github_url
   studentsFailed: number;
+  rateLimited: number;      // API rate limit hit
   startedAt: string;
   completedAt: string;
   details: SnapshotSyncResult[];
@@ -116,7 +117,11 @@ async function fetchGitHubData(username: string): Promise<GitHubSnapshotData> {
   }
 
   if (profileRes.status === 404) throw new Error(`GitHub user '${username}' not found (404)`);
-  if (profileRes.status === 403) throw new Error('GitHub API rate limit exceeded or access forbidden');
+  if (profileRes.status === 403) {
+    const error = new Error('GitHub API rate limit exceeded or access forbidden');
+    (error as any).code = 'RATE_LIMIT';
+    throw error;
+  }
   if (!profileRes.ok) throw new Error(`GitHub API error for user profile: ${profileRes.status} ${profileRes.statusText}`);
 
   const profileData = await profileRes.json() as Record<string, any>;
@@ -232,16 +237,24 @@ async function syncOneStudent(
     return { studentId: student.id, username, status: 'synced' };
   } catch (err: any) {
     const errMsg = err.message || String(err);
+    const isRateLimit = err.code === 'RATE_LIMIT';
+    const finalStatus = isRateLimit ? 'rate_limited' : 'failed';
+    
     await upsertSnapshot({
       studentId: student.id,
       githubUsername: username,
       month,
       data: null,
-      status: 'failed',
+      status: finalStatus,
       error: errMsg,
     });
-    console.error(`[GitHub Sync] ❌ ${student.roll_number} (${username}): ${errMsg}`);
-    return { studentId: student.id, username, status: 'failed', error: errMsg };
+    
+    if (isRateLimit) {
+      console.warn(`[GitHub Sync] ⚠️ ${student.roll_number} (${username}): ${errMsg}`);
+    } else {
+      console.error(`[GitHub Sync] ❌ ${student.roll_number} (${username}): ${errMsg}`);
+    }
+    return { studentId: student.id, username, status: finalStatus, error: errMsg };
   }
 }
 
@@ -252,7 +265,7 @@ async function upsertSnapshot(opts: {
   githubUsername: string;
   month: string;
   data: GitHubSnapshotData | null;
-  status: 'synced' | 'failed' | 'not_synced';
+  status: 'synced' | 'failed' | 'not_synced' | 'rate_limited';
   error: string | undefined;
 }): Promise<void> {
   const snapshotId = id('ghs');
@@ -292,7 +305,7 @@ async function upsertSnapshot(opts: {
       JSON.stringify(opts.data?.top_repos ?? []),
       opts.data?.total_contributions ?? null,
       opts.data ? JSON.stringify(opts.data) : null,
-      opts.status,
+      opts.status === 'rate_limited' ? 'failed' : opts.status,
       opts.error ?? null,
       now,
     ]
@@ -330,7 +343,7 @@ export async function runMonthlyGitHubSync(overrideMonth?: string): Promise<Mont
   console.log(`[GitHub Sync] Found ${students.length} students to process`);
 
   const details: SnapshotSyncResult[] = [];
-  let synced = 0, skipped = 0, failed = 0;
+  let synced = 0, skipped = 0, failed = 0, rateLimited = 0;
 
   for (const student of students) {
     const result = await syncOneStudent(student, month);
@@ -338,6 +351,7 @@ export async function runMonthlyGitHubSync(overrideMonth?: string): Promise<Mont
 
     if (result.status === 'synced') synced++;
     else if (result.status === 'not_synced') skipped++;
+    else if (result.status === 'rate_limited') rateLimited++;
     else failed++;
 
     // Respect rate limits: 500ms between students that have GitHub URLs
@@ -353,6 +367,7 @@ export async function runMonthlyGitHubSync(overrideMonth?: string): Promise<Mont
     studentsSynced: synced,
     studentsSkipped: skipped,
     studentsFailed: failed,
+    rateLimited,
     startedAt,
     completedAt,
     details,
@@ -360,7 +375,7 @@ export async function runMonthlyGitHubSync(overrideMonth?: string): Promise<Mont
 
   console.log(
     `[GitHub Sync] ✅ GitHub monthly sync completed | month=${month} | ` +
-    `synced=${synced} skipped=${skipped} failed=${failed} | ` +
+    `synced=${synced} skipped=${skipped} failed=${failed} rate_limited=${rateLimited} | ` +
     `duration=${Math.round((new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 1000)}s`
   );
 

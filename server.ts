@@ -8,6 +8,8 @@ import teacherRoutes from './server/routes/teacher-routes.js';
 import studentRoutes from './server/routes/student-routes.js';
 import { initializeDatabase } from './server/db.js';
 import { startGitHubScheduler } from './server/github-sync.js';
+import { startLinkedInScheduler } from './server/linkedin-sync.js';
+import { startHackerRankScheduler } from './server/hackerrank-sync.js';
 
 dotenv.config();
 
@@ -21,6 +23,16 @@ async function startServer() {
   // Fires automatically on the 1st of each month at 00:05
   startGitHubScheduler().catch((err) =>
     console.error('[GitHub Sync] Scheduler startup failed:', err.message)
+  );
+
+  // Start the monthly LinkedIn data sync scheduler
+  startLinkedInScheduler().catch((err) =>
+    console.error('[LinkedIn Sync] Scheduler startup failed:', err.message)
+  );
+
+  // Start the monthly HackerRank data sync scheduler
+  startHackerRankScheduler().catch((err) =>
+    console.error('[HackerRank Sync] Scheduler startup failed:', err.message)
   );
 
   // JSON Body parsing with ample headroom for file/resume uploads

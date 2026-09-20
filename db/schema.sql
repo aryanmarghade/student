@@ -371,15 +371,58 @@ CREATE INDEX IF NOT EXISTS idx_github_snapshots_student ON student_github_snapsh
 CREATE INDEX IF NOT EXISTS idx_github_snapshots_month ON student_github_snapshots(snapshot_month);
 CREATE INDEX IF NOT EXISTS idx_github_snapshots_status ON student_github_snapshots(sync_status);
 
--- 17. ANALYTICS VISIBILITY SETTINGS
--- A single row (id='global') controls what data is exposed in Teacher Analytics.
-CREATE TABLE IF NOT EXISTS analytics_visibility_settings (
+-- 16a. STUDENT LINKEDIN MONTHLY SNAPSHOTS
+CREATE TABLE IF NOT EXISTS student_linkedin_snapshots (
     id VARCHAR(64) PRIMARY KEY,
-    github_enabled BOOLEAN DEFAULT TRUE,
-    hackathon_enabled BOOLEAN DEFAULT TRUE,
-    linkedin_enabled BOOLEAN DEFAULT TRUE,
-    academic_enabled BOOLEAN DEFAULT TRUE,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    student_id VARCHAR(64) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    linkedin_url VARCHAR(255) NOT NULL,
+    snapshot_month VARCHAR(7) NOT NULL,          -- YYYY-MM
+    synced_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    connections INT,
+    posts_count INT,
+    followers INT,
+    raw_data JSONB,
+    sync_status VARCHAR(32) NOT NULL DEFAULT 'synced'
+        CHECK (sync_status IN ('synced', 'failed', 'not_synced')),
+    error_message TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_student_linkedin_snapshot_month UNIQUE (student_id, snapshot_month)
 );
 
-INSERT INTO analytics_visibility_settings (id) VALUES ('global') ON CONFLICT (id) DO NOTHING;
+CREATE INDEX IF NOT EXISTS idx_linkedin_snapshots_student ON student_linkedin_snapshots(student_id);
+CREATE INDEX IF NOT EXISTS idx_linkedin_snapshots_month ON student_linkedin_snapshots(snapshot_month);
+CREATE INDEX IF NOT EXISTS idx_linkedin_snapshots_status ON student_linkedin_snapshots(sync_status);
+
+-- 16b. STUDENT HACKERRANK MONTHLY SNAPSHOTS
+CREATE TABLE IF NOT EXISTS student_hackerrank_snapshots (
+    id VARCHAR(64) PRIMARY KEY,
+    student_id VARCHAR(64) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    hackerrank_username VARCHAR(255) NOT NULL,
+    snapshot_month VARCHAR(7) NOT NULL,          -- YYYY-MM
+    synced_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    badges_count INT,
+    verified_skills JSONB DEFAULT '[]',
+    raw_data JSONB,
+    sync_status VARCHAR(32) NOT NULL DEFAULT 'synced'
+        CHECK (sync_status IN ('synced', 'failed', 'not_synced')),
+    error_message TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_student_hackerrank_snapshot_month UNIQUE (student_id, snapshot_month)
+);
+
+CREATE INDEX IF NOT EXISTS idx_hackerrank_snapshots_student ON student_hackerrank_snapshots(student_id);
+CREATE INDEX IF NOT EXISTS idx_hackerrank_snapshots_month ON student_hackerrank_snapshots(snapshot_month);
+CREATE INDEX IF NOT EXISTS idx_hackerrank_snapshots_status ON student_hackerrank_snapshots(sync_status);
+
+-- 17. TEACHER ANALYTICS VISIBILITY SETTINGS
+-- A row per teacher controlling what data is exposed in Teacher Analytics.
+CREATE TABLE IF NOT EXISTS teacher_analytics_visibility (
+    teacher_user_id VARCHAR(64) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    github_enabled BOOLEAN DEFAULT TRUE,
+    linkedin_enabled BOOLEAN DEFAULT TRUE,
+    hackerrank_enabled BOOLEAN DEFAULT TRUE,
+    hackathon_enabled BOOLEAN DEFAULT TRUE,
+    academic_enabled BOOLEAN DEFAULT TRUE,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL
+);

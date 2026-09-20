@@ -249,8 +249,8 @@ router.post('/analytics', async (req: AuthRequest, res) => {
   const regressionPoints = averageByStudent.map((st, i) => ({ x: i + 1, y: st.average }));
   const regression = linearRegression(regressionPoints);
 
-  const visibilityRes = await query<any>(`SELECT * FROM analytics_visibility_settings WHERE id = 'global'`);
-  const visibility = visibilityRes.rows[0] || { github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, academic_enabled: true };
+  const visibilityRes = await query<any>(`SELECT * FROM teacher_analytics_visibility WHERE teacher_user_id = $1`, [req.user!.id]);
+  const visibility = visibilityRes.rows[0] || { github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, hackathon_enabled: true, academic_enabled: true };
 
   // Aggregate external student activity (LinkedIn posts & GitHub stats) for students in scope
   const studentIdsInScope = Array.from(new Set(rows.map(x => x.student_id)));
@@ -354,41 +354,49 @@ router.post('/analytics', async (req: AuthRequest, res) => {
   res.json({
     scope,
     totalStudentsIncluded: new Set(rows.map(x => x.student_id)).size,
-    statistics: {
-      count: scores.length,
-      mean: Number(mean.toFixed(2)),
-      median: Number(med.toFixed(2)),
-      stdDev: Number(stdDev.toFixed(2)),
-      min: sorted[0] !== undefined ? Number(sorted[0].toFixed(2)) : 0,
-      max: sorted.at(-1) !== undefined ? Number(sorted.at(-1)!.toFixed(2)) : 0,
+    ...(visibility.academic_enabled ? {
+      statistics: {
+        count: scores.length,
+        mean: Number(mean.toFixed(2)),
+        median: Number(med.toFixed(2)),
+        stdDev: Number(stdDev.toFixed(2)),
+        min: sorted[0] !== undefined ? Number(sorted[0].toFixed(2)) : 0,
+        max: sorted.at(-1) !== undefined ? Number(sorted.at(-1)!.toFixed(2)) : 0,
+      },
+      linearRegression: regression
+        ? {
+            slope: Number(regression.slope.toFixed(4)),
+            intercept: Number(regression.intercept.toFixed(4)),
+            rSquared: Number(regression.rSquared.toFixed(4)),
+            predictedNextScore: Number(regression.predictedNextValue.toFixed(2)),
+            points: regression.pointsUsed,
+            label: 'Linear Trend Projection (per-student averages)',
+          }
+        : {
+            slope: 0,
+            intercept: Number(mean.toFixed(2)),
+            rSquared: null,
+            predictedNextScore: Number(mean.toFixed(2)),
+            points: regressionPoints,
+            label: 'Not enough data for regression (need ≥2 students with marks)',
+          },
+    } : {}),
+    charts: { 
+      ...(visibility.academic_enabled ? { gradeDistribution, averageByExamType, averageByStudent } : {}) 
     },
-    linearRegression: regression
-      ? {
-          slope: Number(regression.slope.toFixed(4)),
-          intercept: Number(regression.intercept.toFixed(4)),
-          rSquared: Number(regression.rSquared.toFixed(4)),
-          predictedNextScore: Number(regression.predictedNextValue.toFixed(2)),
-          points: regression.pointsUsed,
-          label: 'Linear Trend Projection (per-student averages)',
-        }
-      : {
-          slope: 0,
-          intercept: Number(mean.toFixed(2)),
-          rSquared: null,
-          predictedNextScore: Number(mean.toFixed(2)),
-          points: regressionPoints,
-          label: 'Not enough data for regression (need ≥2 students with marks)',
-        },
-    charts: { gradeDistribution, averageByExamType, averageByStudent },
     externalActivity: {
-      totalPosts,
-      postsByMonth,
-      githubSyncedCount,
-      githubTotalRepos,
-      githubTotalStars,
-      githubTotalContributions,
-      githubSnapshotsByMonth,
-      githubDataSource,
+      ...(visibility.linkedin_enabled ? {
+        totalPosts,
+        postsByMonth,
+      } : {}),
+      ...(visibility.github_enabled ? {
+        githubSyncedCount,
+        githubTotalRepos,
+        githubTotalStars,
+        githubTotalContributions,
+        githubSnapshotsByMonth,
+        githubDataSource,
+      } : {}),
     },
     rawExportData: rows.map(x => ({
       StudentName: x.full_name,
@@ -440,8 +448,8 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
   }
 
   // Internal Marks: fetch assessment_definitions for this scope, then matching marks
-  const visibilityRes = await query<any>(`SELECT * FROM analytics_visibility_settings WHERE id = 'global'`);
-  const visibility = visibilityRes.rows[0] || { github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, academic_enabled: true };
+  const visibilityRes = await query<any>(`SELECT * FROM teacher_analytics_visibility WHERE teacher_user_id = $1`, [req.user!.id]);
+  const visibility = visibilityRes.rows[0] || { github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, hackathon_enabled: true, academic_enabled: true };
 
   const [assessmentDefs, marksRows, postsRows] = await Promise.all([
     query<any>(
@@ -602,11 +610,100 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
     githubData = { synced: false, dataSource: 'hidden', reason: 'Visibility disabled by Admin' };
   }
 
-  // HackerRank
-  let hackerrankData = student.hackerrank_url
-    ? { url: student.hackerrank_url, synced: false }
-    : null;
-  if (!visibility.hackathon_enabled) {
+// LinkedIn Data
+  let linkedinData: any = null;
+  const linkedinSnapshotRes = await query<any>(
+    `SELECT * FROM student_linkedin_snapshots
+     WHERE student_id = $1
+     ORDER BY snapshot_month DESC`,
+    [studentId]
+  );
+  const currentLinkedinSnap = linkedinSnapshotRes.rows.find((r: any) => r.snapshot_month === thisMonth)
+    ?? linkedinSnapshotRes.rows[0] ?? null;
+
+  if (currentLinkedinSnap) {
+    if (currentLinkedinSnap.sync_status === 'synced') {
+      linkedinData = {
+        synced: true,
+        dataSource: 'monthly_snapshot',
+        snapshotMonth: currentLinkedinSnap.snapshot_month,
+        syncedAt: currentLinkedinSnap.synced_at,
+        url: currentLinkedinSnap.linkedin_url,
+        connections: currentLinkedinSnap.connections,
+        postsCount: currentLinkedinSnap.posts_count,
+        followers: currentLinkedinSnap.followers,
+        snapshotHistory: linkedinSnapshotRes.rows.map((r: any) => ({
+          month: r.snapshot_month,
+          syncStatus: r.sync_status,
+          connections: r.connections,
+          followers: r.followers,
+          syncedAt: r.synced_at,
+        })),
+      };
+    } else if (currentLinkedinSnap.sync_status === 'failed') {
+      linkedinData = {
+        synced: false,
+        dataSource: 'monthly_snapshot',
+        snapshotMonth: currentLinkedinSnap.snapshot_month,
+        reason: currentLinkedinSnap.error_message || 'LinkedIn sync failed',
+        url: student.linkedin_url,
+      };
+    } else {
+      linkedinData = null;
+    }
+  } else if (student.linkedin_url) {
+    linkedinData = { synced: false, dataSource: 'not_synced', url: student.linkedin_url, reason: 'Not yet synced' };
+  }
+
+  if (!visibility.linkedin_enabled) {
+    linkedinData = { synced: false, dataSource: 'hidden', reason: 'Visibility disabled by Admin' };
+  }
+
+  // HackerRank Data
+  let hackerrankData: any = null;
+  const hackerrankSnapshotRes = await query<any>(
+    `SELECT * FROM student_hackerrank_snapshots
+     WHERE student_id = $1
+     ORDER BY snapshot_month DESC`,
+    [studentId]
+  );
+  const currentHackerrankSnap = hackerrankSnapshotRes.rows.find((r: any) => r.snapshot_month === thisMonth)
+    ?? hackerrankSnapshotRes.rows[0] ?? null;
+
+  if (currentHackerrankSnap) {
+    if (currentHackerrankSnap.sync_status === 'synced') {
+      hackerrankData = {
+        synced: true,
+        dataSource: 'monthly_snapshot',
+        snapshotMonth: currentHackerrankSnap.snapshot_month,
+        syncedAt: currentHackerrankSnap.synced_at,
+        username: currentHackerrankSnap.hackerrank_username,
+        badgesCount: currentHackerrankSnap.badges_count,
+        verifiedSkills: currentHackerrankSnap.verified_skills ?? [],
+        url: student.hackerrank_url,
+        snapshotHistory: hackerrankSnapshotRes.rows.map((r: any) => ({
+          month: r.snapshot_month,
+          syncStatus: r.sync_status,
+          badgesCount: r.badges_count,
+          syncedAt: r.synced_at,
+        })),
+      };
+    } else if (currentHackerrankSnap.sync_status === 'failed') {
+      hackerrankData = {
+        synced: false,
+        dataSource: 'monthly_snapshot',
+        snapshotMonth: currentHackerrankSnap.snapshot_month,
+        reason: currentHackerrankSnap.error_message || 'HackerRank sync failed',
+        url: student.hackerrank_url,
+      };
+    } else {
+      hackerrankData = null;
+    }
+  } else if (student.hackerrank_url) {
+    hackerrankData = { url: student.hackerrank_url, synced: false, reason: 'Not yet synced' };
+  }
+
+  if (!visibility.hackerrank_enabled) {
     hackerrankData = { url: student.hackerrank_url, synced: false, reason: 'Visibility disabled by Admin' } as any;
   }
 
@@ -660,16 +757,25 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
       subjectCode: student.subjectCode,
       semesterName: student.semesterName,
     },
-    internalMarks,
-    internalSummary,
-    githubData,
-    hackerrankData,
-    hackerrankUrl: student.hackerrank_url,
-    linkedinUrl: student.linkedin_url,
-    linkedinPosts: visibility.linkedin_enabled ? postsRows.rows : [],
-    recentPosts: visibility.linkedin_enabled ? postsRows.rows.slice(-5).reverse() : [],
-    postsByMonth,
-    totalPosts: visibility.linkedin_enabled ? postsRows.rows.length : 0,
+    ...(visibility.academic_enabled ? {
+      internalMarks,
+      internalSummary,
+    } : {}),
+    ...(visibility.github_enabled ? {
+      githubData,
+    } : {}),
+    ...(visibility.hackerrank_enabled ? {
+      hackerrankData,
+      hackerrankUrl: student.hackerrank_url,
+    } : {}),
+    ...(visibility.linkedin_enabled ? {
+      linkedinData,
+      linkedinUrl: student.linkedin_url,
+      linkedinPosts: postsRows.rows,
+      recentPosts: postsRows.rows.slice(-5).reverse(),
+      postsByMonth,
+      totalPosts: postsRows.rows.length,
+    } : {}),
   });
 });
 

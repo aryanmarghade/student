@@ -8,6 +8,8 @@ import { query, pool, logActivity, id } from '../db.js';
 import { requireAuth, requireRole, hashPassword, AuthRequest, rateLimit } from '../auth.js';
 import { processAiQuery } from '../ai-assistant.js';
 import { runMonthlyGitHubSync, currentMonth } from '../github-sync.js';
+import { runMonthlyLinkedInSync } from '../linkedin-sync.js';
+import { runMonthlyHackerRankSync } from '../hackerrank-sync.js';
 
 const router = Router();
 const root = process.cwd();
@@ -343,6 +345,86 @@ router.post('/github/sync', rateLimit(5, 60000, 'admin-github-sync'), async (req
   }
 });
 
+// ── LinkedIn Monthly Sync — Admin Trigger ────────────────────────────────────────
+// POST /api/admin/linkedin/sync
+router.post('/linkedin/sync', rateLimit(5, 60000, 'admin-linkedin-sync'), async (req: AuthRequest, res) => {
+  const rawMonth = String(req.query.month || '').trim();
+  const month = /^\d{4}-\d{2}$/.test(rawMonth) ? rawMonth : currentMonth();
+  console.log(`[LinkedIn Sync] Admin-triggered sync by user=${req.user!.id} for month=${month}`);
+  try {
+    const result = await runMonthlyLinkedInSync(month);
+    await logActivity(
+      req.user!.id,
+      'LINKEDIN_SYNC_TRIGGERED',
+      'LINKEDIN_SNAPSHOTS',
+      undefined,
+      `Admin triggered LinkedIn sync for ${month}: synced=${result.studentsSynced} failed=${result.studentsFailed} skipped=${result.studentsSkipped}`
+    );
+    res.json({ message: `LinkedIn sync completed for ${month}`, result });
+  } catch (err: any) {
+    console.error('[LinkedIn Sync] Admin-triggered sync failed:', err.message);
+    res.status(500).json({ error: 'LinkedIn sync failed', details: err.message });
+  }
+});
+
+// ── HackerRank Monthly Sync — Admin Trigger ────────────────────────────────────────
+// POST /api/admin/hackerrank/sync
+router.post('/hackerrank/sync', rateLimit(5, 60000, 'admin-hackerrank-sync'), async (req: AuthRequest, res) => {
+  const rawMonth = String(req.query.month || '').trim();
+  const month = /^\d{4}-\d{2}$/.test(rawMonth) ? rawMonth : currentMonth();
+  console.log(`[HackerRank Sync] Admin-triggered sync by user=${req.user!.id} for month=${month}`);
+  try {
+    const result = await runMonthlyHackerRankSync(month);
+    await logActivity(
+      req.user!.id,
+      'HACKERRANK_SYNC_TRIGGERED',
+      'HACKERRANK_SNAPSHOTS',
+      undefined,
+      `Admin triggered HackerRank sync for ${month}: synced=${result.studentsSynced} failed=${result.studentsFailed} skipped=${result.studentsSkipped}`
+    );
+    res.json({ message: `HackerRank sync completed for ${month}`, result });
+  } catch (err: any) {
+    console.error('[HackerRank Sync] Admin-triggered sync failed:', err.message);
+    res.status(500).json({ error: 'HackerRank sync failed', details: err.message });
+  }
+});
+
+// ── Sync All Analytics — Admin Trigger ────────────────────────────────────────
+// POST /api/admin/analytics/sync-all
+router.post('/analytics/sync-all', rateLimit(2, 60000, 'admin-sync-all'), async (req: AuthRequest, res) => {
+  const rawMonth = String(req.query.month || '').trim();
+  const month = /^\d{4}-\d{2}$/.test(rawMonth) ? rawMonth : currentMonth();
+  console.log(`[Sync All] Admin-triggered sync all by user=${req.user!.id} for month=${month}`);
+  
+  try {
+    const [gh, li, hr] = await Promise.all([
+      runMonthlyGitHubSync(month),
+      runMonthlyLinkedInSync(month),
+      runMonthlyHackerRankSync(month)
+    ]);
+    
+    await logActivity(
+      req.user!.id,
+      'SYNC_ALL_TRIGGERED',
+      'ALL_SNAPSHOTS',
+      undefined,
+      `Admin triggered Sync All for ${month}`
+    );
+    
+    res.json({ 
+      message: `All syncs completed for ${month}`,
+      results: {
+        github: gh,
+        linkedin: li,
+        hackerrank: hr
+      }
+    });
+  } catch (err: any) {
+    console.error('[Sync All] Admin-triggered sync all failed:', err.message);
+    res.status(500).json({ error: 'Sync All failed', details: err.message });
+  }
+});
+
 // GET /api/admin/github/snapshots — list all snapshots (admin visibility)
 router.get('/github/snapshots', async (req: AuthRequest, res) => {
   const month = String(req.query.month || currentMonth());
@@ -358,37 +440,55 @@ router.get('/github/snapshots', async (req: AuthRequest, res) => {
   res.json({ month, count: rows.length, snapshots: rows });
 });
 
-// GET /api/admin/analytics-visibility
-router.get('/analytics-visibility', async (req: AuthRequest, res) => {
-  const result = await query<any>(`SELECT * FROM analytics_visibility_settings WHERE id = 'global'`);
+// GET /api/admin/teachers/:teacherId/analytics-visibility
+router.get('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest, res) => {
+  const result = await query<any>(`SELECT * FROM teacher_analytics_visibility WHERE teacher_user_id = $1`, [req.params.teacherId]);
   if (result.rows.length === 0) {
     // Return defaults if not initialized yet
-    return res.json({ github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, academic_enabled: true });
+    return res.json({ github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, hackathon_enabled: true, academic_enabled: true });
   }
   res.json(result.rows[0]);
 });
 
-// PUT /api/admin/analytics-visibility
-router.put('/analytics-visibility', async (req: AuthRequest, res) => {
-  const { github_enabled, hackathon_enabled, linkedin_enabled, academic_enabled } = req.body;
+// GET /api/admin/analytics-visibility/all
+router.get('/analytics-visibility/all', async (req: AuthRequest, res) => {
+  const result = await query<any>(`SELECT * FROM teacher_analytics_visibility`);
+  res.json(result.rows);
+});
+
+// PUT /api/admin/teachers/:teacherId/analytics-visibility
+router.put('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest, res) => {
+  const { github_enabled, linkedin_enabled, hackerrank_enabled, hackathon_enabled, academic_enabled } = req.body;
+  
+  // Verify teacher exists and is a teacher
+  const user = await query<{id: string, role: string}>('SELECT id, role FROM users WHERE id = $1 AND role = $2', [req.params.teacherId, 'teacher']);
+  if (user.rows.length === 0) {
+    return res.status(404).json({ error: 'Teacher not found' });
+  }
+
   const result = await query<any>(
-    `INSERT INTO analytics_visibility_settings (id, github_enabled, hackathon_enabled, linkedin_enabled, academic_enabled)
-     VALUES ('global', $1, $2, $3, $4)
-     ON CONFLICT (id) DO UPDATE SET
+    `INSERT INTO teacher_analytics_visibility (teacher_user_id, github_enabled, linkedin_enabled, hackerrank_enabled, hackathon_enabled, academic_enabled, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (teacher_user_id) DO UPDATE SET
        github_enabled = EXCLUDED.github_enabled,
-       hackathon_enabled = EXCLUDED.hackathon_enabled,
        linkedin_enabled = EXCLUDED.linkedin_enabled,
+       hackerrank_enabled = EXCLUDED.hackerrank_enabled,
+       hackathon_enabled = EXCLUDED.hackathon_enabled,
        academic_enabled = EXCLUDED.academic_enabled,
-       updated_at = CURRENT_TIMESTAMP
+       updated_at = CURRENT_TIMESTAMP,
+       updated_by = EXCLUDED.updated_by
      RETURNING *`,
     [
+      req.params.teacherId,
       github_enabled ?? true,
-      hackathon_enabled ?? true,
       linkedin_enabled ?? true,
-      academic_enabled ?? true
+      hackerrank_enabled ?? true,
+      hackathon_enabled ?? true,
+      academic_enabled ?? true,
+      req.user!.id
     ]
   );
-  await logActivity(req.user!.id, 'ANALYTICS_VISIBILITY_UPDATED', 'SYSTEM_SETTINGS', 'global', `Updated analytics visibility settings.`);
+  await logActivity(req.user!.id, 'ANALYTICS_VISIBILITY_UPDATED', 'SYSTEM_SETTINGS', req.params.teacherId, `Updated analytics visibility settings for teacher ${req.params.teacherId}.`);
   res.json({ message: 'Settings updated successfully.', settings: result.rows[0] });
 });
 
