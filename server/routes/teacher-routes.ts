@@ -190,8 +190,12 @@ router.post('/analytics', async (req: AuthRequest, res) => {
     return res.status(403).json({ error: 'Access Denied: Class outside your assigned teaching scope.' });
   }
 
-  const params: any[] = [classId];
-  const filters = ['s.class_id=$1', 'm.class_id=$1'];
+  const params: any[] = [classId, req.user!.id];
+  const filters = [
+    's.class_id=$1', 
+    'm.class_id=$1',
+    `EXISTS (SELECT 1 FROM teacher_class_assignments tca WHERE tca.teacher_user_id=$2 AND tca.class_id=$1 AND tca.subject_id=m.subject_id AND (tca.semester_id=m.semester_id OR tca.status IN ('active', 'past')))`
+  ];
   if ((studentIds as string[]).length) { params.push(studentIds); filters.push(`s.id=ANY($${params.length})`); }
   if (subjectId) { params.push(subjectId); filters.push(`m.subject_id=$${params.length}`); }
   if ((selectedSemesters as string[]).length) { params.push(selectedSemesters); filters.push(`m.semester_id=ANY($${params.length})`); }
@@ -244,6 +248,52 @@ router.post('/analytics', async (req: AuthRequest, res) => {
   const regressionPoints = averageByStudent.map((st, i) => ({ x: i + 1, y: st.average }));
   const regression = linearRegression(regressionPoints);
 
+  // Aggregate external student activity (LinkedIn posts & GitHub stats) for students in scope
+  const studentIdsInScope = Array.from(new Set(rows.map(x => x.student_id)));
+  let postsByMonth: Array<{ month: string; label: string; count: number }> = [];
+  let totalPosts = 0;
+  let githubSyncedCount = 0;
+  let githubTotalRepos = 0;
+  let githubTotalStars = 0;
+  let githubTotalContributions = 0;
+
+  if (studentIdsInScope.length > 0) {
+    const [postsRes, studentsRes] = await Promise.all([
+      query<any>(
+        `SELECT created_at FROM posts WHERE student_id = ANY($1) ORDER BY created_at ASC`,
+        [studentIdsInScope],
+      ),
+      query<any>(
+        `SELECT github_data, github_url FROM students WHERE id = ANY($1)`,
+        [studentIdsInScope],
+      ),
+    ]);
+
+    totalPosts = postsRes.rows.length;
+    const monthMap = new Map<string, number>();
+    for (const p of postsRes.rows) {
+      const month = new Date(p.created_at).toISOString().slice(0, 7);
+      monthMap.set(month, (monthMap.get(month) ?? 0) + 1);
+    }
+    postsByMonth = Array.from(monthMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, count]) => {
+        const [year, m] = month.split('-');
+        const date = new Date(Number(year), Number(m) - 1, 1);
+        const label = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        return { month, label, count };
+      });
+
+    for (const s of studentsRes.rows) {
+      if (s.github_data) {
+        githubSyncedCount++;
+        githubTotalRepos += Number(s.github_data.public_repos ?? s.github_data.publicRepos ?? 0);
+        githubTotalStars += Number(s.github_data.stars ?? 0);
+        githubTotalContributions += Number(s.github_data.total_contributions ?? s.github_data.totalContributions ?? s.github_data.contribution_count ?? 0);
+      }
+    }
+  }
+
   res.json({
     scope,
     totalStudentsIncluded: new Set(rows.map(x => x.student_id)).size,
@@ -273,6 +323,14 @@ router.post('/analytics', async (req: AuthRequest, res) => {
           label: 'Not enough data for regression (need ≥2 students with marks)',
         },
     charts: { gradeDistribution, averageByExamType, averageByStudent },
+    externalActivity: {
+      totalPosts,
+      postsByMonth,
+      githubSyncedCount,
+      githubTotalRepos,
+      githubTotalStars,
+      githubTotalContributions,
+    },
     rawExportData: rows.map(x => ({
       StudentName: x.full_name,
       RollNumber: x.roll_number,
@@ -284,6 +342,206 @@ router.post('/analytics', async (req: AuthRequest, res) => {
       Grade: (x.marks_obtained / x.max_marks * 100) >= 85 ? 'A' : (x.marks_obtained / x.max_marks * 100) >= 70 ? 'B' : (x.marks_obtained / x.max_marks * 100) >= 55 ? 'C' : (x.marks_obtained / x.max_marks * 100) >= 40 ? 'D' : 'F',
       PassFail: (x.marks_obtained / x.max_marks * 100) >= 40 ? 'Pass' : 'Fail',
     })),
+  });
+});
+
+// ── Per-Student Analytics (scoped to teacher's class + subject + semester) ───────
+router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
+  const { studentId } = req.params;
+  const { classId, subjectId, semesterId } = req.query as Record<string, string>;
+
+  if (!classId || !subjectId || !semesterId) {
+    return res.status(400).json({ error: 'classId, subjectId, and semesterId are required query parameters.' });
+  }
+
+  // RBAC: verify teacher is assigned to this class + subject + semester
+  if (!await verifyTeacherClassScope(classId, subjectId, semesterId, req.user!.id)) {
+    return res.status(403).json({ error: 'Access Denied: You are not assigned to this class, subject, and semester.' });
+  }
+
+  // Confirm student belongs to this class and fetch department/semester/subject info
+  const student = (await query<any>(
+    `SELECT s.*, u.full_name, u.email,
+            c.name AS "className", c.year AS "classYear", c.section AS "classSection",
+            d.name AS "departmentName",
+            sem.name AS "semesterName",
+            subj.name AS "subjectName", subj.code AS "subjectCode"
+     FROM students s
+     JOIN users u ON u.id = s.user_id
+     LEFT JOIN classes c ON c.id = s.class_id
+     LEFT JOIN departments d ON d.id = s.department_id
+     LEFT JOIN semesters sem ON sem.id = $3
+     LEFT JOIN subjects subj ON subj.id = $4
+     WHERE s.id = $1 AND s.class_id = $2`,
+    [studentId, classId, semesterId, subjectId],
+  )).rows[0];
+
+  if (!student) {
+    return res.status(404).json({ error: 'Student not found or not enrolled in this class.' });
+  }
+
+  // Internal Marks: fetch assessment_definitions for this scope, then matching marks
+  const [assessmentDefs, marksRows, postsRows] = await Promise.all([
+    query<any>(
+      `SELECT id, title, max_marks, assessment_type
+       FROM assessment_definitions
+       WHERE class_id = $1 AND subject_id = $2 AND semester_id = $3 AND status = 'active'
+       ORDER BY created_at ASC`,
+      [classId, subjectId, semesterId],
+    ),
+    query<any>(
+      `SELECT exam_type, marks_obtained, max_marks
+       FROM marks
+       WHERE student_id = $1 AND class_id = $2 AND subject_id = $3 AND semester_id = $4
+       ORDER BY created_at ASC`,
+      [studentId, classId, subjectId, semesterId],
+    ),
+    query<any>(
+      `SELECT id, title, description, category, created_at
+       FROM posts
+       WHERE student_id = $1
+       ORDER BY created_at ASC`,
+      [studentId],
+    ),
+  ]);
+
+  // Build internal marks list: only display assessments that actually exist in PostgreSQL for this student
+  const marksMap = new Map<string, { marks_obtained: number; max_marks: number }>();
+  for (const m of marksRows.rows) {
+    marksMap.set(m.exam_type, { marks_obtained: Number(m.marks_obtained), max_marks: Number(m.max_marks) });
+  }
+
+  let internalMarks: Array<{ title: string; exam_type: string; marks_obtained: number; max_marks: number; assessment_type: string }> = [];
+
+  if (assessmentDefs.rows.length > 0) {
+    for (const def of assessmentDefs.rows) {
+      const recorded = marksMap.get(def.title);
+      if (recorded) {
+        internalMarks.push({
+          title: def.title,
+          exam_type: def.title,
+          marks_obtained: recorded.marks_obtained,
+          max_marks: Number(def.max_marks),
+          assessment_type: def.assessment_type,
+        });
+      }
+    }
+    // Also include any marks not in assessmentDefs
+    for (const m of marksRows.rows) {
+      if (!assessmentDefs.rows.some((d: any) => d.title === m.exam_type)) {
+        internalMarks.push({
+          title: m.exam_type,
+          exam_type: m.exam_type,
+          marks_obtained: Number(m.marks_obtained),
+          max_marks: Number(m.max_marks),
+          assessment_type: 'Other',
+        });
+      }
+    }
+  } else {
+    for (const m of marksRows.rows) {
+      internalMarks.push({
+        title: m.exam_type,
+        exam_type: m.exam_type,
+        marks_obtained: Number(m.marks_obtained),
+        max_marks: Number(m.max_marks),
+        assessment_type: 'Other',
+      });
+    }
+  }
+
+  const totalObtained = internalMarks.reduce((s, m) => s + m.marks_obtained, 0);
+  const totalMax = internalMarks.reduce((s, m) => s + m.max_marks, 0);
+  const averagePct = internalMarks.length > 0
+    ? internalMarks.reduce((acc, m) => acc + (m.max_marks > 0 ? (m.marks_obtained / m.max_marks) * 100 : 0), 0) / internalMarks.length
+    : 0;
+
+  const internalSummary = internalMarks.length > 0
+    ? {
+        totalObtained: Number(totalObtained.toFixed(2)),
+        totalMax: Number(totalMax.toFixed(2)),
+        percentage: Number((totalObtained / totalMax * 100).toFixed(2)),
+        average: Number(averagePct.toFixed(2)),
+        count: internalMarks.length,
+      }
+    : null;
+
+  // GitHub Data
+  const githubData = student.github_data
+    ? {
+        synced: true,
+        syncedAt: student.github_synced_at,
+        username: student.github_data.username || student.github_data.login || null,
+        followers: student.github_data.followers ?? null,
+        publicRepos: student.github_data.public_repos ?? student.github_data.publicRepos ?? null,
+        stars: student.github_data.stars ?? null,
+        forks: student.github_data.forks ?? null,
+        languages: student.github_data.languages ?? [],
+        topRepos: student.github_data.top_repos ?? student.github_data.repos ?? [],
+        totalContributions: student.github_data.total_contributions ?? student.github_data.totalContributions ?? student.github_data.contribution_count ?? null,
+        currentStreak: student.github_data.current_streak ?? student.github_data.currentStreak ?? null,
+        longestStreak: student.github_data.longest_streak ?? student.github_data.longestStreak ?? null,
+        contributionsByMonth: student.github_data.contributions_by_month ?? student.github_data.contributionsByMonth ?? null,
+        github_url: student.github_url,
+      }
+    : (student.github_url ? { synced: false, github_url: student.github_url } : null);
+
+  // HackerRank
+  const hackerrankData = student.hackerrank_url
+    ? { url: student.hackerrank_url, synced: false }
+    : null;
+
+  // Posts grouped by month (YYYY-MM)
+  const monthMap = new Map<string, number>();
+  for (const p of postsRows.rows) {
+    const month = new Date(p.created_at).toISOString().slice(0, 7); // YYYY-MM
+    monthMap.set(month, (monthMap.get(month) ?? 0) + 1);
+  }
+  const postsByMonth = Array.from(monthMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, count]) => {
+      const [year, m] = month.split('-');
+      const date = new Date(Number(year), Number(m) - 1, 1);
+      const label = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      return { month, label, count };
+    });
+
+  res.json({
+    student: {
+      id: student.id,
+      full_name: student.full_name,
+      roll_number: student.roll_number,
+      email: student.email,
+      className: student.className,
+      classYear: student.classYear,
+      classSection: student.classSection,
+      departmentName: student.departmentName,
+      semesterName: student.semesterName,
+      profile_photo_url: student.profile_photo_url,
+      github_url: student.github_url,
+      linkedin_url: student.linkedin_url,
+      hackerrank_url: student.hackerrank_url,
+      profile_strength: student.profile_strength,
+    },
+    context: {
+      classId,
+      subjectId,
+      semesterId,
+      className: student.className,
+      subjectName: student.subjectName,
+      subjectCode: student.subjectCode,
+      semesterName: student.semesterName,
+    },
+    internalMarks,
+    internalSummary,
+    githubData,
+    hackerrankData,
+    hackerrankUrl: student.hackerrank_url,
+    linkedinUrl: student.linkedin_url,
+    linkedinPosts: postsRows.rows,
+    recentPosts: postsRows.rows.slice(-5).reverse(),
+    postsByMonth,
+    totalPosts: postsRows.rows.length,
   });
 });
 

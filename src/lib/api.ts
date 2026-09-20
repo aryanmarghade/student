@@ -1,4 +1,4 @@
-import { User, StudentProfile, AnalyticsResponse, AcademicClass, Subject, Department, TeacherAssignment, NotificationItem, Marksheet } from '../types';
+import { User, StudentProfile, AnalyticsResponse, AcademicClass, Subject, Department, TeacherAssignment, NotificationItem, Marksheet, TeacherStudentAnalytics } from '../types';
 
 const TOKEN_KEY = 'vission_academy_jwt';
 
@@ -245,6 +245,15 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  getStudentAnalyticsForTeacher: (studentId: string, params: { classId: string; subjectId: string; semesterId?: string }) => {
+    const q = new URLSearchParams({
+      classId: params.classId,
+      subjectId: params.subjectId,
+      ...(params.semesterId ? { semesterId: params.semesterId } : {}),
+    }).toString();
+    return request<TeacherStudentAnalytics>(`/api/teacher/students/${studentId}/analytics?${q}`);
+  },
 
   // Student
   getStudentProfile: () => request<StudentProfile>('/api/student/profile'),

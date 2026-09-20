@@ -170,6 +170,14 @@ export interface AnalyticsResponse {
     averageByExamType: Array<{ examType: string; average: number; count: number }>;
     averageByStudent: Array<{ studentId: string; rollNumber: string; name: string; average: number }>;
   };
+  externalActivity?: {
+    totalPosts: number;
+    postsByMonth: Array<{ month: string; label?: string; count: number }>;
+    githubSyncedCount: number;
+    githubTotalRepos: number;
+    githubTotalStars: number;
+    githubTotalContributions: number;
+  };
   rawExportData: Array<Record<string, any>>;
 }
 
@@ -282,3 +290,72 @@ export interface PostItem {
   created_at: string;
 }
 
+export interface TeacherStudentAnalyticsMarkItem {
+  title: string;
+  exam_type?: string;
+  marks_obtained: number;
+  max_marks: number;
+  assessment_type: string;
+}
+
+export interface TeacherStudentAnalyticsGithub {
+  synced: boolean;
+  syncedAt?: string;
+  username?: string | null;
+  followers?: number | null;
+  publicRepos?: number | null;
+  stars?: number | null;
+  forks?: number | null;
+  languages?: string[];
+  topRepos?: any[];
+  totalContributions?: number | null;
+  currentStreak?: number | null;
+  longestStreak?: number | null;
+  contributionsByMonth?: Array<{ month: string; count: number }> | null;
+  github_url?: string;
+  raw?: any;
+}
+
+export interface TeacherStudentAnalytics {
+  student: {
+    id: string;
+    full_name: string;
+    roll_number: string;
+    email: string;
+    className?: string;
+    classYear?: number;
+    classSection?: string;
+    departmentName?: string;
+    semesterName?: string;
+    profile_photo_url?: string;
+    github_url?: string;
+    linkedin_url?: string;
+    hackerrank_url?: string;
+    profile_strength?: number;
+  };
+  context?: {
+    classId: string;
+    subjectId: string;
+    semesterId: string;
+    className?: string;
+    subjectName?: string;
+    subjectCode?: string;
+    semesterName?: string;
+  };
+  internalMarks: TeacherStudentAnalyticsMarkItem[];
+  internalSummary: {
+    totalObtained: number;
+    totalMax: number;
+    percentage: number;
+    average?: number;
+    count: number;
+  } | null;
+  githubData: TeacherStudentAnalyticsGithub | null;
+  hackerrankData: { url: string; synced: boolean } | null;
+  hackerrankUrl?: string;
+  linkedinUrl?: string;
+  linkedinPosts: Array<{ id?: string; title: string; description?: string; category?: string; created_at: string }>;
+  recentPosts?: Array<{ id?: string; title: string; description?: string; category?: string; created_at: string }>;
+  postsByMonth: Array<{ month: string; label?: string; count: number }>;
+  totalPosts: number;
+}

@@ -29,7 +29,12 @@ import {
   Upload,
   FolderGit2,
   Award,
-  Trophy
+  Trophy,
+  BarChart2,
+  Github,
+  Code,
+  Linkedin,
+  User
 } from 'lucide-react';
 import { Bar, Line, Doughnut } from 'react-chartjs-2';
 import '../lib/chart-setup';
@@ -48,6 +53,30 @@ export const TeacherView: React.FC = () => {
   const [selectedStudentProfile, setSelectedStudentProfile] = useState<any | null>(null);
   const [isLoadingStudentProfile, setIsLoadingStudentProfile] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // Per-Student Analytics Dossier Modal State
+  const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
+  const [studentAnalyticsData, setStudentAnalyticsData] = useState<any | null>(null);
+  const [isAnalyticsModalLoading, setIsAnalyticsModalLoading] = useState(false);
+
+  const handleOpenStudentAnalytics = async (studentId: string) => {
+    if (!selectedAssignment) return;
+    setShowAnalyticsModal(true);
+    setIsAnalyticsModalLoading(true);
+    setStudentAnalyticsData(null);
+    try {
+      const data = await api.getStudentAnalyticsForTeacher(studentId, {
+        classId: selectedAssignment.class_id,
+        subjectId: selectedAssignment.subject_id,
+        semesterId: selectedAssignment.semester_id,
+      });
+      setStudentAnalyticsData(data);
+    } catch (err: any) {
+      setFeedbackError(err.message || 'Failed to load student analytics dossier');
+    } finally {
+      setIsAnalyticsModalLoading(false);
+    }
+  };
   const [profileSection, setProfileSection] = useState<'overview' | 'posts' | 'achievements' | 'projects' | 'certifications' | 'documents' | 'skills'>('overview');
 
   // Batch CSV Marks Import State
@@ -484,7 +513,7 @@ export const TeacherView: React.FC = () => {
 
   const handleVerifyPortfolioItem = async (studentId: string, type: 'projects' | 'achievements' | 'certifications' | 'hackathons', itemId: string) => {
     try {
-      const res = await api.verifyStudentPortfolioItem(studentId, type, itemId);
+      const res = await api.verifyStudentPortfolioItem(studentId, type, itemId, 'Verified');
       setFeedbackSuccess(res.message || 'Item verified successfully');
       const prof = await api.getStudentFullProfileForTeacher(studentId);
       setSelectedStudentProfile(prof);
@@ -876,6 +905,13 @@ export const TeacherView: React.FC = () => {
                                 <FileText className="w-3 h-3 text-slate-500" /> Portfolio
                               </button>
                               <button
+                                onClick={() => handleOpenStudentAnalytics(s.id)}
+                                className="px-2 py-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-300 cursor-pointer flex items-center gap-1"
+                                title="View Per-Student Analytics Dossier"
+                              >
+                                <BarChart2 className="w-3 h-3 text-emerald-600" /> Analytics
+                              </button>
+                              <button
                                 onClick={() => {
                                   setSingleStudentTarget(s.id);
                                   setActiveSubTab('analytics');
@@ -1235,10 +1271,12 @@ export const TeacherView: React.FC = () => {
                 </div>
               </div>
 
-              {/* 3. Bar Chart: Average by Exam Type */}
+              {/* 3. Bar Chart: Average by Exam Type / Internal Marks */}
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
-                <h3 className="text-sm font-bold text-slate-900 mb-1">Average Performance by Assessment Format</h3>
-                <p className="text-xs text-slate-500 mb-4">Comparison between tests, practicals, assignments, and exams</p>
+                <h3 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
+                  <BarChart2 className="w-4 h-4 text-[#0f2744]" /> Internal Marks Performance by Assessment Format
+                </h3>
+                <p className="text-xs text-slate-500 mb-4">Comparison between internal tests, midterm, assignments, and exams</p>
                 {barExamData ? (
                   <div className="h-64">
                     <Bar
@@ -1246,11 +1284,122 @@ export const TeacherView: React.FC = () => {
                       options={{
                         responsive: true,
                         maintainAspectRatio: false,
-                        scales: { y: { min: 0, max: 100 } }
+                        scales: { y: { min: 0, max: 100, title: { display: true, text: 'Average Score (%)' } } }
                       }}
                     />
                   </div>
                 ) : null}
+              </div>
+
+              {/* 4. External Student Activity: GitHub Contributions & LinkedIn Posts */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* 4A. LinkedIn / Student Posts Activity */}
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        <Linkedin className="w-4 h-4 text-blue-600" /> LinkedIn & Student Posts Activity
+                      </h3>
+                      <p className="text-xs text-slate-500">Student publications and active participation</p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded bg-blue-50 text-blue-800 font-mono text-xs font-bold border border-blue-200">
+                      Total Posts: {analyticsData?.externalActivity?.totalPosts ?? 0}
+                    </span>
+                  </div>
+
+                  {analyticsData?.externalActivity?.postsByMonth && analyticsData.externalActivity.postsByMonth.length > 0 ? (
+                    <div className="h-56 w-full">
+                      <Bar
+                        data={{
+                          labels: analyticsData.externalActivity.postsByMonth.map(p => p.label || p.month),
+                          datasets: [
+                            {
+                              label: 'Number of Posts Published',
+                              data: analyticsData.externalActivity.postsByMonth.map(p => p.count),
+                              backgroundColor: '#2563eb',
+                              borderRadius: 4,
+                            },
+                          ],
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          scales: {
+                            y: { beginAtZero: true, ticks: { stepSize: 1 }, title: { display: true, text: 'Posts Count' } },
+                            x: { title: { display: true, text: 'Month' } },
+                          },
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                      <Linkedin className="w-6 h-6 text-slate-300 mx-auto mb-1" />
+                      <p className="text-xs">No student posts published yet in this cohort.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4B. GitHub Contributions & Repositories */}
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        <Github className="w-4 h-4 text-slate-900" /> GitHub Contributions & Repositories
+                      </h3>
+                      <p className="text-xs text-slate-500">Synced open source repositories & stars</p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-800 font-mono text-xs font-bold border border-slate-200">
+                      Synced: {analyticsData?.externalActivity?.githubSyncedCount ?? 0} / {analyticsData?.totalStudentsIncluded ?? 0}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="p-2 bg-slate-50 rounded border border-slate-200">
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase">Total Repos</p>
+                      <p className="font-bold text-slate-900 font-mono text-sm">{analyticsData?.externalActivity?.githubTotalRepos ?? 0}</p>
+                    </div>
+                    <div className="p-2 bg-slate-50 rounded border border-slate-200">
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase">Total Stars</p>
+                      <p className="font-bold text-amber-700 font-mono text-sm">★ {analyticsData?.externalActivity?.githubTotalStars ?? 0}</p>
+                    </div>
+                    <div className="p-2 bg-slate-50 rounded border border-slate-200">
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase">Contributions</p>
+                      <p className="font-bold text-emerald-800 font-mono text-sm">{analyticsData?.externalActivity?.githubTotalContributions ?? 0}</p>
+                    </div>
+                  </div>
+
+                  {(analyticsData?.externalActivity?.githubTotalRepos ?? 0) > 0 ? (
+                    <div className="h-44 w-full">
+                      <Bar
+                        data={{
+                          labels: ['Public Repositories', 'Total Stars', 'Synced Profiles'],
+                          datasets: [
+                            {
+                              label: 'GitHub Aggregates',
+                              data: [
+                                analyticsData?.externalActivity?.githubTotalRepos ?? 0,
+                                analyticsData?.externalActivity?.githubTotalStars ?? 0,
+                                analyticsData?.externalActivity?.githubSyncedCount ?? 0,
+                              ],
+                              backgroundColor: ['#0f2744', '#d97706', '#059669'],
+                              borderRadius: 4,
+                            },
+                          ],
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                      <Github className="w-6 h-6 text-slate-300 mx-auto mb-1" />
+                      <p className="text-xs">GitHub profiles not synced or no public repositories.</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1898,6 +2047,468 @@ export const TeacherView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* MODAL: PER-STUDENT ANALYTICS DOSSIER */}
+      {showAnalyticsModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-5xl max-h-[92vh] bg-white rounded-xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="p-4 bg-[#0f2744] text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-slate-700 overflow-hidden flex items-center justify-center font-bold text-sm shrink-0 border-2 border-slate-400 shadow-xs">
+                  {studentAnalyticsData?.student?.profile_photo_url ? (
+                    <img src={studentAnalyticsData.student.profile_photo_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    getAvatarInitials(studentAnalyticsData?.student?.full_name)
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-base text-white">
+                      {studentAnalyticsData?.student?.full_name || 'Student Analytics Dossier'}
+                    </h3>
+                    {studentAnalyticsData?.student?.roll_number && (
+                      <span className="text-xs px-2.5 py-0.5 rounded bg-slate-800 text-amber-300 font-mono font-bold">
+                        Roll: {studentAnalyticsData.student.roll_number}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-300 flex items-center gap-2 flex-wrap mt-0.5">
+                    <span>{studentAnalyticsData?.student?.departmentName || 'Branch N/A'}</span>
+                    <span>•</span>
+                    <span>Year {studentAnalyticsData?.student?.classYear || 1} ({studentAnalyticsData?.student?.semesterName || 'Sem N/A'})</span>
+                    <span>•</span>
+                    <span>Class: <strong>{studentAnalyticsData?.context?.className || studentAnalyticsData?.student?.className || selectedAssignment?.className}</strong></span>
+                    <span>•</span>
+                    <span className="text-amber-300">
+                      Subject Context: <strong>{studentAnalyticsData?.context?.subjectName || selectedAssignment?.subjectName} ({studentAnalyticsData?.context?.subjectCode || selectedAssignment?.subjectCode})</strong>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAnalyticsModal(false)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 cursor-pointer transition-colors"
+                title="Close Analytics Modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-6 bg-slate-50">
+              {isAnalyticsModalLoading ? (
+                <div className="p-16 text-center text-slate-500 flex flex-col items-center justify-center space-y-3">
+                  <div className="w-10 h-10 border-4 border-[#0f2744] border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-xs font-semibold">Loading Student Analytics Dossier from PostgreSQL...</p>
+                </div>
+              ) : studentAnalyticsData ? (
+                <>
+                  {/* SECTION 0: STUDENT OVERVIEW SUMMARY CARDS */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {/* Card 1: Internal % */}
+                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Internal Marks</p>
+                      <p className="text-xl font-bold font-mono text-[#0f2744] mt-1">
+                        {studentAnalyticsData.internalSummary ? `${studentAnalyticsData.internalSummary.percentage}%` : 'No records'}
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5 truncate">
+                        {studentAnalyticsData.internalSummary
+                          ? `${studentAnalyticsData.internalSummary.totalObtained} / ${studentAnalyticsData.internalSummary.totalMax} pts`
+                          : 'No assessments'}
+                      </p>
+                    </div>
+
+                    {/* Card 2: GitHub Contributions */}
+                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">GitHub</p>
+                      <p className="text-xl font-bold font-mono text-slate-900 mt-1">
+                        {studentAnalyticsData.githubData?.synced
+                          ? (studentAnalyticsData.githubData.totalContributions ?? studentAnalyticsData.githubData.publicRepos ?? 'Synced')
+                          : 'Not synced'}
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5 truncate">
+                        {studentAnalyticsData.githubData?.synced
+                          ? `${studentAnalyticsData.githubData.publicRepos ?? 0} Repositories`
+                          : (studentAnalyticsData.github_url || studentAnalyticsData.student?.github_url ? 'Profile linked' : 'No profile linked')}
+                      </p>
+                    </div>
+
+                    {/* Card 3: HackerRank Questions */}
+                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">HackerRank</p>
+                      <p className="text-xl font-bold font-mono text-emerald-800 mt-1">
+                        {studentAnalyticsData.hackerrankData?.synced ? 'Synced' : 'Not synced'}
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5 truncate">
+                        {studentAnalyticsData.hackerrankUrl || studentAnalyticsData.student?.hackerrank_url ? 'Profile linked' : 'No profile linked'}
+                      </p>
+                    </div>
+
+                    {/* Card 4: Professional Posts */}
+                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Professional Posts</p>
+                      <p className="text-xl font-bold font-mono text-blue-800 mt-1">
+                        {studentAnalyticsData.totalPosts ?? 0}
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5 truncate">LinkedIn / Activity</p>
+                    </div>
+                  </div>
+
+                  {/* SECTION 1: INTERNAL MARKS */}
+                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-2">
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                          <BarChart2 className="w-4 h-4 text-[#0f2744]" /> 1. Internal Assessment Marks
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          Marks recorded for subject: <strong className="text-slate-800">{studentAnalyticsData.context?.subjectName || selectedAssignment?.subjectName}</strong>
+                        </p>
+                      </div>
+
+                      {studentAnalyticsData.internalSummary && (
+                        <div className="flex items-center gap-2 bg-sky-50 border border-sky-200 px-3 py-1 rounded-lg text-xs font-mono">
+                          <span className="text-sky-900 font-bold">Total: {studentAnalyticsData.internalSummary.totalObtained} / {studentAnalyticsData.internalSummary.totalMax}</span>
+                          <span className="text-sky-700">• {studentAnalyticsData.internalSummary.percentage}%</span>
+                          {studentAnalyticsData.internalSummary.average !== undefined && (
+                            <span className="text-sky-800">• Avg: {studentAnalyticsData.internalSummary.average}%</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {studentAnalyticsData.internalMarks && studentAnalyticsData.internalMarks.length > 0 ? (
+                      <div className="space-y-4">
+                        {/* Dedicated Internal Marks Bar Chart */}
+                        <div className="h-64 w-full">
+                          <Bar
+                            data={{
+                              labels: studentAnalyticsData.internalMarks.map((m: any) => m.title || m.exam_type),
+                              datasets: [
+                                {
+                                  label: 'Marks Obtained',
+                                  data: studentAnalyticsData.internalMarks.map((m: any) => m.marks_obtained),
+                                  backgroundColor: '#0f2744',
+                                  borderRadius: 4,
+                                },
+                                {
+                                  label: 'Maximum Marks',
+                                  data: studentAnalyticsData.internalMarks.map((m: any) => m.max_marks),
+                                  backgroundColor: '#cbd5e1',
+                                  borderRadius: 4,
+                                },
+                              ],
+                            }}
+                            options={{
+                              responsive: true,
+                              maintainAspectRatio: false,
+                              scales: {
+                                y: { beginAtZero: true, title: { display: true, text: 'Marks' } },
+                                x: { title: { display: true, text: 'Assessment Name' } },
+                              },
+                              plugins: {
+                                legend: { position: 'top' },
+                              },
+                            }}
+                          />
+                        </div>
+
+                        {/* Breakdown Table */}
+                        <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                          <table className="w-full text-xs text-left">
+                            <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                              <tr>
+                                <th className="px-3 py-2">Assessment Name</th>
+                                <th className="px-3 py-2 text-center">Type</th>
+                                <th className="px-3 py-2 text-center">Marks Obtained</th>
+                                <th className="px-3 py-2 text-center">Max Marks</th>
+                                <th className="px-3 py-2 text-center">Percentage</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                              {studentAnalyticsData.internalMarks.map((m: any, idx: number) => {
+                                const pct = m.max_marks > 0 ? ((m.marks_obtained / m.max_marks) * 100).toFixed(1) : '0';
+                                return (
+                                  <tr key={idx} className="hover:bg-slate-50">
+                                    <td className="px-3 py-2 font-medium text-slate-900">{m.title || m.exam_type}</td>
+                                    <td className="px-3 py-2 text-center text-slate-500">{m.assessment_type || 'Internal'}</td>
+                                    <td className="px-3 py-2 text-center font-mono font-bold text-slate-800">{m.marks_obtained}</td>
+                                    <td className="px-3 py-2 text-center font-mono text-slate-500">{m.max_marks}</td>
+                                    <td className="px-3 py-2 text-center font-mono font-bold text-[#0f2744]">{pct}%</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-300">
+                        <AlertCircle className="w-6 h-6 text-slate-400 mx-auto mb-2" />
+                        <p className="text-xs font-semibold text-slate-700">No assessments recorded</p>
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          No internal assessment marks have been entered into PostgreSQL for this student in {studentAnalyticsData.context?.subjectName || selectedAssignment?.subjectName}.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SECTION 2: GITHUB CONTRIBUTIONS */}
+                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                          <Github className="w-4 h-4 text-slate-900" /> 2. GitHub Contributions & Repositories
+                        </h4>
+                        <p className="text-[11px] text-slate-500">Student development and open source activity</p>
+                      </div>
+                      {(studentAnalyticsData.githubData?.github_url || studentAnalyticsData.student?.github_url) && (
+                        <a
+                          href={studentAnalyticsData.githubData?.github_url || studentAnalyticsData.student?.github_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 hover:underline flex items-center gap-1 font-semibold"
+                        >
+                          View GitHub Profile <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+
+                    {studentAnalyticsData.githubData?.synced ? (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                            <p className="text-[10px] text-slate-500 uppercase font-semibold">Username</p>
+                            <p className="text-sm font-bold text-slate-900 font-mono truncate">{studentAnalyticsData.githubData.username || 'N/A'}</p>
+                          </div>
+                          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                            <p className="text-[10px] text-slate-500 uppercase font-semibold">Public Repos</p>
+                            <p className="text-lg font-bold text-slate-900 font-mono">{studentAnalyticsData.githubData.publicRepos ?? 'N/A'}</p>
+                          </div>
+                          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                            <p className="text-[10px] text-slate-500 uppercase font-semibold">Total Stars</p>
+                            <p className="text-lg font-bold text-slate-900 font-mono">{studentAnalyticsData.githubData.stars ?? 'N/A'}</p>
+                          </div>
+                          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                            <p className="text-[10px] text-slate-500 uppercase font-semibold">Contributions</p>
+                            <p className="text-lg font-bold text-slate-900 font-mono">{studentAnalyticsData.githubData.totalContributions ?? 'N/A'}</p>
+                          </div>
+                        </div>
+
+                        {/* GitHub Visualization: Top Repositories or Monthly Contributions */}
+                        {studentAnalyticsData.githubData.topRepos && studentAnalyticsData.githubData.topRepos.length > 0 && (
+                          <div>
+                            <h5 className="text-xs font-semibold text-slate-700 mb-2">Public Repositories Star Count</h5>
+                            <div className="h-44 w-full mb-3">
+                              <Bar
+                                data={{
+                                  labels: studentAnalyticsData.githubData.topRepos.slice(0, 6).map((r: any) => r.name),
+                                  datasets: [
+                                    {
+                                      label: 'Stars',
+                                      data: studentAnalyticsData.githubData.topRepos.slice(0, 6).map((r: any) => r.stars ?? r.stargazers_count ?? 0),
+                                      backgroundColor: '#2563eb',
+                                      borderRadius: 4,
+                                    },
+                                  ],
+                                }}
+                                options={{
+                                  responsive: true,
+                                  maintainAspectRatio: false,
+                                  scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+                                }}
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {studentAnalyticsData.githubData.topRepos.slice(0, 6).map((repo: any, idx: number) => (
+                                <div key={idx} className="p-2.5 bg-slate-50 rounded border border-slate-200 text-xs">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-slate-900 truncate">{repo.name}</span>
+                                    {(repo.stars > 0 || repo.stargazers_count > 0) && (
+                                      <span className="text-[10px] font-mono text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded font-bold">
+                                        ★ {repo.stars ?? repo.stargazers_count}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {repo.description && <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">{repo.description}</p>}
+                                  {repo.language && <span className="text-[10px] text-slate-400 mt-1 block">{repo.language}</span>}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-300 space-y-2">
+                        <Github className="w-6 h-6 text-slate-400 mx-auto" />
+                        <p className="text-xs font-semibold text-slate-700">GitHub data not synced</p>
+                        <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+                          {studentAnalyticsData.student?.github_url
+                            ? 'GitHub profile URL exists on student profile, but contribution data has not been synchronized yet.'
+                            : 'This student has not provided a GitHub URL in their profile.'}
+                        </p>
+                        {(studentAnalyticsData.student?.github_url || studentAnalyticsData.github_url) && (
+                          <a
+                            href={studentAnalyticsData.student?.github_url || studentAnalyticsData.github_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline pt-1"
+                          >
+                            Open Profile Link <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SECTION 3: HACKERRANK */}
+                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                          <Code className="w-4 h-4 text-emerald-600" /> 3. HackerRank & Coding Platform
+                        </h4>
+                        <p className="text-[11px] text-slate-500">Problem solving statistics and coding practice</p>
+                      </div>
+                    </div>
+
+                    {studentAnalyticsData.hackerrankData?.synced ? (
+                      <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200 space-y-3">
+                        <p className="text-xs font-bold text-emerald-950">HackerRank Synced Statistics Available</p>
+                      </div>
+                    ) : studentAnalyticsData.hackerrankUrl || studentAnalyticsData.student?.hackerrank_url ? (
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-start gap-3">
+                            <Code className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="text-xs font-bold text-slate-900">HackerRank Profile Linked</p>
+                              <p className="text-[11px] font-mono text-slate-600 truncate max-w-md">
+                                {studentAnalyticsData.hackerrankUrl || studentAnalyticsData.student?.hackerrank_url}
+                              </p>
+                              <p className="text-[11px] text-amber-700 font-medium mt-1">
+                                HackerRank statistics not synced
+                              </p>
+                            </div>
+                          </div>
+                          <a
+                            href={studentAnalyticsData.hackerrankUrl || studentAnalyticsData.student?.hackerrank_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] text-xs font-semibold rounded-lg flex items-center gap-1 shadow-2xs shrink-0"
+                          >
+                            Open HackerRank Profile <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-300">
+                        <Code className="w-6 h-6 text-slate-400 mx-auto mb-2" />
+                        <p className="text-xs font-semibold text-slate-700">HackerRank statistics not available</p>
+                        <p className="text-[11px] text-slate-400 mt-1">This student has not linked a HackerRank profile.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SECTION 4: LINKEDIN / PROFESSIONAL ACTIVITY */}
+                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                          <Linkedin className="w-4 h-4 text-blue-600" /> 4. LinkedIn & Student Posts Activity
+                        </h4>
+                        <p className="text-[11px] text-slate-500">Active participation, academic achievements, and articles</p>
+                      </div>
+                      {(studentAnalyticsData.linkedinUrl || studentAnalyticsData.student?.linkedin_url) && (
+                        <a
+                          href={studentAnalyticsData.linkedinUrl || studentAnalyticsData.student?.linkedin_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 hover:underline flex items-center gap-1 font-semibold"
+                        >
+                          LinkedIn Profile <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+
+                    {/* Dedicated Posts Activity Chart (Monthly) */}
+                    {studentAnalyticsData.postsByMonth && studentAnalyticsData.postsByMonth.length > 0 ? (
+                      <div className="space-y-4">
+                        <div>
+                          <h5 className="text-xs font-semibold text-slate-700 mb-2">Student Activity / Posts Over Time</h5>
+                          <div className="h-48 w-full">
+                            <Bar
+                              data={{
+                                labels: studentAnalyticsData.postsByMonth.map((p: any) => p.label || p.month),
+                                datasets: [
+                                  {
+                                    label: 'Posts Published',
+                                    data: studentAnalyticsData.postsByMonth.map((p: any) => p.count),
+                                    backgroundColor: '#2563eb',
+                                    borderRadius: 4,
+                                  },
+                                ],
+                              }}
+                              options={{
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                  y: { beginAtZero: true, ticks: { stepSize: 1 }, title: { display: true, text: 'Posts Count' } },
+                                  x: { title: { display: true, text: 'Month' } },
+                                },
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Recent Posts List */}
+                        {studentAnalyticsData.recentPosts && studentAnalyticsData.recentPosts.length > 0 && (
+                          <div>
+                            <h5 className="text-xs font-semibold text-slate-700 mb-2">Recent Student Posts</h5>
+                            <div className="space-y-2">
+                              {studentAnalyticsData.recentPosts.slice(0, 4).map((post: any, idx: number) => (
+                                <div key={idx} className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-xs text-slate-900">{post.title}</span>
+                                    <span className="text-[10px] text-slate-400">{new Date(post.created_at).toLocaleDateString()}</span>
+                                  </div>
+                                  <p className="text-xs text-slate-600 line-clamp-2">{post.description}</p>
+                                  {post.category && (
+                                    <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 uppercase">
+                                      {post.category}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-300">
+                        <Linkedin className="w-6 h-6 text-slate-400 mx-auto mb-2" />
+                        <p className="text-xs font-semibold text-slate-700">No activity yet</p>
+                        <p className="text-[11px] text-slate-400 mt-1">This student has not published any professional or academic posts yet.</p>
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 bg-slate-100 border-t border-slate-200 flex justify-end shrink-0">
+              <button
+                onClick={() => setShowAnalyticsModal(false)}
+                className="px-4 py-1.5 bg-[#0f2744] text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs"
+              >
+                Close Dossier
+              </button>
+            </div>
           </div>
         </div>
       )}

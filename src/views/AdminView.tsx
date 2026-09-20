@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { Bar, Doughnut } from 'react-chartjs-2';
 import '../lib/chart-setup';
+import { PostCard } from '../components/PostCard';
 
 export const AdminView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'classes' | 'users' | 'assignments' | 'marksheets' | 'notices' | 'events' | 'audit'>('overview');
@@ -65,6 +66,10 @@ export const AdminView: React.FC = () => {
   const [showUploadMarksheetModal, setShowUploadMarksheetModal] = useState(false);
   const [showStartSemesterModal, setShowStartSemesterModal] = useState(false);
   const [showZipUploadModal, setShowZipUploadModal] = useState(false);
+  const [resetUser, setResetUser] = useState<User | null>(null);
+  const [resetPasswordInput, setResetPasswordInput] = useState('');
+  const [resetConfirmInput, setResetConfirmInput] = useState('');
+  const [isResettingUser, setIsResettingUser] = useState(false);
 
   // Form states
   const [newClassData, setNewClassData] = useState({ name: '', department_id: '', year: 3, section: 'A' });
@@ -72,7 +77,7 @@ export const AdminView: React.FC = () => {
   const [newUserData, setNewUserData] = useState({ email: '', full_name: '', role: 'student', password: 'password123', roll_number: '', class_id: '', department_id: '' });
   const [newAssignData, setNewAssignData] = useState({ teacher_user_id: '', class_id: '', subject_id: '', semester_id: '' });
   const [marksheetData, setMarksheetData] = useState({ student_id: '', semester_id: 'sem_4', sgpa: 8.5, cgpa: 8.5 });
-    const [marksheetFile, setMarksheetFile] = useState<File | null>(null);
+  const [marksheetFile, setMarksheetFile] = useState<File | null>(null);
   const [noticeData, setNoticeData] = useState({ title: '', body: '', target_role: 'all', target_class_id: '' });
   const [newSemesterName, setNewSemesterName] = useState('Semester 5 - Autumn 2026');
   const [newSemesterNumber, setNewSemesterNumber] = useState(5);
@@ -107,6 +112,78 @@ export const AdminView: React.FC = () => {
   // Feedback banner
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Student Full Profile Modal State (Admin View)
+  const [selectedStudentProfile, setSelectedStudentProfile] = useState<any | null>(null);
+  const [isLoadingStudentProfile, setIsLoadingStudentProfile] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileSection, setProfileSection] = useState<'overview' | 'posts' | 'achievements' | 'projects' | 'certifications' | 'documents' | 'skills'>('overview');
+
+  const normalizeArray = (value: any) => Array.isArray(value) ? value : [];
+
+  const getAvatarInitials = (name?: string) => {
+    const parts = (name || 'ST').split(' ').filter(Boolean);
+    return parts.slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'ST';
+  };
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return 'N/A';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const getProfileLinks = (profile: any) => {
+    const links = [
+      { label: 'GitHub', url: profile?.github_url || profile?.profile_links?.github },
+      { label: 'LinkedIn', url: profile?.linkedin_url || profile?.profile_links?.linkedin },
+      { label: 'HackerRank', url: profile?.hackerrank_url || profile?.profile_links?.hackerrank },
+      { label: 'Portfolio', url: profile?.portfolio_url || profile?.profile_links?.portfolio },
+      { label: 'Resume', url: profile?.resume_url || profile?.profile_links?.resume },
+    ];
+    return links.filter((link) => link.url && String(link.url).trim());
+  };
+
+  const getStudentSkills = (profile: any) => {
+    const collected = new Set<string>();
+    normalizeArray(profile?.skills).forEach((skill: any) => {
+      const name = typeof skill === 'string' ? skill : (skill.skill_name || skill.name || '');
+      if (name) collected.add(name);
+    });
+    normalizeArray(profile?.projects).forEach((project: any) => {
+      normalizeArray(project.technologies).forEach((tag: any) => {
+        const name = typeof tag === 'string' ? tag : (tag.skill_name || tag.name || '');
+        if (name) collected.add(name);
+      });
+    });
+    return Array.from(collected);
+  };
+
+  const handleViewStudentProfile = async (studentId: string) => {
+    setIsLoadingStudentProfile(true);
+    setShowProfileModal(true);
+    setSelectedStudentProfile(null);
+    try {
+      const res = await api.getStudentFullProfileForTeacher(studentId);
+      setSelectedStudentProfile(res);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to fetch student profile', true);
+      setShowProfileModal(false);
+    } finally {
+      setIsLoadingStudentProfile(false);
+    }
+  };
+
+  const handleVerifyPortfolioItem = async (studentId: string, type: 'projects' | 'achievements' | 'certifications' | 'hackathons', itemId: string) => {
+    try {
+      const res = await api.verifyStudentPortfolioItem(studentId, type, itemId, 'Verified');
+      showToast(res.message || 'Item verified successfully');
+      const prof = await api.getStudentFullProfileForTeacher(studentId);
+      setSelectedStudentProfile(prof);
+    } catch (err: any) {
+      showToast(err.message || `Failed to verify ${type}`, true);
+    }
+  };
 
   useEffect(() => {
     loadAllAdminData();
@@ -356,18 +433,36 @@ export const AdminView: React.FC = () => {
   };
 
   // Reset password
-  const handleResetPassword = async (userId: string) => {
-    const newPassword = window.prompt('Enter new password for this user (minimum 8 characters):');
-    if (newPassword === null) return; // User cancelled
-    if (newPassword.length < 8) {
+  const handleResetPassword = (user: User) => {
+    setResetUser(user);
+    setResetPasswordInput('');
+    setResetConfirmInput('');
+  };
+
+  const confirmResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetUser) return;
+    if (!resetPasswordInput) {
+      showToast('Password is required.', true);
+      return;
+    }
+    if (resetPasswordInput.length < 8) {
       showToast('Password must be at least 8 characters.', true);
       return;
     }
+    if (resetPasswordInput !== resetConfirmInput) {
+      showToast('Passwords do not match.', true);
+      return;
+    }
+    setIsResettingUser(true);
     try {
-      const res = await api.resetUserPassword(userId, newPassword);
+      const res = await api.resetUserPassword(resetUser.id, resetPasswordInput);
       showToast(res.message);
+      setResetUser(null);
     } catch (err: any) {
       showToast(err.message, true);
+    } finally {
+      setIsResettingUser(false);
     }
   };
 
@@ -397,33 +492,33 @@ export const AdminView: React.FC = () => {
 
   // Upload Marksheet
   const handleUploadMarksheet = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!marksheetFile) {
-         showToast('Please select a PDF marksheet file.', true);
-         return;
-      }
-      const fileHeader = new Uint8Array(await marksheetFile.slice(0, 5).arrayBuffer());
-      const isPdf = marksheetFile.type === 'application/pdf'
-        && new TextDecoder().decode(fileHeader) === '%PDF-';
-      if (!isPdf) {
-        showToast('Only valid PDF files are accepted.', true);
-        return;
-      }
-      try {
-        const formData = new FormData();
-        formData.append('file', marksheetFile);
-        formData.append('student_id', marksheetData.student_id);
-        formData.append('semester_id', marksheetData.semester_id);
-        formData.append('sgpa', marksheetData.sgpa.toString());
-        formData.append('cgpa', marksheetData.cgpa.toString());
+    e.preventDefault();
+    if (!marksheetFile) {
+      showToast('Please select a PDF marksheet file.', true);
+      return;
+    }
+    const fileHeader = new Uint8Array(await marksheetFile.slice(0, 5).arrayBuffer());
+    const isPdf = marksheetFile.type === 'application/pdf'
+      && new TextDecoder().decode(fileHeader) === '%PDF-';
+    if (!isPdf) {
+      showToast('Only valid PDF files are accepted.', true);
+      return;
+    }
+    try {
+      const formData = new FormData();
+      formData.append('file', marksheetFile);
+      formData.append('student_id', marksheetData.student_id);
+      formData.append('semester_id', marksheetData.semester_id);
+      formData.append('sgpa', marksheetData.sgpa.toString());
+      formData.append('cgpa', marksheetData.cgpa.toString());
 
-        await api.uploadMarksheetFile(formData);
-        showToast('Official student marksheet recorded successfully.');
-        setShowUploadMarksheetModal(false);
-      } catch (err: any) {
-        showToast(err.message, true);
-      }
-    };
+      await api.uploadMarksheetFile(formData);
+      showToast('Official student marksheet recorded successfully.');
+      setShowUploadMarksheetModal(false);
+    } catch (err: any) {
+      showToast(err.message, true);
+    }
+  };
 
   // Broadcast Notice
   const handleBroadcastNotice = async (e: React.FormEvent) => {
@@ -565,11 +660,10 @@ export const AdminView: React.FC = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer ${
-                  isActive
+                className={`px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer ${isActive
                     ? 'bg-[#0f2744] text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
+                  }`}
               >
                 <Icon className={`w-4 h-4 ${isActive ? 'text-amber-400' : 'text-slate-400'}`} />
                 <span>{tab.label}</span>
@@ -894,11 +988,10 @@ export const AdminView: React.FC = () => {
                         <p className="text-[11px] text-slate-500">{u.email}</p>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                          u.role === 'admin' ? 'bg-amber-100 text-amber-900 border border-amber-300' :
-                          u.role === 'teacher' ? 'bg-sky-100 text-sky-900 border border-sky-300' :
-                          'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                        }`}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${u.role === 'admin' ? 'bg-amber-100 text-amber-900 border border-amber-300' :
+                            u.role === 'teacher' ? 'bg-sky-100 text-sky-900 border border-sky-300' :
+                              'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                          }`}>
                           {u.role}
                         </span>
                       </td>
@@ -910,25 +1003,31 @@ export const AdminView: React.FC = () => {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                          u.is_active !== false ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
-                        }`}>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${u.is_active !== false ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                          }`}>
                           {u.is_active !== false ? 'Active' : 'Deactivated'}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right space-x-2">
+                        {u.role === 'student' && u.student_id && (
+                          <button
+                            onClick={() => handleViewStudentProfile(u.student_id!)}
+                            className="px-2 py-1 rounded text-[10px] font-semibold text-[#0f2744] border border-[#0f2744]/30 hover:bg-slate-100 cursor-pointer"
+                          >
+                            View Profile
+                          </button>
+                        )}
                         <button
                           onClick={() => handleToggleUserStatus(u.id)}
-                          className={`px-2 py-1 rounded text-[10px] font-semibold border transition-all cursor-pointer ${
-                            u.is_active !== false
+                          className={`px-2 py-1 rounded text-[10px] font-semibold border transition-all cursor-pointer ${u.is_active !== false
                               ? 'text-red-700 border-red-200 hover:bg-red-50'
                               : 'text-emerald-700 border-emerald-200 hover:bg-emerald-50'
-                          }`}
+                            }`}
                         >
                           {u.is_active !== false ? 'Deactivate' : 'Activate'}
                         </button>
                         <button
-                          onClick={() => handleResetPassword(u.id)}
+                          onClick={() => handleResetPassword(u)}
                           className="px-2 py-1 rounded text-[10px] font-semibold text-slate-700 border border-slate-200 hover:bg-slate-100 cursor-pointer"
                         >
                           Reset Pwd
@@ -1320,13 +1419,12 @@ export const AdminView: React.FC = () => {
                 <div key={ev.id} className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-all">
                   <div className="space-y-2.5">
                     <div className="flex items-start justify-between gap-2">
-                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                        ev.status === 'upcoming'
+                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${ev.status === 'upcoming'
                           ? 'bg-amber-100 text-amber-800'
                           : ev.status === 'ongoing'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-slate-100 text-slate-600'
-                      }`}>
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}>
                         {ev.status}
                       </span>
                       <button
@@ -1922,16 +2020,16 @@ export const AdminView: React.FC = () => {
             <form onSubmit={handleCreateUser} className="p-5 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
-                <input type="text" required value={newUserData.full_name} onChange={e => setNewUserData({...newUserData, full_name: e.target.value})} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
+                <input type="text" required value={newUserData.full_name} onChange={e => setNewUserData({ ...newUserData, full_name: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
-                <input type="email" required value={newUserData.email} onChange={e => setNewUserData({...newUserData, email: e.target.value})} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
+                <input type="email" required value={newUserData.email} onChange={e => setNewUserData({ ...newUserData, email: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Role</label>
-                  <select value={newUserData.role} onChange={e => setNewUserData({...newUserData, role: e.target.value})} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50">
+                  <select value={newUserData.role} onChange={e => setNewUserData({ ...newUserData, role: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50">
                     <option value="student">Student</option>
                     <option value="teacher">Teacher / Faculty</option>
                     <option value="admin">Administrator</option>
@@ -1939,18 +2037,18 @@ export const AdminView: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Initial Password</label>
-                  <input type="text" required minLength={8} value={newUserData.password} onChange={e => setNewUserData({...newUserData, password: e.target.value})} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
+                  <input type="text" required minLength={8} value={newUserData.password} onChange={e => setNewUserData({ ...newUserData, password: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
                 </div>
               </div>
               {newUserData.role === 'student' && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">Roll Number</label>
-                    <input type="text" value={newUserData.roll_number} onChange={e => setNewUserData({...newUserData, roll_number: e.target.value})} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" placeholder="Optional" />
+                    <input type="text" value={newUserData.roll_number} onChange={e => setNewUserData({ ...newUserData, roll_number: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" placeholder="Optional" />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">Class Assignment</label>
-                    <select value={newUserData.class_id} onChange={e => setNewUserData({...newUserData, class_id: e.target.value})} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50">
+                    <select value={newUserData.class_id} onChange={e => setNewUserData({ ...newUserData, class_id: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50">
                       {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
@@ -1961,6 +2059,444 @@ export const AdminView: React.FC = () => {
                 <button type="submit" className="px-3 py-1.5 bg-[#0f2744] text-white rounded-lg text-xs font-semibold cursor-pointer">Create Account</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* MODAL: RESET PASSWORD */}
+      {resetUser && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="p-4 bg-[#0f2744] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-amber-400" />
+                <h3 className="font-bold text-sm">Reset Password</h3>
+              </div>
+              <button onClick={() => setResetUser(null)} className="text-slate-400 hover:text-white cursor-pointer">
+                ✕
+              </button>
+            </div>
+            <form onSubmit={confirmResetPassword} className="p-5 space-y-4">
+              <div className="text-xs text-slate-600 mb-2">
+                Resetting password for: <br />
+                <strong>{resetUser.full_name}</strong> ({resetUser.email})
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">New Password (min 8 chars)</label>
+                <input type="password" required minLength={8} value={resetPasswordInput} onChange={e => setResetPasswordInput(e.target.value)} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Confirm Password</label>
+                <input type="password" required minLength={8} value={resetConfirmInput} onChange={e => setResetConfirmInput(e.target.value)} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setResetUser(null)} className="px-3 py-1.5 bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold cursor-pointer">Cancel</button>
+                <button type="submit" disabled={isResettingUser} className="px-3 py-1.5 bg-[#0f2744] text-white rounded-lg text-xs font-semibold disabled:opacity-50 cursor-pointer">
+                  {isResettingUser ? 'Resetting...' : 'Reset Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* MODAL: STUDENT FULL PROFILE (LINKEDIN STYLE) */}
+      {showProfileModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 bg-[#0f2744] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <GraduationCap className="w-5 h-5 text-amber-400" />
+                <h3 className="font-bold text-sm">
+                  {isLoadingStudentProfile ? 'Loading Student Dossier...' : 'Student Portfolio Dossier'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowProfileModal(false)}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto flex-1 space-y-5">
+              {isLoadingStudentProfile ? (
+                <div className="py-12 text-center text-xs text-slate-500">
+                  <div className="animate-spin w-6 h-6 border-2 border-[#0f2744] border-t-transparent rounded-full mx-auto mb-2" />
+                  Loading student records and portfolio...
+                </div>
+              ) : selectedStudentProfile ? (
+                <>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                    <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                      <div className="flex items-start gap-4">
+                        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-sky-100 to-slate-300 border border-slate-300 overflow-hidden shrink-0 flex items-center justify-center">
+                          {selectedStudentProfile.profile_photo_url ? (
+                            <img src={selectedStudentProfile.profile_photo_url} alt={selectedStudentProfile.full_name} className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-base font-bold uppercase text-slate-700">{getAvatarInitials(selectedStudentProfile.full_name)}</span>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-xl font-bold text-slate-900">{selectedStudentProfile.full_name}</h4>
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                              Profile {selectedStudentProfile.profile_strength || 0}%
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                            <span className="font-mono font-semibold text-[#0f2744]">Roll: {selectedStudentProfile.roll_number}</span>
+                            <span>•</span>
+                            <span>{selectedStudentProfile.departmentName || 'Department'}</span>
+                            <span>•</span>
+                            <span>{selectedStudentProfile.className || 'Class'} • {selectedStudentProfile.classYear ? `Year ${selectedStudentProfile.classYear}` : 'Year N/A'}</span>
+                          </div>
+
+                          <div className="text-xs text-slate-500">
+                            {selectedStudentProfile.email}
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            {getProfileLinks(selectedStudentProfile).map((link) => (
+                              <a
+                                key={link.label}
+                                href={link.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-sky-700 hover:bg-sky-50"
+                              >
+                                {link.label} <ExternalLink className="w-3 h-3" />
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+                    {[
+                      { id: 'overview', label: 'Overview' },
+                      { id: 'posts', label: 'Posts' },
+                      { id: 'achievements', label: 'Achievements' },
+                      { id: 'projects', label: 'Projects' },
+                      { id: 'certifications', label: 'Certifications' },
+                      { id: 'documents', label: 'Documents' },
+                      { id: 'skills', label: 'Skills' },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setProfileSection(tab.id as any)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                          profileSection === tab.id
+                            ? 'bg-[#0f2744] text-white border-[#0f2744]'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {profileSection === 'overview' && (
+                    <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_0.9fr] gap-5">
+                      <div className="space-y-4">
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                          <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">About</h5>
+                          <p className="text-sm text-slate-700 leading-relaxed">
+                            {selectedStudentProfile.bio?.trim() || 'Student has not added a bio yet.'}
+                          </p>
+                        </div>
+
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                          <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">Academic Snapshot</h5>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-600">
+                            <div className="bg-white border border-slate-200 rounded-lg p-3">
+                              <div className="text-[10px] uppercase tracking-wider text-slate-500">Class / Section</div>
+                              <div className="mt-1 font-semibold text-slate-900">{selectedStudentProfile.className || 'N/A'}</div>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-lg p-3">
+                              <div className="text-[10px] uppercase tracking-wider text-slate-500">Branch</div>
+                              <div className="mt-1 font-semibold text-slate-900">{selectedStudentProfile.departmentName || 'N/A'}</div>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-lg p-3">
+                              <div className="text-[10px] uppercase tracking-wider text-slate-500">Year / Semester</div>
+                              <div className="mt-1 font-semibold text-slate-900">{selectedStudentProfile.classYear || 'N/A'}</div>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-lg p-3">
+                              <div className="text-[10px] uppercase tracking-wider text-slate-500">Institutional Email</div>
+                              <div className="mt-1 font-semibold text-slate-900 break-all">{selectedStudentProfile.email || 'N/A'}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                          <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">Profile Summary</h5>
+                          <div className="space-y-3">
+                            <div>
+                              <div className="flex items-center justify-between text-[11px] text-slate-600">
+                                <span>Profile Strength</span>
+                                <span className="font-semibold text-slate-900">{selectedStudentProfile.profile_strength || 0}%</span>
+                              </div>
+                              <div className="mt-1 w-full h-2 rounded-full bg-slate-200 overflow-hidden">
+                                <div className="h-full rounded-full bg-[#b45309]" style={{ width: `${selectedStudentProfile.profile_strength || 0}%` }} />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
+                              <div className="bg-white border border-slate-200 rounded-lg p-2">
+                                <div className="text-[10px] uppercase tracking-wider text-slate-500">Posts</div>
+                                <div className="mt-1 font-bold text-slate-900">{normalizeArray(selectedStudentProfile.posts).length}</div>
+                              </div>
+                              <div className="bg-white border border-slate-200 rounded-lg p-2">
+                                <div className="text-[10px] uppercase tracking-wider text-slate-500">Projects</div>
+                                <div className="mt-1 font-bold text-slate-900">{normalizeArray(selectedStudentProfile.projects).length}</div>
+                              </div>
+                              <div className="bg-white border border-slate-200 rounded-lg p-2">
+                                <div className="text-[10px] uppercase tracking-wider text-slate-500">Achievements</div>
+                                <div className="mt-1 font-bold text-slate-900">{normalizeArray(selectedStudentProfile.achievements).length}</div>
+                              </div>
+                              <div className="bg-white border border-slate-200 rounded-lg p-2">
+                                <div className="text-[10px] uppercase tracking-wider text-slate-500">Documents</div>
+                                <div className="mt-1 font-bold text-slate-900">{normalizeArray(selectedStudentProfile.documents).length}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {profileSection === 'posts' && (
+                    <div className="space-y-3">
+                      {!selectedStudentProfile.posts || selectedStudentProfile.posts.length === 0 ? (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                          No posts yet.
+                        </div>
+                      ) : (
+                        selectedStudentProfile.posts.map((post: any) => (
+                          <PostCard 
+                            key={post.id} 
+                            post={post} 
+                            student={selectedStudentProfile} 
+                            viewerRole="admin"
+                          />
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {profileSection === 'achievements' && (
+                    <div className="space-y-3">
+                      {normalizeArray(selectedStudentProfile.achievements).length === 0 ? (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                          No achievements added yet.
+                        </div>
+                      ) : (
+                        normalizeArray(selectedStudentProfile.achievements).map((achievement: any) => (
+                          <div key={achievement.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <Trophy className="w-4 h-4 text-amber-600" />
+                                  <h6 className="text-sm font-bold text-slate-900">{achievement.title}</h6>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-1">{achievement.organization || 'Achievement'} • {formatDate(achievement.date)}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  achievement.verification_status?.includes('Verified') 
+                                    ? 'bg-emerald-100 text-emerald-800' 
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {achievement.verification_status?.includes('Verified') ? <CheckCircle className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />} 
+                                  {achievement.verification_status || 'Submitted'}
+                                </span>
+                                {(!achievement.verification_status || !achievement.verification_status.includes('Verified')) && (
+                                  <button
+                                    onClick={() => handleVerifyPortfolioItem(selectedStudentProfile.id, 'achievements', achievement.id)}
+                                    className="px-2 py-1 bg-[#0f2744] text-white hover:bg-[#163354] rounded text-[10px] font-bold cursor-pointer"
+                                  >
+                                    Verify
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-700 leading-relaxed">{achievement.description || 'No description provided.'}</p>
+                            {achievement.link && (
+                              <a href={achievement.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline">
+                                Open Link <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {profileSection === 'projects' && (
+                    <div className="space-y-3">
+                      {normalizeArray(selectedStudentProfile.projects).length === 0 ? (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                          No projects added yet.
+                        </div>
+                      ) : (
+                        normalizeArray(selectedStudentProfile.projects).map((project: any) => (
+                          <div key={project.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h6 className="text-sm font-bold text-slate-900">{project.title}</h6>
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    project.verification_status?.includes('Verified') 
+                                      ? 'bg-emerald-100 text-emerald-800' 
+                                      : 'bg-amber-100 text-amber-800'
+                                  }`}>
+                                    {project.verification_status?.includes('Verified') ? <CheckCircle className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />} 
+                                    {project.verification_status || 'Submitted'}
+                                  </span>
+                                  {(!project.verification_status || !project.verification_status.includes('Verified')) && (
+                                    <button
+                                      onClick={() => handleVerifyPortfolioItem(selectedStudentProfile.id, 'projects', project.id)}
+                                      className="px-2 py-1 bg-[#0f2744] text-white hover:bg-[#163354] rounded text-[10px] font-bold cursor-pointer"
+                                    >
+                                      Verify
+                                    </button>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-slate-500 mt-1">{formatDate(project.date)}</p>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {project.github_url && (
+                                  <a href={project.github_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
+                                    GitHub <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                )}
+                                {project.live_url && (
+                                  <a href={project.live_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
+                                    Live Demo <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+
+                            {project.description && (
+                              <p className="text-xs text-slate-700 leading-relaxed">{project.description}</p>
+                            )}
+
+                            {project.technologies && normalizeArray(project.technologies).length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {normalizeArray(project.technologies).map((tech: any, idx: number) => (
+                                  <span key={`${project.id}-tech-${idx}`} className="px-2 py-0.5 rounded-full text-[10px] bg-slate-200 text-slate-700 font-semibold">
+                                    {typeof tech === 'string' ? tech : (tech.skill_name || tech.name || '')}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            {project.image_url && (
+                              <img src={project.image_url} alt={project.title} className="w-full h-48 object-cover rounded-lg border border-slate-200" />
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {profileSection === 'certifications' && (
+                    <div className="space-y-3">
+                      {normalizeArray(selectedStudentProfile.certifications).length === 0 ? (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                          No certifications added yet.
+                        </div>
+                      ) : (
+                        normalizeArray(selectedStudentProfile.certifications).map((certification: any) => (
+                          <div key={certification.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Award className="w-4 h-4 text-amber-600" />
+                                <h6 className="text-sm font-bold text-slate-900">{certification.name || certification.title}</h6>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  certification.verification_status?.includes('Verified') 
+                                    ? 'bg-emerald-100 text-emerald-800' 
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {certification.verification_status?.includes('Verified') ? <CheckCircle className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />} 
+                                  {certification.verification_status || 'Submitted'}
+                                </span>
+                                {(!certification.verification_status || !certification.verification_status.includes('Verified')) && (
+                                  <button
+                                    onClick={() => handleVerifyPortfolioItem(selectedStudentProfile.id, 'certifications', certification.id)}
+                                    className="px-2 py-1 bg-[#0f2744] text-white hover:bg-[#163354] rounded text-[10px] font-bold cursor-pointer"
+                                  >
+                                    Verify
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-600">Issuer: {certification.issuer || certification.issuing_organization || 'N/A'}</p>
+                            <p className="text-[11px] text-slate-500">Issued: {formatDate(certification.issue_date || certification.created_at)}</p>
+                            {(certification.credential_url || certification.certificate_url) && (
+                              <div className="flex flex-wrap gap-2">
+                                {certification.credential_url && (
+                                  <a href={certification.credential_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline">
+                                    View Credential <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                )}
+                                {certification.certificate_url && (
+                                  <a href={certification.certificate_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 hover:underline">
+                                    Certificate <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {profileSection === 'documents' && (
+                    <div className="space-y-3">
+                      {normalizeArray(selectedStudentProfile.documents).length === 0 ? (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                          No documents uploaded.
+                        </div>
+                      ) : (
+                        normalizeArray(selectedStudentProfile.documents).map((document: any) => (
+                          <div key={document.id} className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div>
+                              <h6 className="text-sm font-bold text-slate-900">{document.title || document.file_name || 'Document'}</h6>
+                              <p className="text-[11px] text-slate-600 mt-1">{document.description || document.category || 'Uploaded document'} • {document.doc_type || 'file'} • {formatDate(document.created_at)}</p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {profileSection === 'skills' && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                      {getStudentSkills(selectedStudentProfile).length === 0 ? (
+                        <div className="text-xs text-slate-500">No skills added yet.</div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {getStudentSkills(selectedStudentProfile).map((skill: string, idx: number) => (
+                            <span key={`${skill}-${idx}`} className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-200 text-slate-700">
+                              {skill}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : null}
+            </div>
           </div>
         </div>
       )}
