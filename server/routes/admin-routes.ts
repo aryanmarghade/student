@@ -291,7 +291,10 @@ router.post('/notifications', async (req: AuthRequest, res) => {
   const { title, body, target_role, target_class_id, file_url } = req.body;
   if (!title || !body || !target_role) return res.status(400).json({ error: 'Title, body, and audience are required.' });
   const n = { id: id('notif'), title: String(title).trim(), body: String(body).trim(), target_role, target_class_id: target_role === 'class' ? target_class_id : null, file_url: file_url || null, created_by: req.user!.id, created_at: new Date().toISOString() };
-  await query('INSERT INTO notifications (id,title,body,target_role,target_class_id,file_url,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7)', Object.values(n));
+  await query(
+    'INSERT INTO notifications (id,title,body,target_role,target_class_id,file_url,created_by,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+    [n.id, n.title, n.body, n.target_role, n.target_class_id, n.file_url, n.created_by, n.created_at]
+  );
   res.status(201).json({ message: 'Notification published successfully.', notification: n });
 });
 router.delete('/notifications/:id', async (req, res) => { await query('DELETE FROM notifications WHERE id=$1', [req.params.id]); res.json({ message: 'Notification deleted successfully.' }); });

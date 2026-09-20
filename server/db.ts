@@ -44,13 +44,26 @@ export async function initializeDatabase() {
   await pool.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS hackerrank_url TEXT;`);
   await pool.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS portfolio_url TEXT;`);
   await pool.query(`ALTER TABLE marks ADD COLUMN IF NOT EXISTS class_id VARCHAR(64);`);
-  await pool.query(`ALTER TABLE marks DROP CONSTRAINT IF EXISTS marks_exam_type_check;`);
+  // Deduplicate active teacher assignments before creating unique index (retain oldest record)
+  await pool.query(`
+    DELETE FROM teacher_class_assignments t1
+    USING teacher_class_assignments t2
+    WHERE t1.status = 'active'
+      AND t2.status = 'active'
+      AND t1.teacher_user_id = t2.teacher_user_id
+      AND t1.class_id = t2.class_id
+      AND t1.subject_id = t2.subject_id
+      AND t1.semester_id = t2.semester_id
+      AND (t1.created_at > t2.created_at OR (t1.created_at = t2.created_at AND t1.id > t2.id));
+  `);
+
   await pool.query(schema);
 
   await pool.query(`UPDATE marks m SET class_id = s.class_id FROM students s WHERE m.student_id = s.id AND m.class_id IS NULL;`);
   await pool.query(`DROP INDEX IF EXISTS uq_marks_student_subject_semester_exam;`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_marks_student_class_subject_semester_exam ON marks(student_id, class_id, subject_id, semester_id, exam_type);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_marks_class_subject_semester ON marks(class_id, subject_id, semester_id);`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_tca_active_assignment ON teacher_class_assignments (teacher_user_id, class_id, subject_id, semester_id) WHERE status = 'active';`);
 
   await pool.query(qaSeed);
   // Remove legacy seed.sql records that predate the QA migration — idempotent.

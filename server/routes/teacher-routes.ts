@@ -651,8 +651,11 @@ router.post('/announcements', async (req: AuthRequest, res) => {
   if (!title || !body || !class_id) return res.status(400).json({ error: 'Title, message body, and assigned class are required.' });
   if (!await verifyTeacherClassScope(class_id, undefined, undefined, req.user!.id))
     return res.status(403).json({ error: 'You can only publish announcements to your assigned classes.' });
-  const n = { id: id('notif'), title, body, target_role: 'class', target_class_id: class_id, file_url: null, created_by: req.user!.id };
-  await query('INSERT INTO notifications (id,title,body,target_role,target_class_id,created_by) VALUES ($1,$2,$3,$4,$5,$6)', Object.values(n));
+  const n = { id: id('notif'), title, body, target_role: 'class', target_class_id: class_id, file_url: null, created_by: req.user!.id, created_at: new Date().toISOString() };
+  await query(
+    'INSERT INTO notifications (id,title,body,target_role,target_class_id,file_url,created_by,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+    [n.id, n.title, n.body, n.target_role, n.target_class_id, n.file_url, n.created_by, n.created_at]
+  );
   res.status(201).json({ message: 'Announcement posted to class successfully.', notification: n });
 });
 

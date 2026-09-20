@@ -216,6 +216,7 @@ CREATE TABLE IF NOT EXISTS teacher_class_assignments (
 
 CREATE INDEX IF NOT EXISTS idx_tca_teacher ON teacher_class_assignments(teacher_user_id);
 CREATE INDEX IF NOT EXISTS idx_tca_lookup ON teacher_class_assignments(teacher_user_id, class_id, subject_id, semester_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tca_active_assignment ON teacher_class_assignments (teacher_user_id, class_id, subject_id, semester_id) WHERE status = 'active';
 
 -- 9. MARKS
 CREATE TABLE IF NOT EXISTS marks (
