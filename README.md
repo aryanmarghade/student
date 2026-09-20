@@ -20,13 +20,3 @@ An institutional-grade college Student Profile & Academic Analytics Platform eng
 
 ---
 
----
-
-
-## 🛠️ Verification & Audit Checklist
-
-- [x] **Backend**: Node.js with Express. No proprietary BaaS lock-in.
-- [x] **PostgreSQL Schema**: Defined in `db/schema.sql` with real foreign keys, constraints, and indexes.
-- [x] **Demo Seed Data**: Defined in `db/seed.sql`.
-- [x] **AI Assistant Grounding**: Function calling against real database queries; audited in `ai_query_logs`.
-- [x] **Server-Side Role Scoping**: 403 Forbidden enforced on unassigned teacher classes and unauthorized student records.
