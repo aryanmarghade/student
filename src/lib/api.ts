@@ -424,6 +424,8 @@ export const api = {
   // Faculty extensions
   getStudentFullProfileForTeacher: (studentId: string) =>
     request<any>(`/api/teacher/students/${studentId}/full-profile`),
+  getStudentFullProfileForAdmin: (studentId: string) =>
+    request<any>(`/api/admin/students/${studentId}/full-profile`),
   createTeacherAssessment: (classId: string, subjectId: string, payload: { semester_id: string; title: string; max_marks: number; assessment_type?: string }) =>
     request<{ message: string; assessment: any }>(`/api/teacher/classes/${classId}/subjects/${subjectId}/assessments`, {
       method: 'POST',

@@ -492,4 +492,48 @@ router.put('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest,
   res.json({ message: 'Settings updated successfully.', settings: result.rows[0] });
 });
 
+router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) => {
+  const s = (await query<any>(
+    `SELECT s.*,u.full_name,u.email,c.name AS "className",d.name AS "departmentName"
+     FROM students s JOIN users u ON u.id=s.user_id
+     LEFT JOIN classes c ON c.id=s.class_id
+     LEFT JOIN departments d ON d.id=s.department_id
+     WHERE s.id=$1`,
+    [req.params.studentId],
+  )).rows[0];
+  if (!s) return res.status(404).json({ error: 'Student record not found.' });
+
+  const [projects, achievements, certifications, hackathons, documents, marks, posts] = await Promise.all(
+    ['projects', 'achievements', 'certifications', 'hackathons', 'student_documents', 'marks'].map(
+      table => query(`SELECT * FROM ${table} WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    ).concat([
+      query(`
+        SELECT p.*,
+               (SELECT json_agg(a.*) FROM post_attachments a WHERE a.post_id = p.id) as attachments
+        FROM posts p
+        WHERE p.student_id = $1
+        ORDER BY p.created_at DESC
+      `, [s.id])
+    ])
+  );
+  res.json({
+    ...s,
+    projects: projects.rows,
+    achievements: achievements.rows,
+    certifications: certifications.rows,
+    hackathons: hackathons.rows,
+    documents: documents.rows,
+    marks: marks.rows,
+    marksheets: [],
+    profile_links: {
+      github: s.github_url,
+      linkedin: s.linkedin_url,
+      hackerrank: s.hackerrank_url,
+      portfolio: s.portfolio_url,
+      resume: s.resume_url,
+    },
+    posts: posts.rows,
+  });
+});
+
 export default router;

@@ -10,3 +10,8 @@ scratch/
 db/cleanup-legacy.sql
 db/seed-qa.sql
 uploads/
+test-results/
+# Root-level diagnostic/temp scripts
+count.cjs
+diagnose-*.cjs
+test_endpoints.cjs

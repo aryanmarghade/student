@@ -166,7 +166,7 @@ export const AdminView: React.FC = () => {
     setShowProfileModal(true);
     setSelectedStudentProfile(null);
     try {
-      const res = await api.getStudentFullProfileForTeacher(studentId);
+      const res = await api.getStudentFullProfileForAdmin(studentId);
       setSelectedStudentProfile(res);
     } catch (err: any) {
       showToast(err.message || 'Failed to fetch student profile', true);
