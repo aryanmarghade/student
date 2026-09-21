@@ -1,638 +1,348 @@
-================================================================================
-  VISSION ACADEMY - COMPLETE PROJECT MAP
-  AI-Readable Codebase Reference Document
-  Generated: 2026-09-18
-================================================================================
+=============================================================================
+VISSION ACADEMY - PROJECT MAP & AI SYSTEM DOCUMENTATION
+=============================================================================
+This file is the authoritative AI-readable project documentation.
+ALL AI AGENTS MUST READ THIS FILE BEFORE MODIFYING THE PROJECT.
+DO NOT WRITE ACTUAL SECRET VALUES INTO THIS FILE.
+
+=============================================================================
+1. SOURCE OF TRUTH
+=============================================================================
+The contents of this file reflect the actual active source code and schema.
+The architecture uses a Node.js/Express backend running on port 3000, 
+and a Vite/React SPA frontend. PostgreSQL is the unified source of truth.
+
+=============================================================================
+3. CORRECT TECHNOLOGY STACK
+=============================================================================
+Confirmed from package.json:
+- React: 19.0.1 (with react-dom 19.0.1)
+- Vite: 6.2.3
+- TypeScript: ~5.8.2
+- Tailwind CSS: ^4.1.14 (@tailwindcss/vite)
+- Express: ^4.21.2
+- PostgreSQL Driver: ^8.23.0 (pg)
+- JWT Auth: jsonwebtoken ^9.0.3
+- Password Hashing: bcryptjs ^3.0.3
+- Storage/Files: multer ^2.3.0, jszip ^3.10.2
+- Charting: chart.js ^4.5.1, react-chartjs-2
+- UI Components: lucide-react ^0.546.0, motion ^12.23.24
+- AI Integration: @google/genai ^2.4.0
+- E2E Testing: @playwright/test ^1.63.0
+- Build/Bundler: esbuild ^0.25.0
+
+=============================================================================
+4. COMPLETE FILE MAP & 5. COMPLETE BACKEND MAP
+=============================================================================
+[ ACTIVE BACKEND ]
 
-PURPOSE
--------
-This file is a full structural and semantic map of the Vission Academy codebase.
-It is intended to help an AI assistant (or new developer) quickly understand
-where every feature, route, component, and database table lives, without having
-to read every source file.
-
-================================================================================
-1. PROJECT OVERVIEW
-================================================================================
-
-NAME:        Vission Academy Academic Information System
-TYPE:        Full-Stack Web Application (Monorepo)
-STACK:       React 19 + TypeScript (frontend) | Node.js + Express + TypeScript (backend)
-DATABASE:    PostgreSQL (connection via DATABASE_URL in .env)
-AI:          Google Gemini (gemini-2.0-flash) via @google/genai
-AUTH:        JWT (stored in localStorage key: vission_academy_jwt), bcryptjs for passwords
-CSS:         Tailwind CSS v4 (@tailwindcss/vite plugin)
-BUNDLER:     Vite 6 (with Tailwind plugin + React plugin)
-SERVER:      Express serves BOTH the API and the Vite SPA (unified on port 3000)
-
-LIVE URL:    http://localhost:3000   (when npm run dev is running)
-DEMO USERS (all passwords: password123):
-  - admin@vision.edu        -> Admin (Dr. Arthur Vance)
-  - teacher@vision.edu      -> Teacher (Prof. Elena Rostova)
-  - student@vision.edu      -> Student (Rohan Sharma, CS-3A)
-  - priya.patel@vision.edu  -> Student Topper (Priya Patel, CS-3A, 9.50 CGPA)
-
-================================================================================
-2. ROOT DIRECTORY STRUCTURE
-================================================================================
-
-vission-academy/
-|-- .env                      <- Environment variables (DB URL, JWT secret, Gemini key)
-|-- .env.example              <- Template for .env
-|-- .gitignore
-|-- .oxlintrc.json            <- Linting config (oxlint)
-|-- bun.lock
-|-- docker-compose.yml        <- Docker config (PostgreSQL service)
-|-- index.html                <- SPA root HTML (Vite entry point -> /src/main.tsx)
-|-- init-db.js                <- One-shot Node.js script to initialize the DB
-|-- package.json              <- npm scripts, all dependencies
-|-- package-lock.json
-|-- server.ts                 <- MAIN SERVER ENTRY POINT (Express + Vite, port 3000)
-|-- vite.config.ts            <- Vite config (React, Tailwind, cache dir)
-|-- tsconfig.json             <- Root TypeScript config
-|-- tsconfig.app.json         <- Frontend TypeScript config
-|-- tsconfig.node.json        <- Node/server TypeScript config
-|-- README.md                 <- Setup instructions and feature overview
-|-- FUNCTIONAL_QA_FAILURE_REPORT.md <- QA test results / known issues
-|-- metadata.json             <- Project metadata descriptor
-|
-|-- db/                       <- All PostgreSQL SQL files
-|-- server/                   <- All backend TypeScript source
-|-- src/                      <- All frontend TypeScript/React source
-|-- public/                   <- Static assets served by Vite
-|-- uploads/                  <- Local file upload storage
-|-- dist/                     <- Built production output
-|-- node_modules/
-|-- database/                 <- Legacy/alternate DB files
-|-- scripts/                  <- Utility scripts
-|-- scratch/                  <- Developer scratch scripts (NOT production code)
-|-- test-results/             <- Playwright test artifacts
-
-================================================================================
-3. ENTRY POINTS & HOW THE APP BOOTS
-================================================================================
-
-STEP 1 -> npm run dev  ->  runs: tsx server.ts
-
-STEP 2 -> server.ts (root):
-  - Loads .env via dotenv
-  - Connects to PostgreSQL (calls initializeDatabase() from server/db.ts)
-  - Mounts Express API routes:
-      /api/auth      -> server/routes/auth-routes.ts
-      /api/admin     -> server/routes/admin-routes.ts
-      /api/teacher   -> server/routes/teacher-routes.ts
-      /api/student   -> server/routes/student-routes.ts
-  - In DEV mode: uses Vite as middleware (HMR, SPA serving)
-  - In PROD mode: serves /dist as static files
-  - Listens on PORT 3000
-
-STEP 3 -> Browser loads index.html -> /src/main.tsx -> /src/App.tsx
-
-STEP 4 -> App.tsx:
-  - Checks localStorage for JWT token
-  - Calls GET /api/auth/me to validate session
-  - Shows LoginView if not logged in
-  - Shows AdminView, TeacherView, or StudentView based on user.role
-
-================================================================================
-4. DATABASE (db/ folder)
-================================================================================
-
-FILE: db/schema.sql  [MOST IMPORTANT DB FILE]
-  - Defines ALL tables with IF NOT EXISTS (idempotent - safe to re-run)
-  - Contains ALTER TABLE statements for columns added after initial release
-
-  TABLE: users
-    id, email, password_hash, role (admin|teacher|student),
-    full_name, is_active, must_reset_password, created_at
-    Purpose: ALL user accounts regardless of role
-
-  TABLE: colleges
-    id, name, code, address, created_at
-
-  TABLE: departments
-    id, college_id (FK->colleges), name, code, created_at
-    Examples: Computer Science, Electronics, Mechanical
-
-  TABLE: academic_years
-    id, year_name (e.g. "2024-2025"), is_current, created_at
-
-  TABLE: semesters
-    id, academic_year_id, semester_number, name (e.g. "Semester 3"), is_active, created_at
-
-  TABLE: classes
-    id, department_id, academic_year_id,
-    name (e.g. "CS-3A"), year (1-4), section (A/B/C), created_at
-    Purpose: A class is a specific group of students
-
-  TABLE: subjects
-    id, department_id, name, code (e.g. "CS301"), max_marks (default 100), created_at
-
-  TABLE: students
-    id, user_id (FK->users UNIQUE), roll_number, class_id, department_id,
-    linkedin_url, github_url, hackerrank_url, portfolio_url,
-    profile_photo_url, resume_url, bio, profile_strength (default 20),
-    github_data (JSONB), github_synced_at, created_at
-    Purpose: Extended student-specific profile linked to users table
-
-  TABLE: student_documents
-    id, student_id, doc_type, file_url, file_name,
-    parsed_headings (JSONB), status, title, description, category, created_at
-    Purpose: Resumes, certificates, assignments, etc. uploaded by student
-
-  TABLE: projects
-    id, student_id, title, description, technologies (JSONB array),
-    github_url, live_url, date, team_members (JSONB), image_url,
-    verification_status, created_at
-
-  TABLE: achievements
-    id, student_id, title, description, organization, date, link,
-    certificate_url, verification_status, created_at
-
-  TABLE: certifications
-    id, student_id, name, issuer, issue_date, credential_id,
-    credential_url, certificate_url, verification_status, created_at
-
-  TABLE: hackathons
-    id, student_id, name, organizer, date, position_result, team_name,
-    project_name, project_description, github_url, demo_url,
-    certificate_url, verification_status, created_at
-
-  TABLE: events
-    id, name, description, organizer, event_date, registration_deadline,
-    location, registration_link, banner_url, eligibility,
-    status (upcoming|ongoing|completed), created_by, created_at
-
-  TABLE: teacher_class_assignments  [THE AUTH TABLE]
-    id, teacher_user_id (FK->users), class_id, subject_id, semester_id,
-    status (active|past), created_at
-    Purpose: A teacher can ONLY access a class+subject+semester if a row exists here
-
-  TABLE: marks
-    id, student_id, class_id, subject_id, semester_id, teacher_user_id,
-    exam_type, marks_obtained, max_marks, created_at
-    Unique constraint: (student_id, class_id, subject_id, semester_id, exam_type)
-
-  TABLE: assessment_definitions
-    id, class_id, subject_id, semester_id, teacher_user_id, title,
-    max_marks, assessment_type (Internal|Mid Sem|Final|Assignment|Practical|Other),
-    status (active|archived), created_at
-
-  TABLE: marksheets
-    id, student_id, semester_id, file_url, file_name, sgpa, cgpa,
-    uploaded_by, created_at
-    Purpose: Official university marksheet PDFs uploaded by admin
-
-  TABLE: notifications
-    id, title, body, target_role (all|all_students|all_teachers|class),
-    target_class_id, file_url, created_by, created_at
-
-  TABLE: notification_reads
-    id, notification_id, user_id, read_at
-
-  TABLE: ai_query_logs
-    id, user_id, query_text, resolved_intent, response_summary,
-    tool_calls (JSONB), created_at
-    Purpose: Full audit trail of all AI assistant queries
-
-  TABLE: audit_logs
-    id, user_id, action, entity_type, entity_id, details, created_at
-
-  TABLE: posts
-    id, student_id, title, description, category, tags (JSONB), external_link, created_at
-
-  TABLE: post_attachments
-    id, post_id, file_url, file_name, file_type, created_at
-
-FILE: db/seed.sql
-  Seeds: colleges, departments, academic years, semesters, classes, subjects,
-  demo users, teacher assignments, student records, sample marks, notifications
-  All demo passwords hash to "password123"
-
-FILE: db/seed-qa.sql
-  QA-specific seed data. Used by initializeDatabase() on every boot.
-  Ensures required demo users always exist.
-
-FILE: db/cleanup-legacy.sql
-  Removes old/legacy seed records replaced by QA seed migration.
-
-================================================================================
-5. BACKEND SERVER (server/ folder)
-================================================================================
-
-FILE: server.ts  (ROOT - ENTRY POINT)
-  - Express app on port 3000
-  - Calls initializeDatabase() before serving
-  - Mounts: /api/auth, /api/admin, /api/teacher, /api/student
-  - Integrates Vite as dev middleware
-
-FILE: server/db.ts  [DATABASE LAYER]
-  - PostgreSQL connection pool via DATABASE_URL
-  - Exports: pool, query<T>(), logActivity(), initializeDatabase(), id()
-  - initializeDatabase(): runs schema.sql + seed-qa.sql + cleanup on startup
-  - id(prefix): generates IDs like "user_1718000000000_abc123"
-
-FILE: server/auth.ts  [AUTH MIDDLEWARE]
-  - generateToken(user, student?): creates 7-day JWT
-  - hashPassword(value) / comparePassword(value, hash): bcrypt helpers
-  - requireAuth middleware: validates Bearer token, checks user active
-  - requireRole(...roles): enforces role-based access
-  - verifyTeacherClassScope(): checks teacher_class_assignments table
-  - rateLimit(): in-memory per-IP rate limiter
-
-FILE: server/ai-assistant.ts  [AI MODULE - used by current routes]
-  - buildScopedContext(user): queries DB for role-appropriate context
-      admin -> institution stats
-      teacher -> their active assignments + averages
-      student -> own profile, marks, CGPA
-  - handleAiQuery(user, queryText): sends to Gemini if key set, else returns raw DB data
-  - Logs every query to ai_query_logs
-
-FILE: server/ai.ts  [LEGACY AI MODULE - used by server/index.ts only]
-  - Full function calling with tool declarations:
-    get_class_topper, get_student_average, predict_next_score,
-    get_struggling_students, get_student_academic_summary
-
-FILE: server/analytics.ts  [MATH UTILITIES]
-  - linearRegression(points): slope, intercept, R-squared, predicted next value
-  - median(values): median of number array
-  - standardDeviation(values): population std deviation
-
-FILE: server/documents.ts / server/resume-parser.ts  [RESUME PARSING]
-  - parseResume(fileBuffer, mimeType): heuristic section extractor
-  - Extracts: Education, Skills, Projects, Experience, Certifications, Summary
-  - Stored in student_documents.parsed_headings as JSONB
-
-FILE: server/index.ts  [LEGACY SERVER - 1201 lines - NOT ACTIVE]
-  - Alternate server on PORT 4000
-  - Uses AWS S3 SDK for file storage
-  - DO NOT use this - server.ts (root) is the entry point
-
-================================================================================
-5a. API ROUTES SUMMARY
-================================================================================
-
-FILE: server/routes/auth-routes.ts  [/api/auth]
-  GET  /api/auth/setup-status               - check if admin exists (first-boot)
-  POST /api/auth/setup-master-admin         - create first admin
-  POST /api/auth/login                      - email+password login -> JWT
-  GET  /api/auth/me                         - validate token, return user
-  POST /api/auth/reset-first-login-password - forced first-login password change
-  POST /api/auth/change-password            - authenticated password change
-
-FILE: server/routes/admin-routes.ts  [/api/admin - requires role:admin]
-  GET  /api/admin/overview                  - dashboard stats
-  GET  /api/admin/audit-logs                - full audit log
-  CRUD /api/admin/colleges
-  CRUD /api/admin/departments
-  CRUD /api/admin/academic-years
-  CRUD /api/admin/semesters
-  CRUD /api/admin/classes
-  CRUD /api/admin/subjects
-  CRUD /api/admin/teachers                  + reset-password, toggle-active
-  CRUD /api/admin/students                  + bulk-import CSV, reset-password, toggle-active
-  CRUD /api/admin/teacher-assignments
-  CRUD /api/admin/marksheets                + download
-  CRUD /api/admin/notifications
-  CRUD /api/admin/events
-  POST /api/admin/ai-query                  - admin AI assistant
-
-FILE: server/routes/teacher-routes.ts  [/api/teacher - requires role:teacher]
-  All data access verified against teacher_class_assignments table
-  GET  /api/teacher/assignments             - teacher's class+subject+semester list
-  GET  /api/teacher/classes/:classId/students
-  GET/POST/PUT /api/teacher/marks           + export-csv
-  CRUD /api/teacher/assessments             - custom assessment definitions
-  GET  /api/teacher/analytics               + export-png
-  POST /api/teacher/notifications           - send class notification
-  GET  /api/teacher/events
-  POST /api/teacher/ai-query                - teacher AI assistant
-
-FILE: server/routes/student-routes.ts  [/api/student - requires role:student]
-  All data scoped to req.user.student_id
-  GET/PATCH /api/student/profile            + upload photo, resume, sync GitHub
-  CRUD /api/student/projects
-  CRUD /api/student/achievements
-  CRUD /api/student/certifications
-  CRUD /api/student/hackathons
-  CRUD /api/student/documents               + download
-  CRUD /api/student/posts                   + attachments
-  GET  /api/student/marks                   - own marks by semester/subject
-  GET  /api/student/marksheets              + download
-  GET  /api/student/notifications           + mark read, mark all read
-  GET  /api/student/events
-  POST /api/student/ai-query                - student AI assistant
-
-================================================================================
-6. FRONTEND SOURCE (src/ folder)
-================================================================================
-
-FILE: src/main.tsx  [REACT ENTRY POINT]
-  Renders App into #root. Imports index.css.
-
-FILE: src/App.tsx  [ROOT APP COMPONENT]
-  - Auth state management (currentUser, JWT validation on mount)
-  - Routes to AdminView / TeacherView / StudentView by role
-  - Renders Header, AiAssistantDrawer, NotificationModal, footer always
-
-FILE: src/index.css   - Global Tailwind base styles
-FILE: src/App.css     - 58KB custom CSS (animations, component styles, overrides)
-
-FILE: src/types.ts  [ALL FRONTEND TYPE DEFINITIONS]
-  Exports: UserRole, User, Department, AcademicClass, Subject, Semester,
-  TeacherAssignment, StudentProfile, StudentMarkItem, StudentSubjectMarks,
-  StudentSemesterRecord, Marksheet, NotificationItem, AnalyticsStats,
-  RegressionPoint, AnalyticsResponse, ProjectItem, AchievementItem,
-  CertificationItem, HackathonItem, DocumentItem, CollegeEvent,
-  PostAttachment, PostItem
-
-FILE: src/api.ts  [OLD API CLIENT - NOT USED by running app]
-  Points to http://localhost:4000 (legacy server). Ignore this file.
-
-FILE: src/lib/api.ts  [MAIN FRONTEND API CLIENT - 417 lines]
-  - Token management: getToken/setToken/clearToken using localStorage
-  - Exports api object with methods for all roles:
-    Auth: login, getCurrentUser, setupMasterAdmin, resetFirstLoginPassword, changePassword
-    Admin: all CRUD for users/classes/departments/subjects/semesters/years/
-           teacher-assignments/marksheets/notifications/events + AI
-    Teacher: assignments, class students, marks, assessments, analytics, AI
-    Student: profile, portfolio (projects/achievements/certs/hackathons),
-             documents, posts, marks, marksheets, notifications, events, AI
-
-FILE: src/lib/chart-setup.ts
-  - Chart.js global registration (import once before using charts)
-
-================================================================================
-6a. VIEWS (src/views/)
-================================================================================
-
-FILE: src/views/LoginView.tsx  [~19KB]
-  - Login form (email + password)
-  - First-boot: shows "Create Master Admin" if no admin exists
-  - Forced password reset screen if must_reset_password = true
-  - Demo quick-login buttons (Admin/Teacher/Student/Topper)
-
-FILE: src/views/AdminView.tsx  [~90KB]
-  Sections: Dashboard | Students | Teachers | Departments | Classes | Subjects |
-            Semesters | Academic Years | Teacher Assignments | Marksheets |
-            Notifications | Events | AI Assistant
-
-FILE: src/views/TeacherView.tsx  [~99KB - LARGEST FILE]
-  Sections: Dashboard | Mark Entry (spreadsheet grid) | Analytics (charts + regression) |
-            Students | Notifications | Events | AI Assistant
-
-FILE: src/views/StudentView.tsx  [~82KB]
-  Sections: Dashboard | Profile (bio/social/photo/resume/GitHub sync) |
-            Portfolio (Projects/Achievements/Certifications/Hackathons) |
-            Documents | Posts | Marks | Marksheets | Notifications | Events |
-            AI Assistant
-
-================================================================================
-6b. COMPONENTS (src/components/)
-================================================================================
-
-FILE: src/components/Header.tsx
-  Top nav: logo, app name, user name + role badge, notifications bell, AI button, logout
-
-FILE: src/components/AiAssistantDrawer.tsx
-  Sliding right panel for AI chat. Routes query to /api/{role}/ai-query.
-  Displays conversation history. Shows warning if no GEMINI_API_KEY.
-
-FILE: src/components/NotificationModal.tsx
-  Modal notification inbox. Mark read/unread. Mark all read.
-
-FILE: src/components/PostCard.tsx
-  Card for displaying a student post with attachments.
-
-================================================================================
-7. CONFIGURATION
-================================================================================
-
-.env key variables:
-  DATABASE_URL=postgresql://postgres:aryan@localhost:5432/vission_academy
-  JWT_SECRET=super_secret_vission_academy_key_2026
-  ADMIN_EMAIL=admin@visionacademy.edu
-  ADMIN_PASSWORD=password123
-  GEMINI_API_KEY=(empty by default - set for full AI)
-  S3_ENDPOINT/S3_BUCKET/S3_ACCESS_KEY/S3_SECRET_KEY (optional S3 storage)
-
-package.json scripts:
-  npm run dev          -> tsx server.ts (full-stack on :3000)
-  npm run dev:frontend -> vite only on :5173
-  npm run build        -> vite build + esbuild server.ts
-  npm run start        -> node dist/server.cjs (production)
-
-vite.config.ts:
-  - Plugins: react(), tailwindcss()
-  - cacheDir: D:/tmp/vission-academy-vite-cache  (on D: drive)
-  - HMR disabled via DISABLE_HMR=true env var
-  - Path alias: @ -> project root
-
-================================================================================
-8. FILE UPLOAD SYSTEM
-================================================================================
-
-Storage: Local disk /uploads/ by default (multer). S3 optional via env vars.
-Direct URL access blocked - files served only via authenticated routes.
-
-Profile photo:   POST /api/student/profile/photo     -> uploads/photos/
-Resume:          POST /api/student/profile/resume    -> uploads/resumes/ + auto-parsed
-Documents:       POST /api/student/documents         -> uploads/documents/
-Post files:      POST /api/student/posts/:id/attachments -> uploads/posts/
-Marksheets:      POST /api/admin/marksheets          -> uploads/marksheets/
-
-Resume parsing (server/documents.ts):
-  Extracts: Education, Skills, Projects, Experience, Certifications, Summary
-  Stored in student_documents.parsed_headings (JSONB)
-
-================================================================================
-9. AI ASSISTANT ARCHITECTURE
-================================================================================
-
-MODEL: gemini-2.0-flash via @google/genai SDK
-KEY: GEMINI_API_KEY in .env (empty = fallback to raw DB data text)
-
-CURRENT implementation (server/ai-assistant.ts):
-  - Builds text context from DB queries scoped to user role
-  - Sends: "Context: {data}\nUser query: {text}" to Gemini
-  - Returns natural language answer
-
-RBAC:
-  - Admin: institution-wide stats
-  - Teacher: only their assigned classes/students/marks
-  - Student: only their own academic data
-  - All queries audited in ai_query_logs table
-
-================================================================================
-10. KNOWN ISSUES & IMPORTANT NOTES
-================================================================================
-
-1. TWO SERVERS EXIST - USE THE RIGHT ONE:
-   - server.ts (root) PORT 3000 = ACTIVE (started by npm run dev)
-   - server/index.ts  PORT 4000 = LEGACY (not started, ignore it)
-
-2. TWO API CLIENT FILES - USE THE RIGHT ONE:
-   - src/api.ts         = OLD, points to :4000, not used by running app
-   - src/lib/api.ts     = CURRENT, relative URLs, correct types
-
-3. VITE CACHE at D:/tmp/vission-academy-vite-cache (outside project)
-
-4. GEMINI_API_KEY is empty in .env - AI returns raw DB text until set
-
-5. PostgreSQL must be running on localhost:5432
-   credentials: postgres/aryan, database: vission_academy
-   Start with: docker-compose up -d
-
-6. Check FUNCTIONAL_QA_FAILURE_REPORT.md for known QA failures
-
-================================================================================
-11. HOW TO ADD NEW FEATURES
-================================================================================
-
-NEW API ENDPOINT:
-  1. Add SQL in server/routes/{role}-routes.ts
-  2. Add type in src/types.ts
-  3. Add api.xxx() in src/lib/api.ts
-  4. Call from src/views/{Role}View.tsx
-
-NEW DATABASE TABLE:
-  1. Add CREATE TABLE IF NOT EXISTS to db/schema.sql
-  2. Add seed data to db/seed-qa.sql
-  3. initializeDatabase() runs schema.sql on every boot (idempotent)
-
-NEW ROLE PERMISSION:
-  1. Update requireRole() in the route
-  2. For teachers: call verifyTeacherClassScope()
-  3. For students: always scope to req.user.student_id
-  ===============================================================================
-12. AI AGENT OPERATING RULES
-===============================================================================
-
-IMPORTANT: READ THIS PROJECT_MAP.txt FIRST BEFORE MODIFYING THE PROJECT.
-
-PURPOSE:
-This file is the architecture map and source-of-truth guide for navigating
-the existing Vission Academy codebase efficiently.
-
-BEFORE ANY TASK:
-1. Read project_map.txt.
-2. Inspect ONLY files relevant to the requested feature.
-3. Reuse existing routes, components, API methods, database tables and types.
-4. Do NOT create duplicate implementations.
-5. Do NOT replace PostgreSQL with mock data, memDb, localStorage or JSON.
-6. Preserve existing authentication and RBAC.
-7. Preserve existing Class + Subject + Semester scoping.
-8. Do not modify unrelated features.
-
-DO NOT SCAN:
-- node_modules/
-- dist/
-- build/
-- .git/
-- .cache/
-- .vite/
-- coverage/
-- uploads/
-- test-results/
-- scratch/
-- generated files
-- binaries
-- IDE metadata
-- legacy server/index.ts
-- legacy src/api.ts
-
-ACTIVE ARCHITECTURE:
-Frontend:
-src/main.tsx
-→ src/App.tsx
-→ src/views/*
-→ src/components/*
-→ src/lib/api.ts
-
-Backend:
 server.ts
-→ server/routes/*
-→ server/db.ts
-→ PostgreSQL
+Purpose: Backend application entry point.
+Responsibilities: Initializes Express, configures middleware (CORS, JSON parsing), mounts routes, and schedules cron jobs (GitHub/LinkedIn/HackerRank sync).
+Used by: Node runtime (npm start).
+Status: ACTIVE.
 
-ACTIVE SERVER:
-http://localhost:3000
+server/db.ts
+Purpose: PostgreSQL database connector.
+Responsibilities: Exports `query()` wrapper for the `pg` connection pool. Handles transactions.
+Used by: All backend routes and sync services.
+Status: ACTIVE.
 
-DATABASE:
-PostgreSQL is the source of truth.
+server/auth.ts
+Purpose: Authentication and Authorization service.
+Responsibilities: JWT creation, password hashing/comparison, `requireAuth` and `requireRole` middleware, rate limiting. Enforces teacher scope verification.
+Used by: server.ts, backend routes.
+Status: ACTIVE.
 
-LEGACY FILES:
-server/index.ts = legacy server, DO NOT USE
-src/api.ts = legacy API client, DO NOT USE
+server/routes/admin-routes.ts
+Purpose: Admin REST API.
+Responsibilities: 
+- User management (students/teachers)
+- Class/subject/semester management
+- Analytics visibility settings per teacher
+- Fetching full student profile dossiers
+- Bulk official marksheets processing (PDF/ZIP upload)
+- Notifications & events management
+- Manual sync triggers
+Used by: Admin frontend (AdminView).
+Status: ACTIVE.
 
-FEATURE IMPLEMENTATION RULE:
-For a new backend feature:
-1. server/routes/{role}-routes.ts
-2. server/db.ts/query layer if needed
-3. src/types.ts
-4. src/lib/api.ts
-5. relevant src/views/* or components
+server/routes/teacher-routes.ts
+Purpose: Teacher REST API.
+Responsibilities:
+- Class roster and full student profiles
+- Marks entry and assessment creation
+- Teacher analytics (Internal marks, GitHub, Hackathon)
+- Scopes are restricted strictly to `teacher_class_assignments`.
+Used by: Teacher frontend (TeacherView).
+Status: ACTIVE.
 
-DATABASE RULE:
-Use db/schema.sql.
-Use idempotent CREATE TABLE IF NOT EXISTS / ALTER TABLE IF NOT EXISTS
-where appropriate.
+server/routes/student-routes.ts
+Purpose: Student REST API.
+Responsibilities:
+- Fetching self profile, projects, achievements, skills, hackathons
+- Fetching self marks and transcripts
+- Fetching self notifications and marking as read
+Used by: Student frontend (StudentView).
+Status: ACTIVE.
 
-RBAC RULE:
-Admin:
-institution-wide access according to admin routes.
+server/analytics.ts
+Purpose: Analytics utility functions.
+Responsibilities: Linear regression computation, median, standard deviation for marks prediction.
+Used by: admin-routes.ts, teacher-routes.ts
+Status: ACTIVE.
 
-Teacher:
-ONLY assigned Class + Subject + Semester.
-Use verifyTeacherClassScope().
+server/github-sync.ts
+Purpose: GitHub external sync service.
+Responsibilities: Fetches public repositories, stars, forks, and followers. Saves monthly snapshots idempotently.
+Status: ACTIVE.
 
-Student:
-ONLY own student_id data.
+server/linkedin-sync.ts
+Purpose: LinkedIn sync service placeholder.
+Responsibilities: Currently NOT AVAILABLE. No legitimate API configured. Returns 'not_synced' to prevent scraping or fake data.
+Status: ACTIVE.
 
-MARKS RULE:
-Marks and assessment definitions MUST remain scoped by:
-Class + Subject + Semester.
+server/hackerrank-sync.ts
+Purpose: HackerRank sync service placeholder.
+Responsibilities: Currently NOT AVAILABLE. No legitimate API configured. Returns 'not_synced'.
+Status: ACTIVE.
 
-NO MOCK DATA:
-Never use fake runtime data to hide a missing backend implementation.
+[ LEGACY / UNUSED FILES ]
+server/index.ts : Legacy backend entry point. DO NOT USE.
+src/api.ts : Legacy frontend API client. DO NOT USE.
 
-VERIFICATION RULE:
-Static verification:
-- source inspection
-- TypeScript/type checks
-- lint
-- build
-- targeted API/database checks
+=============================================================================
+6. COMPLETE FRONTEND MAP
+=============================================================================
+[ ACTIVE FRONTEND ]
 
-Runtime verification:
-- browser/Playwright test
-- actual API response
-- PostgreSQL state
-- UI result
-- refresh/re-login persistence
+src/main.tsx
+Purpose: React SPA entry point. Renders App component.
 
-Do NOT call a feature "runtime verified" from source inspection alone.
+src/App.tsx
+Purpose: Main application router and shell.
+Responsibilities: Handles initial auth check, renders LoginView or the Role-based View (Admin/Teacher/Student), NotificationModal, and AiAssistantDrawer.
 
-TOKEN-EFFICIENCY RULE:
-Prefer targeted inspection.
-Do not recursively read the entire project.
-Search only for files/symbols directly related to the requested task.
+src/lib/api.ts
+Purpose: Frontend API client.
+Responsibilities: Wrapper around `fetch` that automatically injects the JWT bearer token. Contains all API endpoint functions.
 
-CHANGE RULE:
-Before editing:
-- identify existing implementation
-- identify database dependencies
-- identify API route
-- identify frontend entry point
+Views:
+- src/views/LoginView.tsx : Renders login form.
+- src/views/AdminView.tsx : Renders overview/analytics, classes/courses, user directory, official marksheets, notices, events, audit logs, analytics settings, and the full student dossier.
+- src/views/TeacherView.tsx : Renders class roster, full student profile, marks entry spreadsheet, assessments, academic and hackathon analytics, announcements.
+- src/views/StudentView.tsx : Renders self profile, projects/certifications, marks, transcripts, events, document vault, and notifications.
 
-After editing:
-- run targeted checks
-- run build/lint if relevant
-- report only changed files and verification results
+Components:
+- src/components/Header.tsx : App bar with user info, logout, notification bell.
+- src/components/AiAssistantDrawer.tsx : Slide-out drawer for Gemini AI queries.
+- src/components/NotificationModal.tsx : Displays notices.
+- src/components/PostCard.tsx : Renders student posts/activity.
 
-DO NOT PUSH TO GITHUB unless the user explicitly asks.
-===============================================================================
+=============================================================================
+7. STUDENT PROFILE ARCHITECTURE
+=============================================================================
+The full LinkedIn-style student dossier includes:
+- Identity (roll number, avatar, bio, email, branch/year)
+- Links (GitHub, LinkedIn, HackerRank, portfolio)
+- Projects, Achievements, Certifications, Skills, Hackathons, Documents, Posts.
+Note: A profile URL does NOT mean analytics should be generated. External analytics sync is a completely separate system.
 
-================================================================================
-END OF PROJECT MAP
-================================================================================
+=============================================================================
+8. POSTS / ACTIVITY
+=============================================================================
+Posts are created by students and are visible on their profile.
+Model: `posts` table includes title, description, category, tags (JSON), and external_link.
+Attachments: Supported via `post_attachments` table (image/video/PDF).
+
+=============================================================================
+9. MARKS ARCHITECTURE
+=============================================================================
+Hierarchy: Semester -> Class -> Subject -> Teacher Assignment -> Assessment -> Marks.
+- Dynamic Assessment Creation: Teachers define assessments (CA, Mid-Sem, Final) with maximum marks.
+- Obtained marks are scoped to the class/subject/semester and the specific assessment.
+- Teacher authorization strictly verified before allowing marks entry.
+- TEACHER MARKS (internal/ongoing) are strictly distinguished from OFFICIAL ADMIN MARKSHEETS (uploaded as PDFs by admins).
+
+=============================================================================
+10. TEACHER ANALYTICS & 11. ANALYTICS VISIBILITY
+=============================================================================
+Teacher Analytics includes:
+- Internal marks, class averages, and performance distributions.
+- Linear regression prediction models.
+- GitHub, LinkedIn (placeholder), HackerRank (placeholder), Hackathon, and Academic analytics.
+
+Visibility Enforcement:
+- Configured by Admins per-teacher in the `teacher_analytics_visibility` PostgreSQL table.
+- Flags include: `github_enabled`, `linkedin_enabled`, `hackerrank_enabled`, `hackathon_enabled`, `academic_enabled`.
+- Backend filtering is the security boundary. If a teacher's flag is false, the API explicitly omits or denies the data. Frontend hiding is NOT authorization.
+
+=============================================================================
+12. EXTERNAL SYNC ARCHITECTURE
+=============================================================================
+- GITHUB: Uses GitHub API to fetch public repos/followers. Monthly snapshots are taken. Handles rate limits and stores raw data in `student_github_snapshots`. Idempotent upserts.
+- LINKEDIN: NOT AVAILABLE. No legitimate API is configured. No scraping or synthetic data.
+- HACKERRANK: NOT AVAILABLE. No legitimate API is configured. No scraping or synthetic data.
+
+=============================================================================
+13. ADMIN STUDENT PROFILE BUG FIX
+=============================================================================
+Crucial architecture decision:
+The AdminView previously used the teacher-scoped endpoint to fetch student profiles, leading to a 403 Forbidden because Admin is not a Teacher.
+Current implementation: AdminView calls `GET /api/admin/students/:studentId/full-profile` which uses admin authorization to bypass the teacher RBAC check and return the full dossier.
+Files involved: server/routes/admin-routes.ts, src/lib/api.ts, src/views/AdminView.tsx.
+
+=============================================================================
+14. DATABASE SCHEMA DOCUMENTATION
+=============================================================================
+AUTH:
+- `users`: id, email, role (admin/teacher/student), password_hash, full_name, is_active, must_reset_password.
+
+ACADEMIC:
+- `colleges`, `departments`, `academic_years`, `semesters`.
+- `classes`: department_id, academic_year_id, name, year, section.
+- `subjects`: department_id, name, code, max_marks.
+- `students`: roll_number, class_id, department_id, external URLs, bio.
+- `teachers`: Base user reference.
+- `teacher_class_assignments`: SOURCE OF TRUTH for Teacher RBAC. Fields: teacher_user_id, class_id, subject_id, semester_id, status. Protected by unique index `uq_tca_active_assignment`.
+- `assessment_definitions`: teacher-created dynamic assessments.
+- `marks`: exam_type, marks_obtained, max_marks.
+
+PROFILE & PORTFOLIO:
+- `projects`, `achievements`, `certifications`, `hackathons`: all link to student_id and include `verification_status`.
+- `posts`, `post_attachments`.
+
+DOCUMENTS:
+- `student_documents`: doc_type, file_url, parsed_headings.
+- `marksheets`: Official uploaded PDF marksheets with sgpa/cgpa.
+
+COMMUNICATION:
+- `notifications`: target_role ('all', 'all_students', 'all_teachers', 'class').
+- `notification_reads`, `events`.
+
+ANALYTICS:
+- `teacher_analytics_visibility`: Controls admin-configured analytics scopes.
+- `student_github_snapshots`: Snapshot history.
+- `student_linkedin_snapshots`: Snapshot history.
+- `student_hackerrank_snapshots`: Snapshot history.
+
+AUDIT & AI:
+- `audit_logs`: action, entity_type, details.
+- `ai_query_logs`: query_text, resolved_intent, tool_calls.
+
+=============================================================================
+15. SNAPSHOT CORRECTION
+=============================================================================
+Historical snapshots are captured monthly (YYYY-MM).
+They use an idempotent upsert: `ON CONFLICT (student_id, snapshot_month) DO UPDATE`.
+This means multiple syncs within the same month will overwrite that month's record, ensuring idempotent behavior without generating duplicates.
+
+=============================================================================
+16. AUTH + RBAC
+=============================================================================
+- JWT creation in `server/auth.ts`. Payload includes id, email, role, and student/class ID if applicable.
+- Passwords hashed via bcryptjs.
+- Role Middleware (`requireRole`) checks the decoded token's role array.
+- Teacher Scope: `verifyTeacherClassScope()` checks the `teacher_class_assignments` table to ensure a teacher has an active/past assignment to the requested class/subject/semester.
+- Admin Authorization: Enforced on all `/api/admin/*` routes.
+- Rate Limiting: Configured in `auth.ts` per IP address to protect APIs.
+
+=============================================================================
+17. STORAGE / UPLOADS
+=============================================================================
+- Handled by Express routes and Multer middleware.
+- Marksheets support single PDF upload and bulk ZIP extraction containing PDFs.
+- Files belong to specific students or posts. Download authorization enforced based on ownership or admin privileges.
+
+=============================================================================
+18. AI / GEMINI
+=============================================================================
+- Integrated via `@google/genai`.
+- Accessible via the AiAssistantDrawer in the frontend.
+- API requests are logged to `ai_query_logs`.
+- If `GEMINI_API_KEY` is not present, the system should gracefully fallback or report unavailability.
+
+=============================================================================
+19. CONFIGURATION
+=============================================================================
+Environment variables (Never document actual values here):
+- `DATABASE_URL` (Required)
+- `JWT_SECRET` (Required)
+- `GEMINI_API_KEY` (Required for AI assistant)
+- `GITHUB_TOKEN` (Optional, used for GitHub sync)
+
+Scripts (package.json):
+- `npm run dev`: starts backend
+- `npm run dev:frontend`: starts Vite
+- `npm run build`: builds production assets
+- `npm run lint`: type checks
+
+=============================================================================
+20. LEGACY CODE
+=============================================================================
+ACTIVE RUNTIME:
+- server.ts
+- src/lib/api.ts
+
+LEGACY (DO NOT USE, Kept for historical reference):
+- server/index.ts
+- src/api.ts
+
+=============================================================================
+21. AI AGENT OPERATING RULES (RULES FOR FUTURE AI AGENTS)
+=============================================================================
+1. Read PROJECT_MAP.txt first.
+2. Inspect existing implementation before creating new files.
+3. PostgreSQL is the runtime source of truth.
+4. Never introduce memDb/localStorage as database substitutes.
+5. Preserve Admin/Teacher/Student RBAC at all times.
+6. Preserve teacher Class + Subject + Semester scope based on `teacher_class_assignments`.
+7. Backend authorization is mandatory. Frontend hiding is not secure.
+8. Never fabricate external analytics.
+9. Never scrape unsupported LinkedIn/HackerRank endpoints.
+10. GitHub sync happens only when student GitHub URL exists.
+11. Preserve monthly snapshot/idempotency logic (`ON CONFLICT... DO UPDATE`).
+12. Do not modify the database during static audits.
+13. Do not use the browser during static-only audits.
+14. Do not push unless explicitly requested.
+15. Do not create duplicate implementations.
+16. Prefer modifying existing services/components over writing new ones.
+17. Run lint/build after source changes.
+18. Clearly distinguish: STATIC VERIFIED, DATABASE VERIFIED, BROWSER VERIFIED.
+
+=============================================================================
+22. ARCHITECTURE DIAGRAMS
+=============================================================================
+[ OVERALL ARCHITECTURE ]
+  React SPA (Vite)  <-- REST API (JWT) -->  Node.js (Express)  <-- pg --> PostgreSQL
+
+[ AUTHENTICATION ]
+  Login --> bcrypt compare --> JWT Sign --> Client saves in LocalStorage/Memory
+  Client requests --> Bearer Token --> requireAuth Middleware --> Route Handler
+
+[ ADMIN ]
+  Admin API --> Has access to all users, classes, analytics visibility, system audits.
+
+[ TEACHER ]
+  Teacher API --> Scoped strictly by `teacher_class_assignments`. Can manage marks and view filtered analytics.
+
+[ STUDENT ]
+  Student API --> Can view self profile, dossier, transcripts, and notifications.
+
+=============================================================================
+23. KNOWN LIMITATIONS
+=============================================================================
+- LinkedIn real integration unavailable (returns 'not_synced').
+- HackerRank real integration unavailable (returns 'not_synced').
+- Gemini requires the `GEMINI_API_KEY` configuration.
+
+=============================================================================
+24. AUDIT HISTORY
+=============================================================================
+PROJECT_MAP AUDIT
+Audit type: STATIC
+Browser: NOT USED
+Database: NOT TOUCHED
+Application: NOT STARTED
+Purpose: Architecture/documentation audit.
+Date: 2026-09-21
