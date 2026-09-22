@@ -149,6 +149,8 @@ export const api = {
     }),
 
   getAdminMarksheets: () => request<Marksheet[]>('/api/admin/marksheets'),
+  
+  getAdminAcademicRecords: () => request<any[]>('/api/admin/academic-records'),
 
   uploadMarksheet: (data: { student_id: string; semester_id: string; sgpa: number; cgpa: number; file_name?: string }) =>
     request<{ message: string; marksheet: Marksheet }>('/api/admin/marksheets', {
@@ -444,5 +446,8 @@ export const api = {
         body: JSON.stringify({ semester_id: semesterId, entries }),
       }
     ),
+    
+  // Placement Routes
+  getPlacementDashboard: () => request<any>('/api/placement/dashboard'),
+  getStudentFullProfileForPlacement: (studentId: string) => request<any>(`/api/placement/students/${studentId}/full-profile`),
 };
-

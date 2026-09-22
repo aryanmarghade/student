@@ -61,6 +61,29 @@ router.get('/users', async (req, res) => {
   res.json(rows);
 });
 
+import { calculateAcademicHistoryBulk, calculateAcademicHistory } from '../academic-service.js';
+
+router.get('/academic-records', async (req, res) => {
+  const students = (await query(`
+    SELECT s.id, s.roll_number, u.full_name, c.name AS "className", c.year AS "classYear", c.section AS "classSection", d.name AS "departmentName"
+    FROM students s
+    JOIN users u ON u.id = s.user_id
+    LEFT JOIN classes c ON c.id = s.class_id
+    LEFT JOIN departments d ON d.id = s.department_id
+    ORDER BY s.roll_number
+  `)).rows;
+
+  const studentIds = students.map(s => s.id);
+  const histories = await calculateAcademicHistoryBulk(studentIds);
+
+  const enriched = students.map(s => ({
+    ...s,
+    academicHistory: histories[s.id]
+  }));
+
+  res.json(enriched);
+});
+
 router.post('/users', async (req: AuthRequest, res) => {
   const { email, full_name, role, roll_number, class_id, department_id, password } = req.body;
   if (!email || !full_name || !role) return res.status(400).json({ error: 'Email, full name, and role are required.' });
@@ -503,19 +526,25 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
   )).rows[0];
   if (!s) return res.status(404).json({ error: 'Student record not found.' });
 
-  const [projects, achievements, certifications, hackathons, documents, marks, posts] = await Promise.all(
-    ['projects', 'achievements', 'certifications', 'hackathons', 'student_documents', 'marks'].map(
-      table => query(`SELECT * FROM ${table} WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
-    ).concat([
-      query(`
-        SELECT p.*,
-               (SELECT json_agg(a.*) FROM post_attachments a WHERE a.post_id = p.id) as attachments
-        FROM posts p
-        WHERE p.student_id = $1
-        ORDER BY p.created_at DESC
-      `, [s.id])
-    ])
-  );
+  const [
+    [projects, achievements, certifications, hackathons, documents, marks, posts],
+    academicHistory
+  ] = await Promise.all([
+    Promise.all(
+      ['projects', 'achievements', 'certifications', 'hackathons', 'student_documents', 'marks'].map(
+        table => query(`SELECT * FROM ${table} WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+      ).concat([
+        query(`
+          SELECT p.*,
+                 (SELECT json_agg(a.*) FROM post_attachments a WHERE a.post_id = p.id) as attachments
+          FROM posts p
+          WHERE p.student_id = $1
+          ORDER BY p.created_at DESC
+        `, [s.id])
+      ])
+    ),
+    calculateAcademicHistory(req.params.studentId)
+  ]);
   res.json({
     ...s,
     projects: projects.rows,
@@ -533,6 +562,7 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
       resume: s.resume_url,
     },
     posts: posts.rows,
+    academicHistory: academicHistory,
   });
 });
 

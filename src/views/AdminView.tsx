@@ -35,7 +35,7 @@ import '../lib/chart-setup';
 import { PostCard } from '../components/PostCard';
 
 export const AdminView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'classes' | 'users' | 'assignments' | 'marksheets' | 'notices' | 'events' | 'audit' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'classes' | 'users' | 'assignments' | 'marksheets' | 'academic_records' | 'notices' | 'events' | 'audit' | 'settings'>('overview');
 
   // Overview Data
   const [overview, setOverview] = useState<any>(null);
@@ -43,6 +43,7 @@ export const AdminView: React.FC = () => {
   const [analyticsVisibility, setAnalyticsVisibility] = useState<Record<string, any>>({});
 
   // Entities Data
+  const [academicRecords, setAcademicRecords] = useState<any[]>([]);
   const [classes, setClasses] = useState<AcademicClass[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -194,7 +195,7 @@ export const AdminView: React.FC = () => {
   const loadAllAdminData = async () => {
     setIsLoading(true);
     try {
-      const [overviewData, analyticsData, classesData, deptsData, subjectsData, semsData, usersData, assignData, auditData, eventsData, visibilityData] = await Promise.all([
+      const [overviewData, analyticsData, classesData, deptsData, subjectsData, semsData, usersData, assignData, auditData, eventsData, visibilityData, recordsData] = await Promise.all([
         api.getAdminOverview(),
         api.getAdminAnalytics(),
         api.getAdminClasses(),
@@ -205,7 +206,8 @@ export const AdminView: React.FC = () => {
         api.getTeacherAssignments(),
         api.getAuditLogs(),
         api.getAdminEvents(),
-        api.getAdminAnalyticsVisibility()
+        api.getAdminAnalyticsVisibility(),
+        api.getAdminAcademicRecords()
       ]);
 
       setOverview(overviewData);
@@ -223,6 +225,7 @@ export const AdminView: React.FC = () => {
       setAssignments({ active: assignData.active, past: assignData.past });
       setAuditLogs(auditData || []);
       setEvents(eventsData || []);
+      setAcademicRecords(recordsData || []);
 
       if (deptsData.length > 0) {
         setNewClassData(prev => ({ ...prev, department_id: deptsData[0].id }));
@@ -676,6 +679,7 @@ export const AdminView: React.FC = () => {
             { id: 'users', label: 'User Directory', icon: Users },
             { id: 'assignments', label: 'Teacher Scopes & History', icon: Layers },
             { id: 'marksheets', label: 'Official Marksheets', icon: Award },
+            { id: 'academic_records', label: 'Academic Records', icon: GraduationCap },
             { id: 'notices', label: 'Broadcast Notices', icon: Send },
             { id: 'events', label: 'College Events & Hackathons', icon: Trophy },
             { id: 'audit', label: 'Audit Trail & Security Logs', icon: ShieldCheck },
@@ -983,6 +987,7 @@ export const AdminView: React.FC = () => {
               <option value="student">Students Only</option>
               <option value="teacher">Faculty Only</option>
               <option value="admin">Administrators Only</option>
+              <option value="placement">Placement Only</option>
             </select>
           </div>
 
@@ -1017,6 +1022,7 @@ export const AdminView: React.FC = () => {
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${u.role === 'admin' ? 'bg-amber-100 text-amber-900 border border-amber-300' :
                             u.role === 'teacher' ? 'bg-sky-100 text-sky-900 border border-sky-300' :
+                            u.role === 'placement' ? 'bg-purple-100 text-purple-900 border border-purple-300' :
                               'bg-emerald-100 text-emerald-900 border border-emerald-300'
                           }`}>
                           {u.role}
@@ -1327,6 +1333,82 @@ export const AdminView: React.FC = () => {
                 </div>
               )}
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: ACADEMIC RECORDS */}
+      {activeTab === 'academic_records' && (
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-[#0f2744]">Academic Records Database</h2>
+              <p className="text-xs text-slate-500 mt-1">Institutional academic history & backlogs</p>
+            </div>
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search roll no or name..."
+                value={userSearch}
+                onChange={e => setUserSearch(e.target.value)}
+                className="pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-amber-500 w-full md:w-64"
+              />
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-2xs border border-slate-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-600 font-bold">
+                    <th className="p-3">Roll No</th>
+                    <th className="p-3">Student Name</th>
+                    <th className="p-3">Class</th>
+                    <th className="p-3">Dept</th>
+                    <th className="p-3">Current CGPA</th>
+                    <th className="p-3">Total Active Backlogs</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {academicRecords
+                    .filter(r => r.full_name.toLowerCase().includes(userSearch.toLowerCase()) || r.roll_number?.toLowerCase().includes(userSearch.toLowerCase()))
+                    .map(r => (
+                      <tr key={r.student_id} className="hover:bg-slate-50">
+                        <td className="p-3 text-xs font-bold text-slate-900">{r.roll_number || 'N/A'}</td>
+                        <td className="p-3 text-xs text-slate-700">{r.full_name}</td>
+                        <td className="p-3 text-xs text-slate-500">{r.className || 'N/A'}</td>
+                        <td className="p-3 text-xs text-slate-500">{r.departmentName || 'N/A'}</td>
+                        <td className="p-3 text-xs font-bold text-emerald-700">{r.currentCgpa ? r.currentCgpa.toFixed(2) : 'N/A'}</td>
+                        <td className="p-3">
+                          {r.totalActiveBacklogs > 0 ? (
+                            <span className="inline-flex items-center gap-1 bg-red-100 text-red-800 px-2 py-0.5 rounded text-[10px] font-bold">
+                              <AlertCircle className="w-3 h-3" /> {r.totalActiveBacklogs}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-xs">None</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-right">
+                          <button
+                            onClick={() => handleViewStudentProfile(r.student_id)}
+                            className="px-2 py-1 bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 rounded shadow-xs text-[10px] font-bold"
+                          >
+                            View Dossier
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  {academicRecords.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="p-6 text-center text-xs text-slate-500">
+                        No academic records loaded.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -2185,6 +2267,7 @@ export const AdminView: React.FC = () => {
                     <option value="student">Student</option>
                     <option value="teacher">Teacher / Faculty</option>
                     <option value="admin">Administrator</option>
+                    <option value="placement">Placement</option>
                   </select>
                 </div>
                 <div>
@@ -2329,6 +2412,7 @@ export const AdminView: React.FC = () => {
                   <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
                     {[
                       { id: 'overview', label: 'Overview' },
+                      { id: 'academic-history', label: 'Academic History' },
                       { id: 'posts', label: 'Posts' },
                       { id: 'achievements', label: 'Achievements' },
                       { id: 'projects', label: 'Projects' },
@@ -2418,6 +2502,62 @@ export const AdminView: React.FC = () => {
                           </div>
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {profileSection === 'academic-history' && selectedStudentProfile.academicHistory && (
+                    <div className="space-y-4">
+                      <div className="bg-emerald-50 text-emerald-900 p-4 rounded-xl flex items-center gap-4">
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold opacity-80">Current CGPA</p>
+                          <p className="text-3xl font-bold">{selectedStudentProfile.academicHistory.currentCgpa?.toFixed(2) || 'N/A'}</p>
+                        </div>
+                        <div className="w-px h-12 bg-emerald-200" />
+                        <div className="flex-1 pl-4">
+                          <p className="text-sm font-semibold opacity-80">Active Backlogs</p>
+                          <p className="text-3xl font-bold text-red-600">{selectedStudentProfile.academicHistory.totalActiveBacklogs || 0}</p>
+                        </div>
+                      </div>
+
+                      {Array.isArray(selectedStudentProfile.academicHistory.semesters) && selectedStudentProfile.academicHistory.semesters.length > 0 ? (
+                        <div className="space-y-4">
+                          <h3 className="font-bold text-slate-900">Academic History</h3>
+                          {selectedStudentProfile.academicHistory.semesters.map((sem: any, i: number) => (
+                            <div key={i} className="border border-slate-200 rounded-xl overflow-hidden">
+                              <div className="bg-slate-50 p-3 border-b border-slate-200 font-semibold text-slate-800 flex justify-between">
+                                <span>{sem.semesterId}</span>
+                                <span>Percentage: {sem.percentage.toFixed(1)}%</span>
+                              </div>
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="bg-white text-slate-500 text-left">
+                                    <th className="p-2 pl-4">Subject</th>
+                                    <th className="p-2 text-right">Marks</th>
+                                    <th className="p-2 pl-4">Result</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(sem.subjects || []).map((sub: any, j: number) => (
+                                    <tr key={j} className="border-t border-slate-100 bg-white">
+                                      <td className="p-2 pl-4 text-slate-700">{sub.subjectName}</td>
+                                      <td className="p-2 text-right font-medium text-slate-900">{sub.obtained}/{sub.max}</td>
+                                      <td className="p-2 pl-4">
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                          sub.status === 'PASS' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                                        }`}>{sub.status}</span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                          No academic history available.
+                        </div>
+                      )}
                     </div>
                   )}
 

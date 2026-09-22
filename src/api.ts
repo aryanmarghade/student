@@ -1,4 +1,4 @@
-export type ApiRole = 'super_admin' | 'teacher' | 'student'
+export type ApiRole = 'super_admin' | 'teacher' | 'student' | 'placement'
 
 export type SessionUser = {
   id: string

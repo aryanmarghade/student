@@ -8,6 +8,7 @@ import { LoginView } from './views/LoginView';
 import { AdminView } from './views/AdminView';
 import { TeacherView } from './views/TeacherView';
 import { StudentView } from './views/StudentView';
+import { PlacementView } from './views/PlacementView';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -126,6 +127,7 @@ export default function App() {
         {currentUser.role === 'admin' && <AdminView />}
         {currentUser.role === 'teacher' && <TeacherView />}
         {currentUser.role === 'student' && <StudentView />}
+        {currentUser.role === 'placement' && <PlacementView />}
       </main>
 
       {/* Grounded AI Assistant Drawer */}

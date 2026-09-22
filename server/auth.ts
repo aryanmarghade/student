@@ -6,7 +6,7 @@ import { query, UserRecord } from './db.js';
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('JWT_SECRET is required; refusing to use an in-memory fallback secret.');
 
-export interface AuthenticatedUser { id: string; email: string; role: 'admin' | 'teacher' | 'student'; full_name: string; student_id?: string; class_id?: string; }
+export interface AuthenticatedUser { id: string; email: string; role: 'admin' | 'teacher' | 'student' | 'placement'; full_name: string; student_id?: string; class_id?: string; }
 export interface AuthRequest extends Request { user?: AuthenticatedUser; }
 
 export function generateToken(user: UserRecord, student?: { id: string; class_id: string | null }): string {
@@ -34,7 +34,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   } catch { return res.status(401).json({ error: 'Invalid or expired authentication token.' }); }
 }
 
-export function requireRole(...roles: Array<'admin'|'teacher'|'student'>) {
+export function requireRole(...roles: Array<'admin'|'teacher'|'student'|'placement'>) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user) return res.status(401).json({ error: 'Authentication required.' });
     if (!roles.includes(req.user.role)) return res.status(403).json({ error: `Access forbidden: ${req.user.role.toUpperCase()} role is not authorized for this resource.` });

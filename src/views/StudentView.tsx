@@ -1020,6 +1020,66 @@ export const StudentView: React.FC = () => {
               );
             })}
           </div>
+
+          {/* Academic History & Backlogs from calculateAcademicHistory */}
+          {profile?.academicHistory && (
+            <div className="space-y-4 pt-6 border-t border-slate-200">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-[#0f2744]" /> Academic History & Backlogs
+              </h3>
+              
+              <div className="bg-emerald-50 text-emerald-900 p-4 rounded-xl flex items-center gap-4">
+                <div className="flex-1">
+                  <p className="text-sm font-semibold opacity-80">Current CGPA</p>
+                  <p className="text-3xl font-bold">{profile.academicHistory.currentCgpa?.toFixed(2) || 'N/A'}</p>
+                </div>
+                <div className="w-px h-12 bg-emerald-200" />
+                <div className="flex-1 pl-4">
+                  <p className="text-sm font-semibold opacity-80">Active Backlogs</p>
+                  <p className="text-3xl font-bold text-red-600">{profile.academicHistory.totalActiveBacklogs || 0}</p>
+                </div>
+              </div>
+
+              {Array.isArray(profile.academicHistory.semesters) && profile.academicHistory.semesters.length > 0 ? (
+                <div className="space-y-4">
+                  {profile.academicHistory.semesters.map((sem: any, i: number) => (
+                    <div key={i} className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                      <div className="bg-slate-50 p-3 border-b border-slate-200 font-semibold text-slate-800 flex justify-between">
+                        <span>{sem.semesterId}</span>
+                        <span>Percentage: {sem.percentage.toFixed(1)}%</span>
+                      </div>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-white text-slate-500 text-left border-b border-slate-200">
+                            <th className="p-2 pl-4 font-semibold">Subject</th>
+                            <th className="p-2 text-right font-semibold">Marks</th>
+                            <th className="p-2 pl-4 font-semibold">Result</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(sem.subjects || []).map((sub: any, j: number) => (
+                            <tr key={j} className="border-t border-slate-100 bg-white">
+                              <td className="p-2 pl-4 text-slate-700">{sub.subjectName}</td>
+                              <td className="p-2 text-right font-mono text-slate-900">{sub.obtained}/{sub.max}</td>
+                              <td className="p-2 pl-4">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                  sub.status === 'PASS' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                                }`}>{sub.status}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                  No academic history available.
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

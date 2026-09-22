@@ -1648,6 +1648,7 @@ export const TeacherView: React.FC = () => {
                   <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
                     {[
                       { id: 'overview', label: 'Overview' },
+                      { id: 'academic-history', label: 'Academic History' },
                       { id: 'posts', label: 'Posts' },
                       { id: 'achievements', label: 'Achievements' },
                       { id: 'projects', label: 'Projects' },
@@ -1737,6 +1738,62 @@ export const TeacherView: React.FC = () => {
                           </div>
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {profileSection === 'academic-history' && selectedStudentProfile.academicHistory && (
+                    <div className="space-y-4">
+                      <div className="bg-emerald-50 text-emerald-900 p-4 rounded-xl flex items-center gap-4">
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold opacity-80">Current CGPA</p>
+                          <p className="text-3xl font-bold">{selectedStudentProfile.academicHistory.currentCgpa?.toFixed(2) || 'N/A'}</p>
+                        </div>
+                        <div className="w-px h-12 bg-emerald-200" />
+                        <div className="flex-1 pl-4">
+                          <p className="text-sm font-semibold opacity-80">Active Backlogs</p>
+                          <p className="text-3xl font-bold text-red-600">{selectedStudentProfile.academicHistory.totalActiveBacklogs || 0}</p>
+                        </div>
+                      </div>
+
+                      {Array.isArray(selectedStudentProfile.academicHistory.semesters) && selectedStudentProfile.academicHistory.semesters.length > 0 ? (
+                        <div className="space-y-4">
+                          <h3 className="font-bold text-slate-900">Academic History</h3>
+                          {selectedStudentProfile.academicHistory.semesters.map((sem: any, i: number) => (
+                            <div key={i} className="border border-slate-200 rounded-xl overflow-hidden">
+                              <div className="bg-slate-50 p-3 border-b border-slate-200 font-semibold text-slate-800 flex justify-between">
+                                <span>{sem.semesterId}</span>
+                                <span>Percentage: {sem.percentage.toFixed(1)}%</span>
+                              </div>
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="bg-white text-slate-500 text-left">
+                                    <th className="p-2 pl-4">Subject</th>
+                                    <th className="p-2 text-right">Marks</th>
+                                    <th className="p-2 pl-4">Result</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(sem.subjects || []).map((sub: any, j: number) => (
+                                    <tr key={j} className="border-t border-slate-100 bg-white">
+                                      <td className="p-2 pl-4 text-slate-700">{sub.subjectName}</td>
+                                      <td className="p-2 text-right font-medium text-slate-900">{sub.obtained}/{sub.max}</td>
+                                      <td className="p-2 pl-4">
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                          sub.status === 'PASS' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                                        }`}>{sub.status}</span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                          No academic history available.
+                        </div>
+                      )}
                     </div>
                   )}
 

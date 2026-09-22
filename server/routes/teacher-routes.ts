@@ -6,6 +6,7 @@ import { requireAuth, requireRole, verifyTeacherClassScope, AuthRequest, rateLim
 import { processAiQuery } from '../ai-assistant.js';
 import { linearRegression, median, standardDeviation } from '../analytics.js';
 import { currentMonth } from '../github-sync.js';
+import { calculateAcademicHistory } from '../academic-service.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('teacher'));
@@ -197,7 +198,18 @@ router.post('/analytics', async (req: AuthRequest, res) => {
     'm.class_id=$1',
     `EXISTS (SELECT 1 FROM teacher_class_assignments tca WHERE tca.teacher_user_id=$2 AND tca.class_id=$1 AND tca.subject_id=m.subject_id AND (tca.semester_id=m.semester_id OR tca.status IN ('active', 'past')))`
   ];
-  if ((studentIds as string[]).length) { params.push(studentIds); filters.push(`s.id=ANY($${params.length})`); }
+
+
+  if (scope === 'selected_students' || scope === 'single_student') {
+    if (!studentIds || !(studentIds as string[]).length) {
+      // Enforce the selection: if no students selected, return empty data
+      filters.push(`1=0`);
+    } else {
+      params.push(studentIds); 
+      filters.push(`s.id=ANY($${params.length})`);
+    }
+  }
+
   if (subjectId) { params.push(subjectId); filters.push(`m.subject_id=$${params.length}`); }
   if ((selectedSemesters as string[]).length) { params.push(selectedSemesters); filters.push(`m.semester_id=ANY($${params.length})`); }
   if ((selectedExamTypes as string[]).length) { params.push(selectedExamTypes); filters.push(`m.exam_type=ANY($${params.length})`); }
@@ -731,6 +743,8 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
     internalSummary = null;
   }
 
+  const academicHistory = visibility.academic_enabled ? await calculateAcademicHistory(studentId) : null;
+
   res.json({
     student: {
       id: student.id,
@@ -760,6 +774,7 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
     ...(visibility.academic_enabled ? {
       internalMarks,
       internalSummary,
+      academicHistory,
     } : {}),
     ...(visibility.github_enabled ? {
       githubData,
@@ -804,6 +819,8 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
       `, [s.id])
     ])
   );
+  const academicHistory = await calculateAcademicHistory(s.id);
+
   res.json({
     ...s,
     projects: projects.rows,
@@ -821,6 +838,7 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
       resume: s.resume_url,
     },
     posts: posts.rows,
+    academicHistory,
   });
 });
 router.get('/students/:studentId/documents/:documentId/file', async (req: AuthRequest, res) => {

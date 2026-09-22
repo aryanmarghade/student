@@ -121,6 +121,8 @@ router.post('/upload-resume', async (req: AuthRequest, res) => {
   res.json({ message: 'Resume scanned and parsed successfully', document: doc, profile_strength: await strength(await ownStudent(req.user!.id)) });
 });
 
+import { calculateAcademicHistory } from '../academic-service.js';
+
 router.get('/marks', async (req: AuthRequest, res) => {
   const s = await ownStudent(req.user!.id);
   if (!s) return res.status(404).json({ error: 'Student record not found.' });
@@ -134,7 +136,10 @@ router.get('/marks', async (req: AuthRequest, res) => {
     semesterMap[m.semester_id].subjects[m.subject_id] ??= { subject_id: m.subject_id, subject_name: m.subject_name, subject_code: m.subject_code, marks: [] };
     semesterMap[m.semester_id].subjects[m.subject_id].marks.push({ exam_type: m.exam_type, marks_obtained: Number(m.marks_obtained), max_marks: Number(m.max_marks), percentage: Number((m.marks_obtained / m.max_marks * 100).toFixed(1)) });
   }
-  res.json({ semestersData: Object.values(semesterMap), cgpaTrend: marksheets.rows.map((m: any) => ({ semesterId: m.semester_id, semesterName: m.semester_id, sgpa: Number(m.sgpa), cgpa: Number(m.cgpa), fileUrl: m.file_url, fileName: m.file_name })), officialMarksheets: marksheets.rows });
+  
+  const academicHistory = await calculateAcademicHistory(s.id);
+  
+  res.json({ semestersData: Object.values(semesterMap), cgpaTrend: marksheets.rows.map((m: any) => ({ semesterId: m.semester_id, semesterName: m.semester_id, sgpa: Number(m.sgpa), cgpa: Number(m.cgpa), fileUrl: m.file_url, fileName: m.file_name })), officialMarksheets: marksheets.rows, academicHistory });
 });
 
 router.get('/marksheets/:marksheetId/file', async (req: AuthRequest, res) => {
