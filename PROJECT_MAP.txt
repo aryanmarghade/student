@@ -86,6 +86,14 @@ Responsibilities:
 Used by: Student frontend (StudentView).
 Status: ACTIVE.
 
+server/routes/placement-routes.ts
+Purpose: Placement REST API.
+Responsibilities:
+- Dashboard metrics and aggregate student data.
+- Full student dossiers for placement officer review.
+Used by: Placement frontend (PlacementView).
+Status: ACTIVE.
+
 server/analytics.ts
 Purpose: Analytics utility functions.
 Responsibilities: Linear regression computation, median, standard deviation for marks prediction.
@@ -132,6 +140,7 @@ Views:
 - src/views/AdminView.tsx : Renders overview/analytics, classes/courses, user directory, official marksheets, notices, events, audit logs, analytics settings, and the full student dossier.
 - src/views/TeacherView.tsx : Renders class roster, full student profile, marks entry spreadsheet, assessments, academic and hackathon analytics, announcements.
 - src/views/StudentView.tsx : Renders self profile, projects/certifications, marks, transcripts, events, document vault, and notifications.
+- src/views/PlacementView.tsx : Renders placement dashboard, metrics, and full student rosters.
 
 Components:
 - src/components/Header.tsx : App bar with user info, logout, notification bell.
@@ -196,7 +205,7 @@ Files involved: server/routes/admin-routes.ts, src/lib/api.ts, src/views/AdminVi
 14. DATABASE SCHEMA DOCUMENTATION
 =============================================================================
 AUTH:
-- `users`: id, email, role (admin/teacher/student), password_hash, full_name, is_active, must_reset_password.
+- `users`: id, email, role (admin/teacher/student/placement), password_hash, full_name, is_active, must_reset_password.
 
 ACADEMIC:
 - `colleges`, `departments`, `academic_years`, `semesters`.
@@ -295,7 +304,7 @@ LEGACY (DO NOT USE, Kept for historical reference):
 2. Inspect existing implementation before creating new files.
 3. PostgreSQL is the runtime source of truth.
 4. Never introduce memDb/localStorage as database substitutes.
-5. Preserve Admin/Teacher/Student RBAC at all times.
+5. Preserve Admin/Teacher/Student/Placement RBAC at all times.
 6. Preserve teacher Class + Subject + Semester scope based on `teacher_class_assignments`.
 7. Backend authorization is mandatory. Frontend hiding is not secure.
 8. Never fabricate external analytics.
@@ -329,6 +338,9 @@ LEGACY (DO NOT USE, Kept for historical reference):
 [ STUDENT ]
   Student API --> Can view self profile, dossier, transcripts, and notifications.
 
+[ PLACEMENT ]
+  Placement API --> Dedicated placement officer scope. Can view aggregated student metrics and dossiers, but not system-wide admin settings.
+
 =============================================================================
 23. KNOWN LIMITATIONS
 =============================================================================
@@ -346,3 +358,11 @@ Database: NOT TOUCHED
 Application: NOT STARTED
 Purpose: Architecture/documentation audit.
 Date: 2026-09-21
+
+PLACEMENT DASHBOARD AUDIT
+Audit type: BROWSER VERIFIED
+Browser: USED
+Database: QUERIED
+Application: STARTED
+Purpose: Verified placement role RBAC and placement dashboard metrics visibility.
+Date: 2026-09-23
