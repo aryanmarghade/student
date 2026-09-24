@@ -8,7 +8,10 @@ router.use(requireAuth, requireRole('placement'));
 
 router.get('/dashboard', async (req, res) => {
   const students = (await query(`
-    SELECT s.id, s.roll_number, u.full_name, c.name AS "className", c.year AS "classYear", c.section AS "classSection", d.name AS "departmentName", c.id AS "classId"
+    SELECT s.id, s.roll_number, u.full_name, c.name AS "className", c.year AS "classYear", c.section AS "classSection", d.name AS "departmentName", c.id AS "classId",
+           s.github_url, s.hackerrank_url, s.linkedin_url, s.resume_url, s.profile_strength AS ai_score,
+           (SELECT COUNT(*) FROM projects p WHERE p.student_id = s.id) as projects_count,
+           (SELECT COUNT(*) FROM posts pt WHERE pt.student_id = s.id) as posts_count
     FROM students s
     JOIN users u ON u.id = s.user_id
     LEFT JOIN classes c ON c.id = s.class_id
@@ -31,7 +34,45 @@ router.get('/dashboard', async (req, res) => {
     studentsWith0Backlogs: enriched.filter(s => s.academicHistory.totalBacklogsCount === 0).length,
   };
 
-  res.json({ summary, students: enriched });
+  const yearStats: Record<string, { total: number, cgpaSum: number, cgpaCount: number }> = {};
+  const classStats: Record<string, Record<string, { total: number, cgpaSum: number, cgpaCount: number }>> = {};
+
+  enriched.forEach(s => {
+    const year = s.classYear || 'Unknown';
+    const className = s.className || 'Unknown';
+    
+    if (!yearStats[year]) yearStats[year] = { total: 0, cgpaSum: 0, cgpaCount: 0 };
+    yearStats[year].total++;
+    
+    if (!classStats[year]) classStats[year] = {};
+    if (!classStats[year][className]) classStats[year][className] = { total: 0, cgpaSum: 0, cgpaCount: 0 };
+    classStats[year][className].total++;
+
+    const cgpa = s.academicHistory?.cgpa;
+    if (cgpa != null) {
+      yearStats[year].cgpaSum += cgpa;
+      yearStats[year].cgpaCount++;
+      classStats[year][className].cgpaSum += cgpa;
+      classStats[year][className].cgpaCount++;
+    }
+  });
+
+  const yearWiseData = Object.keys(yearStats).map(year => ({
+    year,
+    total: yearStats[year].total,
+    avgCgpa: yearStats[year].cgpaCount > 0 ? (yearStats[year].cgpaSum / yearStats[year].cgpaCount) : 0
+  })).sort((a, b) => String(a.year).localeCompare(String(b.year)));
+
+  const classWiseData = Object.keys(classStats).map(year => ({
+    year,
+    classes: Object.keys(classStats[year]).map(c => ({
+      className: c,
+      total: classStats[year][c].total,
+      avgCgpa: classStats[year][c].cgpaCount > 0 ? (classStats[year][c].cgpaSum / classStats[year][c].cgpaCount) : 0
+    }))
+  }));
+
+  res.json({ summary, yearWiseData, classWiseData, students: enriched });
 });
 
 router.get('/students/:studentId/full-profile', async (req, res) => {

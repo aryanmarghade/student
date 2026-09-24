@@ -17,6 +17,7 @@ export const PlacementView: React.FC = () => {
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedYear, setSelectedYear] = useState<string>('All');
   
   // Student Profile Modal
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
@@ -114,20 +115,43 @@ export const PlacementView: React.FC = () => {
             </div>
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 mb-4">CGPA Distribution</h3>
-              <div className="h-64">
-                {/* Simplified placeholder chart for CGPA ranges */}
-                <div className="flex h-full items-end justify-around gap-2 pb-6">
-                  {Object.entries(dashboardData.cgpaDistribution || {}).map(([range, count]: [string, any]) => (
-                    <div key={range} className="flex flex-col items-center flex-1">
-                      <div 
-                        className="w-full bg-emerald-500 rounded-t-sm" 
-                        style={{ height: `${(count / dashboardData.totalStudents) * 100}%`, minHeight: '20px' }}
-                      />
-                      <span className="text-xs text-slate-500 mt-2">{range}</span>
-                      <span className="font-bold text-slate-700">{count}</span>
-                    </div>
-                  ))}
+              <h3 className="text-lg font-bold text-slate-900 mb-4">CGPA Distribution (Year-wise)</h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-500 mb-2">Average CGPA per Year</h4>
+                  <div className="flex flex-col gap-3">
+                    {dashboardData.yearWiseData?.map((yd: any) => (
+                      <div key={yd.year} className="flex items-center gap-4 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                        <div className="w-16 font-bold text-slate-700">Year {yd.year}</div>
+                        <div className="flex-1">
+                          <div className="w-full bg-slate-200 rounded-full h-2.5">
+                            <div className="bg-emerald-500 h-2.5 rounded-full" style={{ width: `${(yd.avgCgpa / 10) * 100}%` }}></div>
+                          </div>
+                        </div>
+                        <div className="w-16 text-right font-semibold text-emerald-700">{yd.avgCgpa.toFixed(2)}</div>
+                        <div className="w-24 text-xs text-slate-500 text-right">{yd.total} students</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-500 mb-2">Average CGPA by Class</h4>
+                  <div className="space-y-4">
+                    {dashboardData.classWiseData?.map((cwd: any) => (
+                      <div key={cwd.year} className="bg-white border border-slate-100 rounded-lg p-3">
+                        <h5 className="font-semibold text-slate-800 text-xs uppercase mb-2">Year {cwd.year}</h5>
+                        <div className="flex flex-wrap gap-2">
+                          {cwd.classes.map((c: any) => (
+                            <div key={c.className} className="bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg flex-1 min-w-[120px]">
+                              <div className="text-xs text-slate-500">{c.className}</div>
+                              <div className="font-bold text-emerald-700">{c.avgCgpa.toFixed(2)}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -141,15 +165,28 @@ export const PlacementView: React.FC = () => {
                 <GraduationCap className="w-5 h-5 text-emerald-600" />
                 Student Academic Profiles
               </h3>
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search students..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-64"
-                />
+              <div className="flex items-center gap-4">
+                <select
+                  value={selectedYear}
+                  onChange={e => setSelectedYear(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                >
+                  <option value="All">All Years</option>
+                  <option value="1">1st Year</option>
+                  <option value="2">2nd Year</option>
+                  <option value="3">3rd Year</option>
+                  <option value="4">4th Year</option>
+                </select>
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search students..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-64"
+                  />
+                </div>
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -161,11 +198,17 @@ export const PlacementView: React.FC = () => {
                     <th className="p-4 font-semibold">Class</th>
                     <th className="p-4 font-semibold">CGPA</th>
                     <th className="p-4 font-semibold">Backlogs</th>
+                    <th className="p-4 font-semibold">Links</th>
+                    <th className="p-4 font-semibold">Projects</th>
+                    <th className="p-4 font-semibold">Posts</th>
+                    <th className="p-4 font-semibold">AI Score</th>
+                    <th className="p-4 font-semibold">Resume</th>
                     <th className="p-4 font-semibold text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {dashboardData?.recentStudents
+                  {dashboardData?.students
+                    ?.filter((s: any) => selectedYear === 'All' || String(s.classYear) === selectedYear)
                     ?.filter((s: any) => s.full_name.toLowerCase().includes(searchQuery.toLowerCase()) || s.roll_number.toLowerCase().includes(searchQuery.toLowerCase()))
                     .map((s: any) => (
                     <tr key={s.id} className="hover:bg-slate-50 transition-colors">
@@ -173,16 +216,33 @@ export const PlacementView: React.FC = () => {
                       <td className="p-4 text-slate-700">{s.full_name}</td>
                       <td className="p-4 text-slate-500">{s.className || 'Unknown'}</td>
                       <td className="p-4 font-semibold text-emerald-600">
-                        {s.cgpa ? Number(s.cgpa).toFixed(2) : 'N/A'}
+                        {s.cgpa ? Number(s.cgpa).toFixed(2) : (s.academicHistory?.currentCgpa ? s.academicHistory.currentCgpa.toFixed(2) : 'N/A')}
                       </td>
                       <td className="p-4">
-                        {s.active_backlogs > 0 ? (
+                        {s.academicHistory?.totalActiveBacklogs > 0 ? (
                           <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-red-50 text-red-700 text-xs font-semibold">
                             <AlertCircle className="w-3 h-3" />
-                            {s.active_backlogs}
+                            {s.academicHistory.totalActiveBacklogs}
                           </span>
                         ) : (
                           <span className="text-slate-400 text-sm">None</span>
+                        )}
+                      </td>
+                      <td className="p-4">
+                        <div className="flex gap-2">
+                          {s.github_url && <a href={s.github_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">GitHub</a>}
+                          {s.hackerrank_url && <a href={s.hackerrank_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">HackerRank</a>}
+                          {s.linkedin_url && <a href={s.linkedin_url} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">LinkedIn</a>}
+                        </div>
+                      </td>
+                      <td className="p-4 text-slate-700">{s.projects_count || 0}</td>
+                      <td className="p-4 text-slate-700">{s.posts_count || 0}</td>
+                      <td className="p-4 text-slate-700 font-semibold">{s.ai_score || 0}%</td>
+                      <td className="p-4">
+                        {s.resume_url ? (
+                          <a href={s.resume_url} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline text-sm font-medium">View Resume</a>
+                        ) : (
+                          <span className="text-slate-400 text-sm">No Resume</span>
                         )}
                       </td>
                       <td className="p-4 text-right">
@@ -195,9 +255,9 @@ export const PlacementView: React.FC = () => {
                       </td>
                     </tr>
                   ))}
-                  {dashboardData?.recentStudents?.length === 0 && (
+                  {(!dashboardData?.students || dashboardData.students.length === 0) && (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-500">
+                      <td colSpan={11} className="p-8 text-center text-slate-500">
                         No students found.
                       </td>
                     </tr>
@@ -245,8 +305,12 @@ export const PlacementView: React.FC = () => {
                   {selectedStudent.academicHistory.semesters.map((sem: any, i: number) => (
                     <div key={i} className="border border-slate-200 rounded-xl overflow-hidden">
                       <div className="bg-slate-50 p-3 border-b border-slate-200 font-semibold text-slate-800 flex justify-between">
-                        <span>{sem.semesterId}</span>
-                        <span>Percentage: {sem.percentage.toFixed(1)}%</span>
+                        <span>{sem.semesterName || `Semester ${sem.semesterId}`}</span>
+                        <div className="flex items-center gap-4 text-sm">
+                          <span>Percentage: {sem.percentage.toFixed(1)}%</span>
+                          {sem.sgpa && <span className="text-emerald-700">SGPA: {sem.sgpa.toFixed(2)}</span>}
+                          {sem.cgpa && <span className="text-blue-700">CGPA: {sem.cgpa.toFixed(2)}</span>}
+                        </div>
                       </div>
                       <table className="w-full text-sm">
                         <thead>

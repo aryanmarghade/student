@@ -12,6 +12,7 @@ export interface AcademicSemesterResult {
   result: 'Pass' | 'Fail';
   backlogCount: number;
   backlogSubjects: Array<{ subjectId: string; subjectName: string; subjectCode: string }>;
+  subjects: Array<{ subjectId: string; subjectName: string; subjectCode: string; obtained: number; max: number; status: 'Pass' | 'Fail' }>;
 }
 
 export interface StudentAcademicHistory {
@@ -142,6 +143,7 @@ export async function calculateAcademicHistoryBulk(studentIds: string[]): Promis
         let semMax = 0;
         let semBacklogs = 0;
         const backlogSubjects: any[] = [];
+        const subjects: any[] = [];
         let hasFailedSubject = false;
         
         for (const [subjId, subjData] of semSubjects.entries()) {
@@ -150,6 +152,15 @@ export async function calculateAcademicHistoryBulk(studentIds: string[]): Promis
           const pct = subjData.totalMax > 0 ? (subjData.totalObtained / subjData.totalMax) : 0;
           const passed = pct >= 0.40;
           
+          subjects.push({
+            subjectId: subjId,
+            subjectName: subjData.subjectName,
+            subjectCode: subjData.subjectCode,
+            obtained: subjData.totalObtained,
+            max: subjData.totalMax,
+            status: passed ? 'Pass' : 'Fail'
+          });
+
           if (!passed) {
             hasFailedSubject = true;
             semBacklogs++;
@@ -169,8 +180,12 @@ export async function calculateAcademicHistoryBulk(studentIds: string[]): Promis
         const semPct = semMax > 0 ? (semObtained / semMax) * 100 : 0;
         const semResult = hasFailedSubject ? 'Fail' : 'Pass';
         
-        if (ms && ms.cgpa) latestCgpa = Number(ms.cgpa);
+        let calcSgpa = semPct / 9.5; // typical formula or semPct/10
+        if (calcSgpa > 10) calcSgpa = 10;
         
+        const finalSgpa = ms && ms.sgpa ? Number(ms.sgpa) : calcSgpa;
+        const finalCgpa = ms && ms.cgpa ? Number(ms.cgpa) : calcSgpa; // Will recalculate proper CGPA below
+
         studentHistory.semesters.push({
           semesterId: sem.id,
           semesterName: sem.name,
@@ -178,16 +193,33 @@ export async function calculateAcademicHistoryBulk(studentIds: string[]): Promis
           totalObtained: semObtained,
           totalMax: semMax,
           percentage: semPct,
-          sgpa: ms ? Number(ms.sgpa) : null,
-          cgpa: ms ? Number(ms.cgpa) : null,
+          sgpa: finalSgpa,
+          cgpa: finalCgpa,
           result: semResult,
           backlogCount: semBacklogs,
-          backlogSubjects
+          backlogSubjects,
+          subjects
         });
         
         if (!latestSemester || sem.semester_number > latestSemester.semester_number) {
           latestSemester = sem;
         }
+      }
+
+      // Calculate cumulative CGPA for each semester
+      let cumulativeObtained = 0;
+      let cumulativeMax = 0;
+      for (const semData of studentHistory.semesters) {
+        cumulativeObtained += semData.totalObtained;
+        cumulativeMax += semData.totalMax;
+        
+        if (!msMap.get(sId)?.get(semData.semesterId)?.cgpa) {
+            let cumPct = cumulativeMax > 0 ? (cumulativeObtained / cumulativeMax) * 100 : 0;
+            let cumCgpa = cumPct / 9.5;
+            if (cumCgpa > 10) cumCgpa = 10;
+            semData.cgpa = cumCgpa;
+        }
+        latestCgpa = semData.cgpa;
       }
     }
     
