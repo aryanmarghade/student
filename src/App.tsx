@@ -71,9 +71,48 @@ export default function App() {
     }
   };
 
+  // Sync current path state with browser location
+  const [currentPath, setCurrentPath] = useState<string>(window.location.pathname);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateToRoleDashboard = (user: User) => {
+    const defaultPath = `/${user.role}`;
+    if (window.location.pathname !== defaultPath) {
+      window.history.replaceState(null, '', defaultPath);
+      setCurrentPath(defaultPath);
+    }
+  };
+
+  useEffect(() => {
+    if (currentUser) {
+      const path = currentPath.toLowerCase();
+      // Role enforcement check
+      if (path.startsWith('/admin') && currentUser.role !== 'admin') {
+        navigateToRoleDashboard(currentUser);
+      } else if (path.startsWith('/teacher') && currentUser.role !== 'teacher') {
+        navigateToRoleDashboard(currentUser);
+      } else if (path.startsWith('/student') && currentUser.role !== 'student') {
+        navigateToRoleDashboard(currentUser);
+      } else if (path.startsWith('/placement') && currentUser.role !== 'placement') {
+        navigateToRoleDashboard(currentUser);
+      } else if (path === '/' || path === '/login') {
+        navigateToRoleDashboard(currentUser);
+      }
+    }
+  }, [currentUser, currentPath]);
+
   const handleLogout = () => {
     clearToken();
     setCurrentUser(null);
+    window.history.pushState(null, '', '/login');
+    setCurrentPath('/login');
   };
 
   const handleMarkNoticeRead = async (id: string) => {
@@ -103,13 +142,43 @@ export default function App() {
   }
 
   if (!currentUser) {
+    if (window.location.pathname !== '/login') {
+      window.history.replaceState(null, '', '/login');
+    }
     return <LoginView onLoginSuccess={(user) => {
       setCurrentUser(user);
       loadNotifications(user);
+      navigateToRoleDashboard(user);
     }} />;
   }
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  const renderRoleView = () => {
+    const path = currentPath.toLowerCase();
+
+    if (path.startsWith('/admin')) {
+      return currentUser.role === 'admin' ? <AdminView /> : null;
+    }
+    if (path.startsWith('/teacher')) {
+      return currentUser.role === 'teacher' ? <TeacherView /> : null;
+    }
+    if (path.startsWith('/student')) {
+      return currentUser.role === 'student' ? <StudentView /> : null;
+    }
+    if (path.startsWith('/placement')) {
+      return currentUser.role === 'placement' ? <PlacementView /> : null;
+    }
+
+    // Default fallback to user's assigned role view
+    switch (currentUser.role) {
+      case 'admin': return <AdminView />;
+      case 'teacher': return <TeacherView />;
+      case 'student': return <StudentView />;
+      case 'placement': return <PlacementView />;
+      default: return null;
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col selection:bg-amber-200 selection:text-amber-950 font-sans">
@@ -124,10 +193,7 @@ export default function App() {
 
       {/* Main View Area by Role */}
       <main className="flex-1">
-        {currentUser.role === 'admin' && <AdminView />}
-        {currentUser.role === 'teacher' && <TeacherView />}
-        {currentUser.role === 'student' && <StudentView />}
-        {currentUser.role === 'placement' && <PlacementView />}
+        {renderRoleView()}
       </main>
 
       {/* Grounded AI Assistant Drawer */}

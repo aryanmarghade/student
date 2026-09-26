@@ -908,36 +908,38 @@ export const AdminView: React.FC = () => {
               <h3 className="text-sm font-bold text-slate-900">Curriculum Subjects Catalogue</h3>
               <span className="text-xs text-slate-500">{subjects.length} courses registered</span>
             </div>
-            <table className="w-full text-xs text-left text-slate-700">
-              <thead className="bg-slate-100 text-slate-600 uppercase font-semibold text-[10px]">
-                <tr>
-                  <th className="px-4 py-2.5">Course Code</th>
-                  <th className="px-4 py-2.5">Subject Title</th>
-                  <th className="px-4 py-2.5">Department</th>
-                  <th className="px-4 py-2.5">Max Marks</th>
-                  <th className="px-4 py-2.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {subjects.map(s => (
-                  <tr key={s.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-2.5 font-mono font-bold text-slate-900">{s.code}</td>
-                    <td className="px-4 py-2.5 font-semibold text-[#0f2744]">{s.name}</td>
-                    <td className="px-4 py-2.5">{s.departmentName || s.department_id}</td>
-                    <td className="px-4 py-2.5 font-mono">{s.max_marks} pts</td>
-                    <td className="px-4 py-2.5 text-right">
-                      <button
-                        onClick={() => handleDeleteSubject(s.id, s.name)}
-                        className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
-                        title="Delete Subject"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left text-slate-700">
+                <thead className="bg-slate-100 text-slate-600 uppercase font-semibold text-[10px]">
+                  <tr>
+                    <th className="px-4 py-2.5">Course Code</th>
+                    <th className="px-4 py-2.5">Subject Title</th>
+                    <th className="px-4 py-2.5">Department</th>
+                    <th className="px-4 py-2.5">Max Marks</th>
+                    <th className="px-4 py-2.5 text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {subjects.map(s => (
+                    <tr key={s.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-2.5 font-mono font-bold text-slate-900">{s.code}</td>
+                      <td className="px-4 py-2.5 font-semibold text-[#0f2744]">{s.name}</td>
+                      <td className="px-4 py-2.5">{s.departmentName || s.department_id}</td>
+                      <td className="px-4 py-2.5 font-mono">{s.max_marks} pts</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <button
+                          onClick={() => handleDeleteSubject(s.id, s.name)}
+                          className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                          title="Delete Subject"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -993,83 +995,85 @@ export const AdminView: React.FC = () => {
 
           {/* Users Table */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-            <table className="w-full text-xs text-left text-slate-700">
-              <thead className="bg-slate-100 text-slate-600 uppercase font-semibold text-[10px]">
-                <tr>
-                  <th className="px-4 py-3">Full Name & Email</th>
-                  <th className="px-4 py-3">Role</th>
-                  <th className="px-4 py-3">Class / Roll No</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {users
-                  .filter(u => {
-                    if (userRoleFilter && u.role !== userRoleFilter) return false;
-                    if (userSearch) {
-                      const s = userSearch.toLowerCase();
-                      return u.full_name.toLowerCase().includes(s) || u.email.toLowerCase().includes(s) || (u.roll_number && u.roll_number.toLowerCase().includes(s));
-                    }
-                    return true;
-                  })
-                  .map(u => (
-                    <tr key={u.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3">
-                        <p className="font-bold text-slate-900">{u.full_name}</p>
-                        <p className="text-[11px] text-slate-500">{u.email}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${u.role === 'admin' ? 'bg-amber-100 text-amber-900 border border-amber-300' :
-                            u.role === 'teacher' ? 'bg-sky-100 text-sky-900 border border-sky-300' :
-                            u.role === 'placement' ? 'bg-purple-100 text-purple-900 border border-purple-300' :
-                              'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                          }`}>
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {u.role === 'student' ? (
-                          <span className="font-mono text-slate-700">{u.roll_number || 'N/A'} • {u.class_name || 'Enrolled'}</span>
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${u.is_active !== false ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
-                          }`}>
-                          {u.is_active !== false ? 'Active' : 'Deactivated'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right space-x-2">
-                        {u.role === 'student' && u.student_id && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left text-slate-700">
+                <thead className="bg-slate-100 text-slate-600 uppercase font-semibold text-[10px]">
+                  <tr>
+                    <th className="px-4 py-3">Full Name & Email</th>
+                    <th className="px-4 py-3">Role</th>
+                    <th className="px-4 py-3">Class / Roll No</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {users
+                    .filter(u => {
+                      if (userRoleFilter && u.role !== userRoleFilter) return false;
+                      if (userSearch) {
+                        const s = userSearch.toLowerCase();
+                        return u.full_name.toLowerCase().includes(s) || u.email.toLowerCase().includes(s) || (u.roll_number && u.roll_number.toLowerCase().includes(s));
+                      }
+                      return true;
+                    })
+                    .map(u => (
+                      <tr key={u.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3">
+                          <p className="font-bold text-slate-900">{u.full_name}</p>
+                          <p className="text-[11px] text-slate-500">{u.email}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${u.role === 'admin' ? 'bg-amber-100 text-amber-900 border border-amber-300' :
+                              u.role === 'teacher' ? 'bg-sky-100 text-sky-900 border border-sky-300' :
+                              u.role === 'placement' ? 'bg-purple-100 text-purple-900 border border-purple-300' :
+                                'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                            }`}>
+                            {u.role}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {u.role === 'student' ? (
+                            <span className="font-mono text-slate-700">{u.roll_number || 'N/A'} • {u.class_name || 'Enrolled'}</span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${u.is_active !== false ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                            }`}>
+                            {u.is_active !== false ? 'Active' : 'Deactivated'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right space-x-2">
+                          {u.role === 'student' && u.student_id && (
+                            <button
+                              onClick={() => handleViewStudentProfile(u.student_id!)}
+                              className="px-2 py-1 rounded text-[10px] font-semibold text-[#0f2744] border border-[#0f2744]/30 hover:bg-slate-100 cursor-pointer"
+                            >
+                              View Profile
+                            </button>
+                          )}
                           <button
-                            onClick={() => handleViewStudentProfile(u.student_id!)}
-                            className="px-2 py-1 rounded text-[10px] font-semibold text-[#0f2744] border border-[#0f2744]/30 hover:bg-slate-100 cursor-pointer"
+                            onClick={() => handleToggleUserStatus(u.id)}
+                            className={`px-2 py-1 rounded text-[10px] font-semibold border transition-all cursor-pointer ${u.is_active !== false
+                                ? 'text-red-700 border-red-200 hover:bg-red-50'
+                                : 'text-emerald-700 border-emerald-200 hover:bg-emerald-50'
+                              }`}
                           >
-                            View Profile
+                            {u.is_active !== false ? 'Deactivate' : 'Activate'}
                           </button>
-                        )}
-                        <button
-                          onClick={() => handleToggleUserStatus(u.id)}
-                          className={`px-2 py-1 rounded text-[10px] font-semibold border transition-all cursor-pointer ${u.is_active !== false
-                              ? 'text-red-700 border-red-200 hover:bg-red-50'
-                              : 'text-emerald-700 border-emerald-200 hover:bg-emerald-50'
-                            }`}
-                        >
-                          {u.is_active !== false ? 'Deactivate' : 'Activate'}
-                        </button>
-                        <button
-                          onClick={() => handleResetPassword(u)}
-                          className="px-2 py-1 rounded text-[10px] font-semibold text-slate-700 border border-slate-200 hover:bg-slate-100 cursor-pointer"
-                        >
-                          Reset Pwd
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+                          <button
+                            onClick={() => handleResetPassword(u)}
+                            className="px-2 py-1 rounded text-[10px] font-semibold text-slate-700 border border-slate-200 hover:bg-slate-100 cursor-pointer"
+                          >
+                            Reset Pwd
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -1374,16 +1378,16 @@ export const AdminView: React.FC = () => {
                   {academicRecords
                     .filter(r => r.full_name.toLowerCase().includes(userSearch.toLowerCase()) || r.roll_number?.toLowerCase().includes(userSearch.toLowerCase()))
                     .map(r => (
-                      <tr key={r.student_id} className="hover:bg-slate-50">
+                      <tr key={r.id} className="hover:bg-slate-50">
                         <td className="p-3 text-xs font-bold text-slate-900">{r.roll_number || 'N/A'}</td>
                         <td className="p-3 text-xs text-slate-700">{r.full_name}</td>
                         <td className="p-3 text-xs text-slate-500">{r.className || 'N/A'}</td>
                         <td className="p-3 text-xs text-slate-500">{r.departmentName || 'N/A'}</td>
-                        <td className="p-3 text-xs font-bold text-emerald-700">{r.currentCgpa ? r.currentCgpa.toFixed(2) : 'N/A'}</td>
+                        <td className="p-3 text-xs font-bold text-emerald-700">{r.academicHistory?.cgpa ? r.academicHistory.cgpa.toFixed(2) : 'N/A'}</td>
                         <td className="p-3">
-                          {r.totalActiveBacklogs > 0 ? (
+                          {(r.academicHistory?.currentBacklogsCount ?? 0) > 0 ? (
                             <span className="inline-flex items-center gap-1 bg-red-100 text-red-800 px-2 py-0.5 rounded text-[10px] font-bold">
-                              <AlertCircle className="w-3 h-3" /> {r.totalActiveBacklogs}
+                              <AlertCircle className="w-3 h-3" /> {r.academicHistory.currentBacklogsCount}
                             </span>
                           ) : (
                             <span className="text-slate-400 text-xs">None</span>
@@ -1391,7 +1395,7 @@ export const AdminView: React.FC = () => {
                         </td>
                         <td className="p-3 text-right">
                           <button
-                            onClick={() => handleViewStudentProfile(r.student_id)}
+                            onClick={() => handleViewStudentProfile(r.id)}
                             className="px-2 py-1 bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 rounded shadow-xs text-[10px] font-bold"
                           >
                             View Dossier
@@ -2522,8 +2526,8 @@ export const AdminView: React.FC = () => {
                       {Array.isArray(selectedStudentProfile.academicHistory.semesters) && selectedStudentProfile.academicHistory.semesters.length > 0 ? (
                         <div className="space-y-4">
                           <h3 className="font-bold text-slate-900">Academic History</h3>
-                          {selectedStudentProfile.academicHistory.semesters.map((sem: any, i: number) => (
-                            <div key={i} className="border border-slate-200 rounded-xl overflow-hidden">
+                          {selectedStudentProfile.academicHistory.semesters.map((sem: any) => (
+                            <div key={sem.semesterId} className="border border-slate-200 rounded-xl overflow-hidden">
                               <div className="bg-slate-50 p-3 border-b border-slate-200 font-semibold text-slate-800 flex justify-between">
                                 <span>{sem.semesterId}</span>
                                 <span>Percentage: {sem.percentage.toFixed(1)}%</span>
@@ -2537,8 +2541,8 @@ export const AdminView: React.FC = () => {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {(sem.subjects || []).map((sub: any, j: number) => (
-                                    <tr key={j} className="border-t border-slate-100 bg-white">
+                                  {(sem.subjects || []).map((sub: any) => (
+                                    <tr key={sub.subjectId} className="border-t border-slate-100 bg-white">
                                       <td className="p-2 pl-4 text-slate-700">{sub.subjectName}</td>
                                       <td className="p-2 text-right font-medium text-slate-900">{sub.obtained}/{sub.max}</td>
                                       <td className="p-2 pl-4">

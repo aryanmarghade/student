@@ -124,6 +124,20 @@ export const TeacherView: React.FC = () => {
   useEffect(() => {
     loadAssignments();
     loadNotifications();
+
+    const syncSubTab = () => {
+      const path = window.location.pathname.toLowerCase();
+      if (path.includes('/teacher/roster')) setActiveSubTab('roster');
+      else if (path.includes('/teacher/marks')) setActiveSubTab('marks');
+      else if (path.includes('/teacher/assessments')) setActiveSubTab('marks');
+      else if (path.includes('/teacher/analytics')) setActiveSubTab('analytics');
+      else if (path.includes('/teacher/notices')) setActiveSubTab('notices');
+      else setActiveSubTab('roster');
+    };
+
+    syncSubTab();
+    window.addEventListener('popstate', syncSubTab);
+    return () => window.removeEventListener('popstate', syncSubTab);
   }, []);
 
   const loadNotifications = async () => {
@@ -732,29 +746,55 @@ export const TeacherView: React.FC = () => {
           <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
             <Layers className="w-3.5 h-3.5" /> Your Active Teaching Scopes:
           </p>
-          <div className="flex flex-wrap gap-2">
-            {assignments.active.map(a => {
-              const isSelected = selectedAssignment?.id === a.id;
-              return (
-                <button
-                  key={a.id}
-                  onClick={() => selectAssignment(a)}
-                  className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer text-left ${
-                    isSelected
-                      ? 'bg-[#0f2744] text-white border-[#0f2744] shadow-xs'
-                      : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  <p className="font-bold">{a.className} — {a.subjectCode}</p>
-                  <p className={`text-[10px] ${isSelected ? 'text-amber-300' : 'text-slate-500'}`}>
-                    {a.subjectName} • {a.studentCount} Students
-                  </p>
-                </button>
-              );
-            })}
-          </div>
+          {assignments.active.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {assignments.active.map(a => {
+                const isSelected = selectedAssignment?.id === a.id;
+                return (
+                  <button
+                    key={a.id}
+                    onClick={() => selectAssignment(a)}
+                    className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer text-left ${
+                      isSelected
+                        ? 'bg-[#0f2744] text-white border-[#0f2744] shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <p className="font-bold">{a.className} — {a.subjectCode}</p>
+                    <p className={`text-[10px] ${isSelected ? 'text-amber-300' : 'text-slate-500'}`}>
+                      {a.subjectName} • {a.studentCount} Students
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-4 bg-slate-50 border border-dashed border-slate-300 rounded-xl text-xs text-slate-500">
+              No active teaching assignments found for your faculty account.
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Empty State Banner when no classes are assigned */}
+      {!selectedAssignment && assignments.active.length === 0 && (
+        <div className="p-12 bg-white rounded-2xl border border-slate-200 text-center space-y-4 shadow-sm my-6">
+          <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto border border-amber-200 shadow-inner">
+            <BookOpen className="w-8 h-8" />
+          </div>
+          <div className="max-w-md mx-auto space-y-1">
+            <h3 className="text-lg font-serif font-bold text-[#0f2744]">No classes assigned yet</h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Your administrator has not assigned any classes, subjects, or sections to your account.
+            </p>
+          </div>
+          <div className="pt-2 flex justify-center gap-3 text-xs">
+            <span className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg font-medium border border-slate-200">
+              Institutional Scope: Faculty
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Class Workspace Navigation */}
       {selectedAssignment && (
