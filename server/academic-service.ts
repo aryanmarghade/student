@@ -45,14 +45,21 @@ export async function calculateAcademicHistory(studentId: string): Promise<Stude
 export async function calculateAcademicHistoryBulk(studentIds: string[]): Promise<Record<string, StudentAcademicHistory>> {
   if (!studentIds.length) return {};
 
-  const [marksRes, marksheetsRes, semestersRes] = await Promise.all([
+  const [studentsRes, marksRes, marksheetsRes, semestersRes] = await Promise.all([
     query<any>(
-      `SELECT m.*, sem.semester_number, sem.name AS semester_name, sub.name AS subject_name, sub.code AS subject_code 
-       FROM marks m 
-       JOIN semesters sem ON sem.id = m.semester_id 
-       JOIN subjects sub ON sub.id = m.subject_id 
-       WHERE m.student_id = ANY($1) 
-       ORDER BY sem.semester_number ASC`, 
+      `SELECT s.id, s.class_id, c.year AS class_year
+       FROM students s
+       LEFT JOIN classes c ON s.class_id = c.id
+       WHERE s.id = ANY($1)`,
+      [studentIds]
+    ),
+    query<any>(
+      `SELECT m.*, sem.semester_number, sem.name AS semester_name, sub.name AS subject_name, sub.code AS subject_code
+       FROM marks m
+       JOIN semesters sem ON sem.id = m.semester_id
+       JOIN subjects sub ON sub.id = m.subject_id
+       WHERE m.student_id = ANY($1)
+       ORDER BY sem.semester_number ASC`,
       [studentIds]
     ),
     query<any>(
@@ -63,6 +70,11 @@ export async function calculateAcademicHistoryBulk(studentIds: string[]): Promis
   ]);
 
   const allSemesters = semestersRes.rows;
+  const studentYearMap = new Map<string, number>();
+  for (const st of studentsRes.rows) {
+    if (st.class_year) studentYearMap.set(st.id, Number(st.class_year));
+  }
+
   const result: Record<string, StudentAcademicHistory> = {};
   
   for (const sId of studentIds) {
@@ -236,7 +248,17 @@ export async function calculateAcademicHistoryBulk(studentIds: string[]): Promis
       }
     }
     
-    if (latestSemester) {
+    // Derive current semester from student's class year level (Odd Semester current period: Year 1->Sem 1, Year 2->Sem 3, Year 3->Sem 5, Year 4->Sem 7)
+    const classYear = studentYearMap.get(sId);
+    if (classYear) {
+      const expectedSemNum = (classYear * 2) - 1;
+      const targetSem = allSemesters.find(s => s.semester_number === expectedSemNum);
+      if (targetSem) {
+        studentHistory.currentSemesterId = targetSem.id;
+        studentHistory.currentSemesterName = targetSem.name;
+        studentHistory.currentSemesterNumber = targetSem.semester_number;
+      }
+    } else if (latestSemester) {
       studentHistory.currentSemesterId = latestSemester.id;
       studentHistory.currentSemesterName = latestSemester.name;
       studentHistory.currentSemesterNumber = latestSemester.semester_number;

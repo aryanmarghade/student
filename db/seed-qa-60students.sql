@@ -1,4 +1,4 @@
-﻿-- =========================================================
+-- =========================================================
 -- Vission Academy — QA 60-Student Seed
 -- File: db/seed-qa-60students.sql
 -- Password for all QA students: password123
@@ -7,12 +7,15 @@
 -- Uses prefix "qa60_" for all new IDs.
 -- =========================================================
 
--- STEP 0: Missing semesters sem_6..8
+-- STEP 0: Missing semesters sem_6..8 and set active status for odd semester period (Sem 1, 3, 5, 7)
 INSERT INTO semesters (id, academic_year_id, semester_number, name, is_active) VALUES
   ('sem_6','ay_2025_26',6,'Semester 6',FALSE),
-  ('sem_7','ay_2025_26',7,'Semester 7',FALSE),
+  ('sem_7','ay_2025_26',7,'Semester 7',TRUE),
   ('sem_8','ay_2025_26',8,'Semester 8',FALSE)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET is_active = EXCLUDED.is_active;
+
+UPDATE semesters SET is_active = TRUE WHERE id IN ('sem_1', 'sem_3', 'sem_5', 'sem_7');
+UPDATE semesters SET is_active = FALSE WHERE id IN ('sem_2', 'sem_4', 'sem_6', 'sem_8');
 
 -- STEP 1: Subjects per semester range
 INSERT INTO subjects (id, department_id, name, code, max_marks) VALUES
