@@ -100,9 +100,14 @@ CREATE TABLE IF NOT EXISTS students (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 ALTER TABLE students ADD COLUMN IF NOT EXISTS hackerrank_url TEXT;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS leetcode_url TEXT;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS portfolio_url TEXT;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS github_data JSONB;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS github_synced_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS hackerrank_data JSONB;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS hackerrank_synced_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS leetcode_data JSONB;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS leetcode_synced_at TIMESTAMP WITH TIME ZONE;
 
 CREATE INDEX IF NOT EXISTS idx_students_user_id ON students(user_id);
 CREATE INDEX IF NOT EXISTS idx_students_class_id ON students(class_id);
@@ -421,6 +426,21 @@ CREATE TABLE IF NOT EXISTS teacher_analytics_visibility (
     github_enabled BOOLEAN DEFAULT TRUE,
     linkedin_enabled BOOLEAN DEFAULT TRUE,
     hackerrank_enabled BOOLEAN DEFAULT TRUE,
+    leetcode_enabled BOOLEAN DEFAULT TRUE,
+    hackathon_enabled BOOLEAN DEFAULT TRUE,
+    academic_enabled BOOLEAN DEFAULT TRUE,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- 18. PLACEMENT ANALYTICS VISIBILITY SETTINGS
+-- A row per placement officer controlling what data categories are visible.
+CREATE TABLE IF NOT EXISTS placement_analytics_visibility (
+    placement_user_id VARCHAR(64) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    github_enabled BOOLEAN DEFAULT TRUE,
+    linkedin_enabled BOOLEAN DEFAULT TRUE,
+    hackerrank_enabled BOOLEAN DEFAULT TRUE,
+    leetcode_enabled BOOLEAN DEFAULT TRUE,
     hackathon_enabled BOOLEAN DEFAULT TRUE,
     academic_enabled BOOLEAN DEFAULT TRUE,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

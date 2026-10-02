@@ -41,6 +41,8 @@ export const AdminView: React.FC = () => {
   const [overview, setOverview] = useState<any>(null);
   const [analytics, setAnalytics] = useState<any>(null);
   const [analyticsVisibility, setAnalyticsVisibility] = useState<Record<string, any>>({});
+  const [placementVisibility, setPlacementVisibility] = useState<Record<string, any>>({});
+  const [settingsSubTab, setSettingsSubTab] = useState<'teachers' | 'placement' | 'sync'>('teachers');
 
   // Entities Data
   const [academicRecords, setAcademicRecords] = useState<any[]>([]);
@@ -140,6 +142,7 @@ export const AdminView: React.FC = () => {
     const links = [
       { label: 'GitHub', url: profile?.github_url || profile?.profile_links?.github },
       { label: 'LinkedIn', url: profile?.linkedin_url || profile?.profile_links?.linkedin },
+      { label: 'LeetCode', url: profile?.leetcode_url || profile?.profile_links?.leetcode },
       { label: 'HackerRank', url: profile?.hackerrank_url || profile?.profile_links?.hackerrank },
       { label: 'Portfolio', url: profile?.portfolio_url || profile?.profile_links?.portfolio },
       { label: 'Resume', url: profile?.resume_url || profile?.profile_links?.resume },
@@ -212,11 +215,18 @@ export const AdminView: React.FC = () => {
 
       setOverview(overviewData);
       setAnalytics(analyticsData);
-      const visMap = (visibilityData || []).reduce((acc: any, curr: any) => {
+      const rawTeachers = Array.isArray(visibilityData) ? visibilityData : (visibilityData?.teachers || []);
+      const rawPlacements = (visibilityData as any)?.placements || [];
+      const visMap = rawTeachers.reduce((acc: any, curr: any) => {
         acc[curr.teacher_user_id] = curr;
         return acc;
       }, {});
       setAnalyticsVisibility(visMap);
+      const placeMap = rawPlacements.reduce((acc: any, curr: any) => {
+        acc[curr.placement_user_id] = curr;
+        return acc;
+      }, {});
+      setPlacementVisibility(placeMap);
       setClasses(classesData);
       setDepartments(deptsData);
       setSubjects(subjectsData);
@@ -287,9 +297,8 @@ export const AdminView: React.FC = () => {
     }
   };
 
-  // Start new semester
   const handleToggleVisibility = async (teacherId: string, key: string) => {
-    const currentSettings = analyticsVisibility[teacherId] || { github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, academic_enabled: true };
+    const currentSettings = analyticsVisibility[teacherId] || { github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, leetcode_enabled: true, academic_enabled: true };
     const newValue = !currentSettings[key];
     const newSettings = { ...currentSettings, [key]: newValue };
     
@@ -303,6 +312,24 @@ export const AdminView: React.FC = () => {
       // Revert on failure
       setAnalyticsVisibility(prev => ({ ...prev, [teacherId]: currentSettings }));
       showToast(err.message || 'Failed to update settings', true);
+    }
+  };
+
+  const handleTogglePlacementVisibility = async (placementId: string, key: string) => {
+    const currentSettings = placementVisibility[placementId] || { github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, leetcode_enabled: true, academic_enabled: true };
+    const newValue = !currentSettings[key];
+    const newSettings = { ...currentSettings, [key]: newValue };
+    
+    // Optimistic update
+    setPlacementVisibility(prev => ({ ...prev, [placementId]: newSettings }));
+    try {
+      const res = await api.updatePlacementAnalyticsVisibility(placementId, newSettings);
+      setPlacementVisibility(prev => ({ ...prev, [placementId]: res.settings }));
+      showToast(res.message || 'Placement visibility updated successfully');
+    } catch (err: any) {
+      // Revert on failure
+      setPlacementVisibility(prev => ({ ...prev, [placementId]: currentSettings }));
+      showToast(err.message || 'Failed to update placement settings', true);
     }
   };
 
@@ -1678,126 +1705,273 @@ export const AdminView: React.FC = () => {
 
       {/* TAB 9: SETTINGS */}
       {activeTab === 'settings' && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-            <div className="p-5 border-b border-slate-200">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Settings className="w-5 h-5 text-[#0f2744]" /> Analytics Visibility
-              </h2>
-              <p className="text-sm text-slate-500 mt-1">
-                Control which analytics categories are visible to teachers. This does not delete student profile data.
-              </p>
-            </div>
-            <div className="p-5 space-y-8">
-              {users.filter(u => u.role === 'teacher').map(teacher => {
-                const settings = analyticsVisibility[teacher.id] || { github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, academic_enabled: true };
-                return (
-                  <div key={teacher.id} className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                    <h3 className="text-md font-bold text-slate-900 border-b border-slate-200 pb-2 mb-4">{teacher.full_name} ({teacher.email})</h3>
-                    <div className="space-y-4">
-                      {[
-                        { key: 'github_enabled', label: 'GitHub Analytics', desc: 'Show GitHub charts and repositories in teacher analytics.' },
-                        { key: 'hackathon_enabled', label: 'Hackathon Analytics', desc: 'Show hackathon participation in teacher analytics.' },
-                        { key: 'linkedin_enabled', label: 'LinkedIn / Professional Activity', desc: 'Show LinkedIn post tracking and professional graphs.' },
-                        { key: 'hackerrank_enabled', label: 'HackerRank Analytics', desc: 'Show coding platform achievements.' },
-                        { key: 'academic_enabled', label: 'Academic Analytics', desc: 'Show internal examination analytics and mark distributions.' }
-                      ].map(setting => (
-                        <div key={setting.key} className="flex items-center justify-between">
-                          <div>
-                            <h4 className="text-sm font-bold text-slate-900">{setting.label}</h4>
-                            <p className="text-xs text-slate-500">{setting.desc}</p>
-                          </div>
-                          <label className="relative inline-flex items-center cursor-pointer">
-                            <input 
-                              type="checkbox" 
-                              className="sr-only peer" 
-                              checked={!!settings[setting.key]} 
-                              onChange={() => handleToggleVisibility(teacher.id, setting.key)} 
-                            />
-                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-              {users.filter(u => u.role === 'teacher').length === 0 && (
-                <p className="text-sm text-slate-500">No teachers found to configure.</p>
-              )}
-            </div>
+        <div className="space-y-6">
+          {/* Settings Sub-tabs */}
+          <div className="flex space-x-2 border-b border-slate-200 pb-2">
+            {[
+              { id: 'teachers', label: 'Faculty Visibility Settings', count: users.filter(u => u.role === 'teacher').length },
+              { id: 'placement', label: 'Placement Officer Visibility Settings', count: users.filter(u => u.role === 'placement').length },
+              { id: 'sync', label: 'External Data Sync Actions' }
+            ].map(sub => (
+              <button
+                key={sub.id}
+                type="button"
+                onClick={() => setSettingsSubTab(sub.id as any)}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                  settingsSubTab === sub.id
+                    ? 'bg-[#0f2744] text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <span>{sub.label}</span>
+                {sub.count !== undefined && (
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${settingsSubTab === sub.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                    {sub.count}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden mt-6">
-            <div className="p-5 border-b border-slate-200">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <Settings className="w-5 h-5 text-[#0f2744]" /> External Analytics Sync
-              </h2>
-              <p className="text-sm text-slate-500 mt-1">
-                Manually trigger monthly analytics data sync for all students across external platforms.
-              </p>
-            </div>
-            <div className="p-5 space-y-4">
-              <div className="flex flex-wrap gap-4">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const res = await api.triggerAdminGithubSync();
-                      showToast(res.message);
-                    } catch (err: any) {
-                      showToast(err.message, true);
-                    }
-                  }}
-                  className="px-4 py-2 bg-slate-800 text-white hover:bg-slate-700 rounded-lg text-sm font-semibold flex items-center gap-2"
-                >
-                  <RefreshCw className="w-4 h-4" /> Sync GitHub
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const res = await api.triggerAdminLinkedinSync();
-                      showToast(res.message);
-                    } catch (err: any) {
-                      showToast(err.message, true);
-                    }
-                  }}
-                  className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-semibold flex items-center gap-2"
-                >
-                  <RefreshCw className="w-4 h-4" /> Sync LinkedIn
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const res = await api.triggerAdminHackerrankSync();
-                      showToast(res.message);
-                    } catch (err: any) {
-                      showToast(err.message, true);
-                    }
-                  }}
-                  className="px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg text-sm font-semibold flex items-center gap-2"
-                >
-                  <RefreshCw className="w-4 h-4" /> Sync HackerRank
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const res = await api.triggerAdminSyncAll();
-                      showToast(res.message);
-                    } catch (err: any) {
-                      showToast(err.message, true);
-                    }
-                  }}
-                  className="px-4 py-2 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-sm font-semibold flex items-center gap-2"
-                >
-                  <RefreshCw className="w-4 h-4" /> Sync All
-                </button>
+          {/* Sub-Tab 1: Faculty Visibility Settings */}
+          {settingsSubTab === 'teachers' && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+              <div className="p-5 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-[#0f2744]" /> Faculty Data Access & Analytics Controls
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Customize which metrics and external platforms each faculty member can view (Academic, GitHub, HackerRank, LinkedIn, LeetCode).
+                  </p>
+                </div>
+                <span className="text-xs font-semibold px-2.5 py-1 bg-amber-50 text-amber-900 rounded-lg border border-amber-200/60 w-fit">
+                  Faculty Accounts: {users.filter(u => u.role === 'teacher').length}
+                </span>
+              </div>
+
+              <div className="p-5 space-y-6">
+                {users.filter(u => u.role === 'teacher').map(teacher => {
+                  const settings = analyticsVisibility[teacher.id] || {
+                    academic_enabled: true,
+                    github_enabled: true,
+                    hackerrank_enabled: true,
+                    linkedin_enabled: true,
+                    leetcode_enabled: true,
+                    hackathon_enabled: true
+                  };
+                  return (
+                    <div key={teacher.id} className="bg-slate-50/80 p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                            <Users className="w-4 h-4 text-[#0f2744]" />
+                            {teacher.full_name}
+                          </h3>
+                          <p className="text-xs text-slate-500 font-mono mt-0.5">{teacher.email}</p>
+                        </div>
+                        <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full w-fit">
+                          Faculty / Teacher
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                        {[
+                          { key: 'academic_enabled', label: 'Academic Analytics', desc: 'Internal test scores, marks, SGPA/CGPA history, & distributions.' },
+                          { key: 'github_enabled', label: 'GitHub Profile & Sync', desc: 'Public repositories, star count, and contribution graphs.' },
+                          { key: 'hackerrank_enabled', label: 'HackerRank Stats', desc: 'Badges, contest ratings, and verified skills.' },
+                          { key: 'linkedin_enabled', label: 'LinkedIn & Posts', desc: 'Student technical blog posts and professional activity.' },
+                          { key: 'leetcode_enabled', label: 'LeetCode Metrics', desc: 'Solved coding problems, contests, and problem breakdown.' },
+                          { key: 'hackathon_enabled', label: 'Hackathons & Events', desc: 'College and external hackathon participations.' }
+                        ].map(setting => {
+                          const isEnabled = settings[setting.key] !== false;
+                          return (
+                            <div key={setting.key} className="bg-white p-3.5 rounded-lg border border-slate-200/80 shadow-2xs flex items-start justify-between gap-3">
+                              <div className="space-y-0.5 flex-1 pr-1">
+                                <h4 className="text-xs font-bold text-slate-900">{setting.label}</h4>
+                                <p className="text-[11px] text-slate-500 leading-tight">{setting.desc}</p>
+                              </div>
+                              <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">
+                                <input 
+                                  type="checkbox" 
+                                  className="sr-only peer" 
+                                  checked={isEnabled} 
+                                  onChange={() => handleToggleVisibility(teacher.id, setting.key)} 
+                                />
+                                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                              </label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+                {users.filter(u => u.role === 'teacher').length === 0 && (
+                  <div className="py-12 text-center text-xs text-slate-500">
+                    No teacher accounts found in system. Add teachers in the User Directory to configure their permissions.
+                  </div>
+                )}
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Sub-Tab 2: Placement Visibility Settings */}
+          {settingsSubTab === 'placement' && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+              <div className="p-5 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-emerald-700" /> Placement Officer Data Access & Visibility Controls
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Customize what student data placement accounts can access (Academic CGPA/Backlogs, GitHub, HackerRank, LinkedIn, LeetCode).
+                  </p>
+                </div>
+                <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-50 text-emerald-900 rounded-lg border border-emerald-200/60 w-fit">
+                  Placement Accounts: {users.filter(u => u.role === 'placement').length}
+                </span>
+              </div>
+
+              <div className="p-5 space-y-6">
+                {users.filter(u => u.role === 'placement').map(placementOfficer => {
+                  const settings = placementVisibility[placementOfficer.id] || {
+                    academic_enabled: true,
+                    github_enabled: true,
+                    hackerrank_enabled: true,
+                    linkedin_enabled: true,
+                    leetcode_enabled: true,
+                    hackathon_enabled: true
+                  };
+                  return (
+                    <div key={placementOfficer.id} className="bg-slate-50/80 p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                            <Users className="w-4 h-4 text-emerald-700" />
+                            {placementOfficer.full_name}
+                          </h3>
+                          <p className="text-xs text-slate-500 font-mono mt-0.5">{placementOfficer.email}</p>
+                        </div>
+                        <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full w-fit">
+                          Placement Officer
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                        {[
+                          { key: 'academic_enabled', label: 'Academic & CGPA History', desc: 'CGPA distributions, active backlogs, and semester mark summaries.' },
+                          { key: 'github_enabled', label: 'GitHub Portfolios', desc: 'Student GitHub repositories, star count, and synced code profile.' },
+                          { key: 'hackerrank_enabled', label: 'HackerRank Badges', desc: 'Competitive programming stars, badges, and verified skills.' },
+                          { key: 'linkedin_enabled', label: 'LinkedIn & Socials', desc: 'LinkedIn profile links and student publication posts.' },
+                          { key: 'leetcode_enabled', label: 'LeetCode Problem Metrics', desc: 'Total problems solved, contest rankings, and algorithmic skill.' },
+                          { key: 'hackathon_enabled', label: 'Hackathons & Events', desc: 'Participation records, project submissions, and hackathon wins.' }
+                        ].map(setting => {
+                          const isEnabled = settings[setting.key] !== false;
+                          return (
+                            <div key={setting.key} className="bg-white p-3.5 rounded-lg border border-slate-200/80 shadow-2xs flex items-start justify-between gap-3">
+                              <div className="space-y-0.5 flex-1 pr-1">
+                                <h4 className="text-xs font-bold text-slate-900">{setting.label}</h4>
+                                <p className="text-[11px] text-slate-500 leading-tight">{setting.desc}</p>
+                              </div>
+                              <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">
+                                <input 
+                                  type="checkbox" 
+                                  className="sr-only peer" 
+                                  checked={isEnabled} 
+                                  onChange={() => handleTogglePlacementVisibility(placementOfficer.id, setting.key)} 
+                                />
+                                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                              </label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+                {users.filter(u => u.role === 'placement').length === 0 && (
+                  <div className="py-12 text-center text-xs text-slate-500">
+                    No placement accounts found in system. Register a placement user in the User Directory to manage their data visibility.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Sub-Tab 3: External Data Sync Actions */}
+          {settingsSubTab === 'sync' && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+              <div className="p-5 border-b border-slate-200">
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <RefreshCw className="w-5 h-5 text-[#0f2744]" /> External Analytics Automated & Manual Sync
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Trigger on-demand monthly syncs for student external profiles across GitHub, LinkedIn, HackerRank, and LeetCode.
+                </p>
+              </div>
+              <div className="p-5 space-y-4">
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const res = await api.triggerAdminGithubSync();
+                        showToast(res.message);
+                      } catch (err: any) {
+                        showToast(err.message, true);
+                      }
+                    }}
+                    className="px-3.5 py-2 bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Sync GitHub
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const res = await api.triggerAdminLinkedinSync();
+                        showToast(res.message);
+                      } catch (err: any) {
+                        showToast(err.message, true);
+                      }
+                    }}
+                    className="px-3.5 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Sync LinkedIn
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const res = await api.triggerAdminHackerrankSync();
+                        showToast(res.message);
+                      } catch (err: any) {
+                        showToast(err.message, true);
+                      }
+                    }}
+                    className="px-3.5 py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Sync HackerRank
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const res = await api.triggerAdminSyncAll();
+                        showToast(res.message);
+                      } catch (err: any) {
+                        showToast(err.message, true);
+                      }
+                    }}
+                    className="px-3.5 py-2 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Sync All Platforms
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

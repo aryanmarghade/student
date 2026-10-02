@@ -59,6 +59,7 @@ export const StudentView: React.FC = () => {
   const [linkedinInput, setLinkedinInput] = useState('');
   const [githubInput, setGithubInput] = useState('');
   const [hackerrankInput, setHackerrankInput] = useState('');
+  const [leetcodeInput, setLeetcodeInput] = useState('');
   const [portfolioInput, setPortfolioInput] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isSyncingGithub, setIsSyncingGithub] = useState(false);
@@ -123,6 +124,7 @@ export const StudentView: React.FC = () => {
       setLinkedinInput(profileRes.linkedin_url || '');
       setGithubInput(profileRes.github_url || '');
       setHackerrankInput(profileRes.hackerrank_url || '');
+      setLeetcodeInput(profileRes.leetcode_url || '');
       setPortfolioInput(profileRes.portfolio_url || '');
 
       setEvents(eventsRes || []);
@@ -291,6 +293,7 @@ export const StudentView: React.FC = () => {
         linkedin_url: linkedinInput,
         github_url: githubInput,
         hackerrank_url: hackerrankInput,
+        leetcode_url: leetcodeInput,
         portfolio_url: portfolioInput
       });
       setProfile(prev => prev ? {
@@ -299,6 +302,7 @@ export const StudentView: React.FC = () => {
         linkedin_url: res.student.linkedin_url,
         github_url: res.student.github_url,
         hackerrank_url: res.student.hackerrank_url,
+        leetcode_url: res.student.leetcode_url,
         portfolio_url: res.student.portfolio_url,
         profile_strength: res.student.profile_strength
       } : null);
@@ -601,6 +605,18 @@ export const StudentView: React.FC = () => {
                       value={hackerrankInput}
                       onChange={e => setHackerrankInput(e.target.value)}
                       placeholder="https://hackerrank.com/username"
+                      className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                      <Code2 className="w-3.5 h-3.5 text-amber-600" /> LeetCode Profile URL
+                    </label>
+                    <input
+                      type="url"
+                      value={leetcodeInput}
+                      onChange={e => setLeetcodeInput(e.target.value)}
+                      placeholder="https://leetcode.com/username"
                       className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50 focus:bg-white"
                     />
                   </div>

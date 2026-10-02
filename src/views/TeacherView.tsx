@@ -107,7 +107,7 @@ export const TeacherView: React.FC = () => {
   // Analytics state
   const [analyticsScope, setAnalyticsScope] = useState<'whole_class' | 'selected_students' | 'single_student'>('whole_class');
   const [singleStudentTarget, setSingleStudentTarget] = useState<string>('');
-  const [includedSemesters, setIncludedSemesters] = useState<string[]>(['sem_3', 'sem_4']);
+  const [includedSemesters, setIncludedSemesters] = useState<string[]>(['sem_1', 'sem_2', 'sem_3', 'sem_4', 'sem_5', 'sem_6', 'sem_7', 'sem_8']);
   const [includedExamTypes, setIncludedExamTypes] = useState<string[]>([
     'Internal 1', 'Internal 2', 'Midterm', 'Final', 'Assignment', 'Practical'
   ]);
@@ -167,6 +167,7 @@ export const TeacherView: React.FC = () => {
     const links = [
       { label: 'GitHub', url: profile?.github_url || profile?.profile_links?.github },
       { label: 'LinkedIn', url: profile?.linkedin_url || profile?.profile_links?.linkedin },
+      { label: 'LeetCode', url: profile?.leetcode_url || profile?.profile_links?.leetcode },
       { label: 'HackerRank', url: profile?.hackerrank_url || profile?.profile_links?.hackerrank },
       { label: 'Portfolio', url: profile?.portfolio_url || profile?.profile_links?.portfolio },
       { label: 'Resume', url: profile?.resume_url || profile?.profile_links?.resume },
@@ -1178,7 +1179,7 @@ export const TeacherView: React.FC = () => {
                   <div>
                     <span className="font-semibold text-slate-700 block mb-1.5">Semesters Included:</span>
                     <div className="flex flex-wrap gap-2">
-                      {['sem_1', 'sem_2', 'sem_3', 'sem_4'].map(sem => {
+                      {['sem_1', 'sem_2', 'sem_3', 'sem_4', 'sem_5', 'sem_6', 'sem_7', 'sem_8'].map(sem => {
                         const checked = includedSemesters.includes(sem);
                         return (
                           <label key={sem} className="flex items-center gap-1.5 cursor-pointer bg-slate-50 px-2.5 py-1 rounded border border-slate-200">

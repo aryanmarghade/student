@@ -185,12 +185,19 @@ export const api = {
 
   getAdminAnalytics: () => request<any>('/api/admin/analytics'),
 
-  getAdminAnalyticsVisibility: () => request<any[]>('/api/admin/analytics-visibility/all'),
+  getAdminAnalyticsVisibility: () => request<{ teachers: any[]; placements: any[] }>('/api/admin/analytics-visibility/all'),
 
   updateAdminAnalyticsVisibility: (teacherId: string, data: any) => request<{message: string, settings: any}>(`/api/admin/teachers/${teacherId}/analytics-visibility`, {
     method: 'PUT',
     body: JSON.stringify(data),
   }),
+
+  updatePlacementAnalyticsVisibility: (placementId: string, data: any) => request<{message: string, settings: any}>(`/api/admin/placement/${placementId}/analytics-visibility`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
+
+  getPlacementVisibility: () => request<any>('/api/placement/visibility'),
 
   // Admin Data Syncs
   triggerAdminGithubSync: (month?: string) =>
@@ -280,7 +287,7 @@ export const api = {
   // Student
   getStudentProfile: () => request<StudentProfile>('/api/student/profile'),
 
-  updateStudentProfile: (payload: { bio?: string; linkedin_url?: string; github_url?: string; hackerrank_url?: string; portfolio_url?: string }) =>
+  updateStudentProfile: (payload: { bio?: string; linkedin_url?: string; github_url?: string; hackerrank_url?: string; leetcode_url?: string; portfolio_url?: string }) =>
     request<{ message: string; student: any }>('/api/student/profile', {
       method: 'PUT',
       body: JSON.stringify(payload),

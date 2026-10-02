@@ -6,14 +6,21 @@ ALL AI AGENTS MUST READ THIS FILE BEFORE MODIFYING THE PROJECT.
 DO NOT WRITE ACTUAL SECRET VALUES INTO THIS FILE.
 
 =============================================================================
-1. SOURCE OF TRUTH
+1. SOURCE OF TRUTH & ARCHITECTURE OVERVIEW
 =============================================================================
-The contents of this file reflect the actual active source code and schema.
-The architecture uses a Node.js/Express backend running on port 3000, 
-and a Vite/React SPA frontend. PostgreSQL is the unified source of truth.
+The contents of this file reflect the active source code, schema, and API endpoints.
+The architecture consists of:
+- Backend: Node.js/Express TypeScript backend running on port 3000 (`server.ts`).
+- Frontend: React 19 SPA powered by Vite 6 with Tailwind CSS (`src/App.tsx`).
+- Database: PostgreSQL (unified persistent relational source of truth).
+- Authentication: Role-Based Access Control (RBAC) supporting 4 distinct user roles:
+  1. System Administrator (`admin`)
+  2. Faculty / Subject Teacher (`teacher`)
+  3. Verified Student (`student`)
+  4. Placement Officer (`placement`)
 
 =============================================================================
-3. CORRECT TECHNOLOGY STACK
+2. COMPLETE TECHNOLOGY STACK
 =============================================================================
 Confirmed from package.json:
 - React: 19.0.1 (with react-dom 19.0.1)
@@ -27,342 +34,317 @@ Confirmed from package.json:
 - Storage/Files: multer ^2.3.0, jszip ^3.10.2
 - Charting: chart.js ^4.5.1, react-chartjs-2
 - UI Components: lucide-react ^0.546.0, motion ^12.23.24
-- AI Integration: @google/genai ^2.4.0
-- E2E Testing: @playwright/test ^1.63.0
+- AI Integration: @google/genai ^2.4.0 (Grounded Gemini Academic Assistant)
+- E2E & Browser Testing: @playwright/test ^1.63.0, chrome-devtools-mcp
 - Build/Bundler: esbuild ^0.25.0
 
 =============================================================================
-4. COMPLETE FILE MAP & 5. COMPLETE BACKEND MAP
+3. RECENT CHANGES & NEW IMPLEMENTATIONS (2026-10-02)
+=============================================================================
+1. Granular Analytics Visibility Controls for Admin:
+   - Added `placement_analytics_visibility` table in PostgreSQL.
+   - Added `leetcode_enabled` support across all visibility systems (`teacher_analytics_visibility` and `placement_analytics_visibility`).
+   - Created separate sub-tabs in Admin View under "Analytics Settings":
+     * Tab 1: Faculty Visibility Settings (`settingsSubTab === 'teachers'`)
+     * Tab 2: Placement Officer Visibility Settings (`settingsSubTab === 'placement'`)
+     * Tab 3: External Data Sync Actions (`settingsSubTab === 'sync'`)
+   - 6 configurable toggle switches per teacher and placement officer:
+     * Academic Records & SGPA/CGPA Analytics
+     * GitHub Profile & Repositories Analytics
+     * HackerRank Badges & Skills
+     * LinkedIn Profile
+     * LeetCode Metrics (Problems Solved, Easy/Medium/Hard, Ranking)
+     * Hackathons & Competitions
+
+2. LeetCode Public GraphQL Integration:
+   - Added `server/leetcode-sync.ts` fetching live stats (solved counts, ranking, acceptance rate) from LeetCode GraphQL API.
+   - Added LeetCode monthly snapshot persistence and real-time profile fetching.
+
+3. Placement Officer Portal Enhancements (`PlacementView.tsx` & `placement-routes.ts`):
+   - Integrated `placement_analytics_visibility` backend enforcement: if disabled by admin, platforms are withheld at the API layer.
+   - External Profiles & Technical Platforms card in the student dossier modal showing real-time synced GitHub, LeetCode, HackerRank, and LinkedIn badges.
+   - Added display for Student Projects (with clickable repository links), Hackathons & Competitions, and Uploaded Documents & Certificates.
+   - Robust student search by Name or Roll Number with multi-year filter support and clean empty state messaging ("No students match the current filters").
+   - Synchronized dashboard aggregate summary cards (Total Students, Eligible No Backlogs, Active Backlogs) with backend calculation.
+
+4. Password Reset Flow (`must_reset_password`):
+   - Modal enforcement on initial login for users flagged for password reset.
+   - Secure updating via `/api/auth/reset-password`.
+
+=============================================================================
+4. COMPLETE BACKEND FILE MAP
 =============================================================================
 [ ACTIVE BACKEND ]
 
 server.ts
 Purpose: Backend application entry point.
-Responsibilities: Initializes Express, configures middleware (CORS, JSON parsing), mounts routes, and schedules cron jobs (GitHub/LinkedIn/HackerRank sync).
-Used by: Node runtime (npm start).
+Responsibilities: Initializes Express, configures middleware (CORS, JSON parsing, logging), mounts routes (`/api/auth`, `/api/admin`, `/api/teacher`, `/api/student`, `/api/placement`), and handles static file serving.
 Status: ACTIVE.
 
 server/db.ts
 Purpose: PostgreSQL database connector.
-Responsibilities: Exports `query()` wrapper for the `pg` connection pool. Handles transactions.
-Used by: All backend routes and sync services.
+Responsibilities: Exports `query()` wrapper for `pg.Pool`, ID generator (`id()`), and `logActivity()` audit logger.
 Status: ACTIVE.
 
 server/auth.ts
 Purpose: Authentication and Authorization service.
-Responsibilities: JWT creation, password hashing/comparison, `requireAuth` and `requireRole` middleware, rate limiting. Enforces teacher scope verification.
-Used by: server.ts, backend routes.
+Responsibilities: JWT creation/validation, bcrypt password hashing, `requireAuth`, `requireRole('admin' | 'teacher' | 'student' | 'placement')` middleware, rate limiting.
+Status: ACTIVE.
+
+server/academic-service.ts
+Purpose: Core academic computation engine.
+Responsibilities: `calculateAcademicHistory()` and `calculateAcademicHistoryBulk()` computing SGPAs, CGPAs, percentages, backlogs history, and credit tracking.
 Status: ACTIVE.
 
 server/routes/admin-routes.ts
 Purpose: Admin REST API.
-Responsibilities: 
-- User management (students/teachers)
-- Class/subject/semester management
-- Analytics visibility settings per teacher
-- Fetching full student profile dossiers
-- Bulk official marksheets processing (PDF/ZIP upload)
-- Notifications & events management
-- Manual sync triggers
-Used by: Admin frontend (AdminView).
-Status: ACTIVE.
-
-server/routes/teacher-routes.ts
-Purpose: Teacher REST API.
 Responsibilities:
-- Class roster and full student profiles
-- Marks entry and assessment creation
-- Teacher analytics (Internal marks, GitHub, Hackathon)
-- Scopes are restricted strictly to `teacher_class_assignments`.
-Used by: Teacher frontend (TeacherView).
-Status: ACTIVE.
-
-server/routes/student-routes.ts
-Purpose: Student REST API.
-Responsibilities:
-- Fetching self profile, projects, achievements, skills, hackathons
-- Fetching self marks and transcripts
-- Fetching self notifications and marking as read
-Used by: Student frontend (StudentView).
+- User management (students, faculty, placement officers).
+- Academic structure (colleges, departments, academic years, semesters, classes, subjects).
+- Teacher & Placement analytics visibility configuration (`/api/admin/teachers/:id/analytics-visibility`, `/api/admin/placement/:id/analytics-visibility`, `/api/admin/analytics-visibility/all`).
+- Official marksheets bulk uploads (PDF/ZIP).
+- External synchronization triggers (`/api/admin/github/sync`, `/api/admin/leetcode/sync`, `/api/admin/analytics/sync-all`).
+- Notifications, audit logs, and student dossier access.
 Status: ACTIVE.
 
 server/routes/placement-routes.ts
 Purpose: Placement REST API.
 Responsibilities:
-- Dashboard metrics and aggregate student data.
-- Full student dossiers for placement officer review.
-Used by: Placement frontend (PlacementView).
+- `GET /api/placement/visibility`: Returns active visibility permissions for the logged-in placement officer.
+- `GET /api/placement/dashboard`: Returns summary stats, year-wise and class-wise CGPA distributions, and enriched student directory filtered by visibility flags.
+- `GET /api/placement/students/:studentId/full-profile`: Returns complete student dossier including academic history, external coding profiles, projects, hackathons, and documents.
 Status: ACTIVE.
 
-server/analytics.ts
-Purpose: Analytics utility functions.
-Responsibilities: Linear regression computation, median, standard deviation for marks prediction.
-Used by: admin-routes.ts, teacher-routes.ts
+server/routes/teacher-routes.ts
+Purpose: Faculty REST API.
+Responsibilities:
+- Class rosters and student academic records scoped strictly to `teacher_class_assignments`.
+- Dynamic assessment definition and spreadsheet marks entry.
+- Class academic performance charts, grade distributions, and linear regression analytics.
+Status: ACTIVE.
+
+server/routes/student-routes.ts
+Purpose: Student REST API.
+Responsibilities:
+- Self profile management (portfolio, bio, links).
+- Project portfolio, certifications, achievements, and hackathons submission.
+- Marks, semester transcripts, documents vault, and notification reads.
 Status: ACTIVE.
 
 server/github-sync.ts
-Purpose: GitHub external sync service.
-Responsibilities: Fetches public repositories, stars, forks, and followers. Saves monthly snapshots idempotently.
+Purpose: GitHub Monthly Synchronization Service.
+Responsibilities: Fetches public repositories, stars, forks, followers, and language statistics. Saves monthly snapshots idempotently into `student_github_snapshots`.
 Status: ACTIVE.
 
-server/linkedin-sync.ts
-Purpose: LinkedIn sync service placeholder.
-Responsibilities: Currently NOT AVAILABLE. No legitimate API configured. Returns 'not_synced' to prevent scraping or fake data.
+server/leetcode-sync.ts
+Purpose: LeetCode Synchronization & Live Profile Service.
+Responsibilities: Queries LeetCode public GraphQL API for problem counts (easy/medium/hard) and global rank.
 Status: ACTIVE.
 
-server/hackerrank-sync.ts
-Purpose: HackerRank sync service placeholder.
-Responsibilities: Currently NOT AVAILABLE. No legitimate API configured. Returns 'not_synced'.
+server/linkedin-sync.ts & server/hackerrank-sync.ts
+Purpose: LinkedIn & HackerRank sync service handlers.
+Responsibilities: Verified profile URL resolution without fake scraping.
+Status: ACTIVE.
+
+server/ai-assistant.ts & server/ai.ts
+Purpose: Gemini AI Academic Query Engine.
+Responsibilities: Answers grounded academic queries using tool calls against the database schema.
 Status: ACTIVE.
 
 [ LEGACY / UNUSED FILES ]
-server/index.ts : Legacy backend entry point. DO NOT USE.
-src/api.ts : Legacy frontend API client. DO NOT USE.
+- server/index.ts (Legacy entry point - DO NOT USE)
+- src/api.ts (Legacy API client - DO NOT USE)
 
 =============================================================================
-6. COMPLETE FRONTEND MAP
+5. COMPLETE FRONTEND FILE MAP
 =============================================================================
 [ ACTIVE FRONTEND ]
 
 src/main.tsx
-Purpose: React SPA entry point. Renders App component.
+Purpose: React 19 entry point mounting the root App.
 
 src/App.tsx
-Purpose: Main application router and shell.
-Responsibilities: Handles initial auth check, renders LoginView or the Role-based View (Admin/Teacher/Student), NotificationModal, and AiAssistantDrawer.
+Purpose: Main application router and role-based shell.
+Responsibilities: Handles authentication state, renders view corresponding to active user role (`AdminView`, `TeacherView`, `StudentView`, `PlacementView`, or `LoginView`), global `NotificationModal`, `ResetPasswordModal`, and `AiAssistantDrawer`.
 
 src/lib/api.ts
-Purpose: Frontend API client.
-Responsibilities: Wrapper around `fetch` that automatically injects the JWT bearer token. Contains all API endpoint functions.
+Purpose: Type-safe Frontend API Client.
+Responsibilities: Provides unified wrapper over `fetch` injecting JWT Bearer tokens and exposing methods for Admin, Teacher, Student, Placement, and AI Assistant interactions.
 
-Views:
-- src/views/LoginView.tsx : Renders login form.
-- src/views/AdminView.tsx : Renders overview/analytics, classes/courses, user directory, official marksheets, notices, events, audit logs, analytics settings, and the full student dossier.
-- src/views/TeacherView.tsx : Renders class roster, full student profile, marks entry spreadsheet, assessments, academic and hackathon analytics, announcements.
-- src/views/StudentView.tsx : Renders self profile, projects/certifications, marks, transcripts, events, document vault, and notifications.
-- src/views/PlacementView.tsx : Renders placement dashboard, metrics, and full student rosters.
+Views (`src/views/`):
+- `LoginView.tsx`: Enterprise login interface with demo credentials and password recovery.
+- `AdminView.tsx`: Comprehensive institutional administration:
+  * Overview & Academic pass rates
+  * Courses, Semesters, Subjects & Classes
+  * Faculty & Student Directories
+  * Official Marksheet Uploads (PDF & ZIP processing)
+  * Notices, Events, Audit Log inspector
+  * Analytics Settings (Faculty Visibility, Placement Visibility, External Sync Actions)
+  * Student Full Dossier Viewer
+- `TeacherView.tsx`: Faculty workspace for marks entry, assessment creation, class roster, student dossiers, regression charts, and hackathon analytics.
+- `PlacementView.tsx`: Placement officer workspace with student search, eligible candidate filtering (0 backlogs), external coding metrics (GitHub, LeetCode, HackerRank, LinkedIn), and student profile modals.
+- `StudentView.tsx`: Student portal for showcase profiles, project repositories, certificates, document vault, marks transcripts, and notifications.
 
-Components:
-- src/components/Header.tsx : App bar with user info, logout, notification bell.
-- src/components/AiAssistantDrawer.tsx : Slide-out drawer for Gemini AI queries.
-- src/components/NotificationModal.tsx : Displays notices.
-- src/components/PostCard.tsx : Renders student posts/activity.
-
-=============================================================================
-7. STUDENT PROFILE ARCHITECTURE
-=============================================================================
-The full LinkedIn-style student dossier includes:
-- Identity (roll number, avatar, bio, email, branch/year)
-- Links (GitHub, LinkedIn, HackerRank, portfolio)
-- Projects, Achievements, Certifications, Skills, Hackathons, Documents, Posts.
-Note: A profile URL does NOT mean analytics should be generated. External analytics sync is a completely separate system.
-
-=============================================================================
-8. POSTS / ACTIVITY
-=============================================================================
-Posts are created by students and are visible on their profile.
-Model: `posts` table includes title, description, category, tags (JSON), and external_link.
-Attachments: Supported via `post_attachments` table (image/video/PDF).
+Components (`src/components/`):
+- `Header.tsx`: Navigation bar with branding, role badge, notification bell, and sign out.
+- `AiAssistantDrawer.tsx`: Grounded Gemini AI assistant drawer.
+- `NotificationModal.tsx`: Institutional notice viewer.
+- `ResetPasswordModal.tsx`: Forced first-time password reset modal.
+- `PostCard.tsx`: Student portfolio feed and social activity card.
 
 =============================================================================
-9. MARKS ARCHITECTURE
+6. DETAILED ROLE-BY-ROLE FEATURES & ACCESS CAPABILITIES
 =============================================================================
-Hierarchy: Semester -> Class -> Subject -> Teacher Assignment -> Assessment -> Marks.
-- Dynamic Assessment Creation: Teachers define assessments (CA, Mid-Sem, Final) with maximum marks.
-- Obtained marks are scoped to the class/subject/semester and the specific assessment.
-- Teacher authorization strictly verified before allowing marks entry.
-- TEACHER MARKS (internal/ongoing) are strictly distinguished from OFFICIAL ADMIN MARKSHEETS (uploaded as PDFs by admins).
+
+-----------------------------------------------------------------------------
+[A] SYSTEM ADMINISTRATOR (`admin`)
+-----------------------------------------------------------------------------
+Primary View: `src/views/AdminView.tsx` | Routes: `/api/admin/*`
+Capabilities & Modules:
+1. Institutional Overview & Global KPIs:
+   - Total Student & Faculty headcounts, active classes, active semesters count.
+   - Institutional overall pass rate (%) calculated from semester marks.
+   - Semester trend curves (pass rate, evaluated count, active students).
+   - Department-level distribution tables (student/class counts per branch).
+2. Academic Hierarchy Governance:
+   - Create and manage Colleges, Departments, Academic Years, and Semesters.
+   - Class and Section provisioning (e.g. CS-3A, EE-2B).
+   - Subject catalogue management with default maximum marks.
+   - Teacher Class & Subject Assignments (`teacher_class_assignments`).
+3. User Directory & Identity Management:
+   - Provision faculty, student, and placement accounts.
+   - Edit user profiles, activate/deactivate accounts.
+   - Force Password Reset flags (`must_reset_password`).
+4. Official Marksheets Management:
+   - Upload single PDF marksheets with automated PDF data parsing.
+   - Bulk upload ZIP packages of semester marksheets with real-time in-flight unpacking.
+   - Audit and view official SGPA/CGPA records.
+5. Granular Analytics Visibility Controls:
+   - Dedicated Sub-Tab for Faculty Visibility Settings (per-teacher toggle matrix).
+   - Dedicated Sub-Tab for Placement Officer Visibility Settings (per-officer toggle matrix).
+   - 6 Platform Toggles per user: Academic, GitHub, HackerRank, LinkedIn, LeetCode, Hackathons.
+6. External Synchronization Center:
+   - Trigger on-demand sync for GitHub, LeetCode, HackerRank, LinkedIn.
+   - "Sync All Analytics" one-click button with live progress tracking.
+   - Audit and inspect monthly snapshots repository.
+7. Student Dossier 360° Inspector:
+   - Complete LinkedIn-style full portfolio viewer for any student in the institution.
+8. Notices, Events & Audit Vault:
+   - Publish targeted notices (All Users, All Students, All Faculty, Specific Class).
+   - Create and manage campus event calendars.
+   - Complete audit trail logging every administrative, faculty, and authentication event.
+
+-----------------------------------------------------------------------------
+[B] FACULTY / SUBJECT TEACHER (`teacher`)
+-----------------------------------------------------------------------------
+Primary View: `src/views/TeacherView.tsx` | Routes: `/api/teacher/*`
+Capabilities & Modules:
+1. Scoped Class Roster & Student Dossier:
+   - Access restricted strictly to assigned classes & subjects (`teacher_class_assignments`).
+   - View enrolled students, contact info, roll numbers, and academic status.
+   - View student portfolio dossier (Projects, Certifications, Hackathons, Resume).
+2. Dynamic Assessment & Marks Entry:
+   - Create custom dynamic assessments (Class Assessment, Midterm, Final, Quiz, Lab).
+   - Live interactive spreadsheet marks grid with real-time saving and validation.
+   - Grade and percentage calculation per student per assessment.
+3. Performance Analytics & Predictive Intelligence:
+   - Linear Regression Trend Engine projecting future exam scores from historical marks.
+   - Class score distribution (A, B, C, D, Fail grade buckets).
+   - Exam-type average comparisons and subject pass rate metrics.
+   - Export analytics data to CSV and regression charts to PNG.
+4. Visibility-Governed External Analytics:
+   - GitHub repositories, language breakdown, and activity (if enabled by admin).
+   - LeetCode problem-solving stats and difficulty distribution (if enabled by admin).
+   - HackerRank badges and verified skills (if enabled by admin).
+   - LinkedIn profile links (if enabled by admin).
+   - Hackathon participation records and awards (if enabled by admin).
+5. Academic Communication:
+   - Publish class-specific announcements and assignments.
+
+-----------------------------------------------------------------------------
+[C] PLACEMENT OFFICER (`placement`)
+-----------------------------------------------------------------------------
+Primary View: `src/views/PlacementView.tsx` | Routes: `/api/placement/*`
+Capabilities & Modules:
+1. Placement Overview & Eligibility Metrics:
+   - Total student body metrics across all departments.
+   - Immediate count of Eligible Candidates (0 active or historical backlogs).
+   - Active backlogs monitor and academic risk flags.
+   - Year-wise and Class-wise Average CGPA distribution charts and progress bars.
+2. Filterable Student Academic & Technical Directory:
+   - Multi-year filter dropdown (All Years, 1st Year, 2nd Year, 3rd Year, 4th Year).
+   - Instant live search by Student Name or Roll Number.
+   - At-a-glance table columns: Roll Number, Name, Class, CGPA, Backlogs, Platform Links (GitHub, LeetCode, HackerRank, LinkedIn), Projects Count, Posts Count, AI Score, Resume Link.
+   - Clean empty state messaging ("No students match the current filters").
+3. Placement Student Profile Modal:
+   - Current CGPA and Active Backlogs summary card.
+   - External Profiles & Technical Platforms card showing synced repository counts, LeetCode rank/solved metrics, HackerRank badges, and LinkedIn links.
+   - Full Semester-by-Semester Academic History breakdown with subject marks, Pass/Fail badges, SGPA, and CGPA.
+   - Student Projects showcase with title, description, and direct GitHub source code links.
+   - Hackathons & Competitions ledger with event names, positions, and descriptions.
+   - Uploaded Documents & Certificates vault with direct PDF/image inspection.
+4. Visibility-Filtered Security Boundary:
+   - Honors admin visibility permissions at the backend layer (`placement_analytics_visibility`).
+
+-----------------------------------------------------------------------------
+[D] VERIFIED STUDENT (`student`)
+-----------------------------------------------------------------------------
+Primary View: `src/views/StudentView.tsx` | Routes: `/api/student/*`
+Capabilities & Modules:
+1. Public Profile & Personal Showcase:
+   - Custom bio, profile photo, avatar, and resume upload.
+   - External profile URL management (GitHub, LinkedIn, HackerRank, LeetCode, Portfolio).
+   - Profile Strength Score (0–100%) providing tips to boost portfolio completeness.
+2. Projects & Portfolio Management:
+   - Add/edit software projects with title, description, technologies used, GitHub URL, live demo URL.
+3. Achievements & Certifications Vault:
+   - Upload verified certificates with credential URLs and issuing organizations.
+   - Record hackathon participations, team details, and awards won.
+4. Academic Records & Official Marksheets:
+   - Real-time internal assessment marks per subject.
+   - Official semester transcripts, SGPA/CGPA progression history, and backlog status.
+   - Download official PDF marksheets uploaded by the administration.
+5. Social Feed & Activity Posts:
+   - Create portfolio posts with title, description, category, tags, and file attachments (images, PDFs).
+   - View peer activity feed.
+6. Document Vault:
+   - Secure personal storage for resumes, ID proofs, and recommendation letters.
+7. Notifications & Events:
+   - Real-time institutional notice feed with unread badges.
+   - Campus calendar and event participation.
+
+-----------------------------------------------------------------------------
+[E] GROUNDED ACADEMIC AI ASSISTANT (Gemini Integration)
+-----------------------------------------------------------------------------
+Component: `src/components/AiAssistantDrawer.tsx` | Backend: `server/ai-assistant.ts`
+Capabilities:
+- Grounded query answering across institutional data (marks, attendance, schedules, policies).
+- Multi-turn conversational drawer available in all 4 role workspaces.
+- Tool-calling against PostgreSQL schema for factual, non-hallucinatory academic retrieval.
+- Comprehensive query logging in `ai_query_logs`.
 
 =============================================================================
-10. TEACHER ANALYTICS & 11. ANALYTICS VISIBILITY
+7. DATABASE SCHEMA & RBAC RELATIONSHIPS
 =============================================================================
-Teacher Analytics includes:
-- Internal marks, class averages, and performance distributions.
-- Linear regression prediction models.
-- GitHub, LinkedIn (placeholder), HackerRank (placeholder), Hackathon, and Academic analytics.
-
-Visibility Enforcement:
-- Configured by Admins per-teacher in the `teacher_analytics_visibility` PostgreSQL table.
-- Flags include: `github_enabled`, `linkedin_enabled`, `hackerrank_enabled`, `hackathon_enabled`, `academic_enabled`.
-- Backend filtering is the security boundary. If a teacher's flag is false, the API explicitly omits or denies the data. Frontend hiding is NOT authorization.
-
-=============================================================================
-12. EXTERNAL SYNC ARCHITECTURE
-=============================================================================
-- GITHUB: Uses GitHub API to fetch public repos/followers. Monthly snapshots are taken. Handles rate limits and stores raw data in `student_github_snapshots`. Idempotent upserts.
-- LINKEDIN: NOT AVAILABLE. No legitimate API is configured. No scraping or synthetic data.
-- HACKERRANK: NOT AVAILABLE. No legitimate API is configured. No scraping or synthetic data.
+Core Tables:
+1. `users`: id, email, password_hash, role ('admin'|'teacher'|'student'|'placement'), full_name, is_active, must_reset_password.
+2. `colleges`, `departments`, `academic_years`, `semesters`, `classes`, `subjects`.
+3. `students`: user_id, roll_number, class_id, department_id, github_url, linkedin_url, hackerrank_url, leetcode_url, github_data, hackerrank_data, leetcode_data, portfolio_url, resume_url, profile_strength.
+4. `teacher_class_assignments`: teacher_user_id, class_id, subject_id, semester_id, status.
+5. `assessment_definitions` & `marks`: exam_type, marks_obtained, max_marks.
+6. `projects`, `achievements`, `certifications`, `hackathons`: student portfolio items with verification status.
+7. `posts` & `post_attachments`: student showcase posts with rich media attachments.
+8. `student_documents` & `marksheets`: uploaded document vault and official semester marksheets.
+9. `teacher_analytics_visibility`: teacher_user_id, github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled.
+10. `placement_analytics_visibility`: placement_user_id, github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled.
+11. `student_github_snapshots`, `student_linkedin_snapshots`, `student_hackerrank_snapshots`, `student_leetcode_snapshots`.
+12. `notifications`, `notification_reads`, `events`, `audit_logs`, `ai_query_logs`.
 
 =============================================================================
-13. ADMIN STUDENT PROFILE BUG FIX
+8. VERIFIED RECENT AUDIT LOGS
 =============================================================================
-Crucial architecture decision:
-The AdminView previously used the teacher-scoped endpoint to fetch student profiles, leading to a 403 Forbidden because Admin is not a Teacher.
-Current implementation: AdminView calls `GET /api/admin/students/:studentId/full-profile` which uses admin authorization to bypass the teacher RBAC check and return the full dossier.
-Files involved: server/routes/admin-routes.ts, src/lib/api.ts, src/views/AdminView.tsx.
-
+- 2026-10-02: Granular Visibility Controls (Faculty, Placement, Sync All) verified in Admin Portal via browser subagent.
+- 2026-10-02: LeetCode toggle on/off verified with visual screenshot proof.
+- 2026-10-02: Placement Account Synced Data Verified for Aryan Marghade (16 Repos GitHub) & Atharva Ghodki (GitHub, LinkedIn) with browser screenshots.
+- 2026-10-02: Placement student search & multi-year filtering empty state handling resolved.
 =============================================================================
-14. DATABASE SCHEMA DOCUMENTATION
-=============================================================================
-AUTH:
-- `users`: id, email, role (admin/teacher/student/placement), password_hash, full_name, is_active, must_reset_password.
-
-ACADEMIC:
-- `colleges`, `departments`, `academic_years`, `semesters`.
-- `classes`: department_id, academic_year_id, name, year, section.
-- `subjects`: department_id, name, code, max_marks.
-- `students`: roll_number, class_id, department_id, external URLs, bio.
-- `teachers`: Base user reference.
-- `teacher_class_assignments`: SOURCE OF TRUTH for Teacher RBAC. Fields: teacher_user_id, class_id, subject_id, semester_id, status. Protected by unique index `uq_tca_active_assignment`.
-- `assessment_definitions`: teacher-created dynamic assessments.
-- `marks`: exam_type, marks_obtained, max_marks.
-
-PROFILE & PORTFOLIO:
-- `projects`, `achievements`, `certifications`, `hackathons`: all link to student_id and include `verification_status`.
-- `posts`, `post_attachments`.
-
-DOCUMENTS:
-- `student_documents`: doc_type, file_url, parsed_headings.
-- `marksheets`: Official uploaded PDF marksheets with sgpa/cgpa.
-
-COMMUNICATION:
-- `notifications`: target_role ('all', 'all_students', 'all_teachers', 'class').
-- `notification_reads`, `events`.
-
-ANALYTICS:
-- `teacher_analytics_visibility`: Controls admin-configured analytics scopes.
-- `student_github_snapshots`: Snapshot history.
-- `student_linkedin_snapshots`: Snapshot history.
-- `student_hackerrank_snapshots`: Snapshot history.
-
-AUDIT & AI:
-- `audit_logs`: action, entity_type, details.
-- `ai_query_logs`: query_text, resolved_intent, tool_calls.
-
-=============================================================================
-15. SNAPSHOT CORRECTION
-=============================================================================
-Historical snapshots are captured monthly (YYYY-MM).
-They use an idempotent upsert: `ON CONFLICT (student_id, snapshot_month) DO UPDATE`.
-This means multiple syncs within the same month will overwrite that month's record, ensuring idempotent behavior without generating duplicates.
-
-=============================================================================
-16. AUTH + RBAC
-=============================================================================
-- JWT creation in `server/auth.ts`. Payload includes id, email, role, and student/class ID if applicable.
-- Passwords hashed via bcryptjs.
-- Role Middleware (`requireRole`) checks the decoded token's role array.
-- Teacher Scope: `verifyTeacherClassScope()` checks the `teacher_class_assignments` table to ensure a teacher has an active/past assignment to the requested class/subject/semester.
-- Admin Authorization: Enforced on all `/api/admin/*` routes.
-- Rate Limiting: Configured in `auth.ts` per IP address to protect APIs.
-
-=============================================================================
-17. STORAGE / UPLOADS
-=============================================================================
-- Handled by Express routes and Multer middleware.
-- Marksheets support single PDF upload and bulk ZIP extraction containing PDFs.
-- Files belong to specific students or posts. Download authorization enforced based on ownership or admin privileges.
-
-=============================================================================
-18. AI / GEMINI
-=============================================================================
-- Integrated via `@google/genai`.
-- Accessible via the AiAssistantDrawer in the frontend.
-- API requests are logged to `ai_query_logs`.
-- If `GEMINI_API_KEY` is not present, the system should gracefully fallback or report unavailability.
-
-=============================================================================
-19. CONFIGURATION
-=============================================================================
-Environment variables (Never document actual values here):
-- `DATABASE_URL` (Required)
-- `JWT_SECRET` (Required)
-- `GEMINI_API_KEY` (Required for AI assistant)
-- `GITHUB_TOKEN` (Optional, used for GitHub sync)
-
-Scripts (package.json):
-- `npm run dev`: starts backend
-- `npm run dev:frontend`: starts Vite
-- `npm run build`: builds production assets
-- `npm run lint`: type checks
-
-=============================================================================
-20. LEGACY CODE
-=============================================================================
-ACTIVE RUNTIME:
-- server.ts
-- src/lib/api.ts
-
-LEGACY (DO NOT USE, Kept for historical reference):
-- server/index.ts
-- src/api.ts
-
-=============================================================================
-21. AI AGENT OPERATING RULES (RULES FOR FUTURE AI AGENTS)
-=============================================================================
-1. Read PROJECT_MAP.txt first.
-2. Inspect existing implementation before creating new files.
-3. PostgreSQL is the runtime source of truth.
-4. Never introduce memDb/localStorage as database substitutes.
-5. Preserve Admin/Teacher/Student/Placement RBAC at all times.
-6. Preserve teacher Class + Subject + Semester scope based on `teacher_class_assignments`.
-7. Backend authorization is mandatory. Frontend hiding is not secure.
-8. Never fabricate external analytics.
-9. Never scrape unsupported LinkedIn/HackerRank endpoints.
-10. GitHub sync happens only when student GitHub URL exists.
-11. Preserve monthly snapshot/idempotency logic (`ON CONFLICT... DO UPDATE`).
-12. Do not modify the database during static audits.
-13. Do not use the browser during static-only audits.
-14. Do not push unless explicitly requested.
-15. Do not create duplicate implementations.
-16. Prefer modifying existing services/components over writing new ones.
-17. Run lint/build after source changes.
-18. Clearly distinguish: STATIC VERIFIED, DATABASE VERIFIED, BROWSER VERIFIED.
-
-=============================================================================
-22. ARCHITECTURE DIAGRAMS
-=============================================================================
-[ OVERALL ARCHITECTURE ]
-  React SPA (Vite)  <-- REST API (JWT) -->  Node.js (Express)  <-- pg --> PostgreSQL
-
-[ AUTHENTICATION ]
-  Login --> bcrypt compare --> JWT Sign --> Client saves in LocalStorage/Memory
-  Client requests --> Bearer Token --> requireAuth Middleware --> Route Handler
-
-[ ADMIN ]
-  Admin API --> Has access to all users, classes, analytics visibility, system audits.
-
-[ TEACHER ]
-  Teacher API --> Scoped strictly by `teacher_class_assignments`. Can manage marks and view filtered analytics.
-
-[ STUDENT ]
-  Student API --> Can view self profile, dossier, transcripts, and notifications.
-
-[ PLACEMENT ]
-  Placement API --> Dedicated placement officer scope. Can view aggregated student metrics and dossiers, but not system-wide admin settings.
-
-=============================================================================
-23. KNOWN LIMITATIONS
-=============================================================================
-- LinkedIn real integration unavailable (returns 'not_synced').
-- HackerRank real integration unavailable (returns 'not_synced').
-- Gemini requires the `GEMINI_API_KEY` configuration.
-
-=============================================================================
-24. AUDIT HISTORY
-=============================================================================
-PROJECT_MAP AUDIT
-Audit type: STATIC
-Browser: NOT USED
-Database: NOT TOUCHED
-Application: NOT STARTED
-Purpose: Architecture/documentation audit.
-Date: 2026-09-21
-
-PLACEMENT DASHBOARD AUDIT
-Audit type: BROWSER VERIFIED
-Browser: USED
-Database: QUERIED
-Application: STARTED
-Purpose: Verified placement role RBAC and placement dashboard metrics visibility.
-Date: 2026-09-23

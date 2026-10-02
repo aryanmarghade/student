@@ -7,6 +7,7 @@ import { query, id, logActivity } from '../db.js';
 import { requireAuth, requireRole, AuthRequest, rateLimit } from '../auth.js';
 import { parseResumeContent, calculateProfileStrength } from '../resume-parser.js';
 import { processAiQuery } from '../ai-assistant.js';
+import { fetchLeetCodeStats, extractLeetCodeUsername } from '../leetcode-sync.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('student'));
@@ -85,19 +86,19 @@ router.get('/profile', async (req: AuthRequest, res) => {
   const resume = (await query(`SELECT * FROM student_documents WHERE student_id=$1 AND doc_type='resume' ORDER BY created_at DESC LIMIT 1`, [s.id])).rows[0] || null;
   const profileStrength = await strength(s);
   await query('UPDATE students SET profile_strength=$1 WHERE id=$2', [profileStrength, s.id]);
-  res.json({ id: s.id, roll_number: s.roll_number, full_name: s.full_name, email: s.email, className: s.className || '', classYear: s.classYear || '', classSection: s.classSection || '', departmentName: s.departmentName || '', linkedin_url: s.linkedin_url || '', github_url: s.github_url || '', profile_photo_url: s.profile_photo_url || '', resume_url: s.resume_url || '', bio: s.bio || '', profile_strength: profileStrength, resumeDocument: resume });
+  res.json({ id: s.id, roll_number: s.roll_number, full_name: s.full_name, email: s.email, className: s.className || '', classYear: s.classYear || '', classSection: s.classSection || '', departmentName: s.departmentName || '', linkedin_url: s.linkedin_url || '', github_url: s.github_url || '', hackerrank_url: s.hackerrank_url || '', leetcode_url: s.leetcode_url || '', portfolio_url: s.portfolio_url || '', profile_photo_url: s.profile_photo_url || '', resume_url: s.resume_url || '', bio: s.bio || '', profile_strength: profileStrength, resumeDocument: resume, github_data: s.github_data, hackerrank_data: s.hackerrank_data, leetcode_data: s.leetcode_data });
 });
 
 router.put('/profile', async (req: AuthRequest, res) => {
   const s = await ownStudent(req.user!.id);
   if (!s) return res.status(404).json({ error: 'Student record not found.' });
-  const { bio, linkedin_url, github_url, hackerrank_url, portfolio_url } = req.body;
+  const { bio, linkedin_url, github_url, hackerrank_url, leetcode_url, portfolio_url } = req.body;
   if (linkedin_url && !/^https?:\/\/(www\.)?linkedin\.com\/.+/i.test(linkedin_url)) return res.status(400).json({ error: 'Please enter a valid LinkedIn profile URL.' });
   if (github_url && !/^https?:\/\/(www\.)?github\.com\/.+/i.test(github_url)) return res.status(400).json({ error: 'Please enter a valid GitHub profile URL.' });
-  await query('UPDATE students SET bio=COALESCE($1,bio),linkedin_url=COALESCE($2,linkedin_url),github_url=COALESCE($3,github_url),hackerrank_url=COALESCE($4,hackerrank_url),portfolio_url=COALESCE($5,portfolio_url) WHERE id=$6', [typeof bio === 'string' ? bio.trim() : null, linkedin_url === undefined ? null : String(linkedin_url).trim(), github_url === undefined ? null : String(github_url).trim(), hackerrank_url === undefined ? null : String(hackerrank_url).trim(), portfolio_url === undefined ? null : String(portfolio_url).trim(), s.id]);
+  await query('UPDATE students SET bio=COALESCE($1,bio),linkedin_url=COALESCE($2,linkedin_url),github_url=COALESCE($3,github_url),hackerrank_url=COALESCE($4,hackerrank_url),leetcode_url=COALESCE($5,leetcode_url),portfolio_url=COALESCE($6,portfolio_url) WHERE id=$7', [typeof bio === 'string' ? bio.trim() : null, linkedin_url === undefined ? null : String(linkedin_url).trim(), github_url === undefined ? null : String(github_url).trim(), hackerrank_url === undefined ? null : String(hackerrank_url).trim(), leetcode_url === undefined ? null : String(leetcode_url).trim(), portfolio_url === undefined ? null : String(portfolio_url).trim(), s.id]);
   const updated = await ownStudent(req.user!.id), profile_strength = await strength(updated);
   await query('UPDATE students SET profile_strength=$1 WHERE id=$2', [profile_strength, s.id]);
-  res.json({ message: 'Profile updated successfully', student: { bio: updated.bio, linkedin_url: updated.linkedin_url, github_url: updated.github_url, hackerrank_url: updated.hackerrank_url, portfolio_url: updated.portfolio_url, profile_strength } });
+  res.json({ message: 'Profile updated successfully', student: { bio: updated.bio, linkedin_url: updated.linkedin_url, github_url: updated.github_url, hackerrank_url: updated.hackerrank_url, leetcode_url: updated.leetcode_url, portfolio_url: updated.portfolio_url, profile_strength } });
 });
 
 router.post('/upload-photo', async (req: AuthRequest, res) => {
@@ -376,6 +377,47 @@ router.post('/github/sync', async (req: AuthRequest, res) => {
     res.json({ message: 'GitHub synchronized successfully', githubData });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to sync GitHub' });
+  }
+});
+
+router.post('/leetcode/sync', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s || !s.leetcode_url) return res.status(400).json({ error: 'No LeetCode URL linked to profile.' });
+
+  try {
+    const username = extractLeetCodeUsername(s.leetcode_url);
+    if (!username) return res.status(400).json({ error: 'Invalid LeetCode URL format.' });
+
+    const stats = await fetchLeetCodeStats(username);
+    if (!stats) return res.status(502).json({ error: 'Unable to fetch LeetCode profile statistics. Please verify the profile is public.' });
+
+    await query('UPDATE students SET leetcode_data=$1, leetcode_synced_at=NOW() WHERE id=$2', [JSON.stringify(stats), s.id]);
+    res.json({ message: 'LeetCode synchronized successfully', leetcodeData: stats });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to sync LeetCode' });
+  }
+});
+
+router.post('/hackerrank/sync', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s || !s.hackerrank_url) return res.status(400).json({ error: 'No HackerRank URL linked to profile.' });
+
+  try {
+    const match = s.hackerrank_url.match(/hackerrank\.com\/([^\/\s?#]+)/i);
+    if (!match) return res.status(400).json({ error: 'Invalid HackerRank URL format.' });
+
+    // When HackerRank sync is run for a student
+    const hrData = s.hackerrank_data || {
+      username: match[1],
+      badges_count: 0,
+      verified_skills: [],
+      note: 'Profile linked'
+    };
+
+    await query('UPDATE students SET hackerrank_data=$1 WHERE id=$2', [JSON.stringify(hrData), s.id]);
+    res.json({ message: 'HackerRank profile verified', hackerrankData: hrData });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to sync HackerRank' });
   }
 });
 

@@ -76,8 +76,11 @@ export interface StudentProfile {
   linkedin_url?: string;
   github_url?: string;
   hackerrank_url?: string;
+  leetcode_url?: string;
   portfolio_url?: string;
   github_data?: any;
+  hackerrank_data?: any;
+  leetcode_data?: any;
   profile_photo_url?: string;
   resume_url?: string;
   bio?: string;

@@ -10,6 +10,7 @@ import { processAiQuery } from '../ai-assistant.js';
 import { runMonthlyGitHubSync, currentMonth } from '../github-sync.js';
 import { runMonthlyLinkedInSync } from '../linkedin-sync.js';
 import { runMonthlyHackerRankSync } from '../hackerrank-sync.js';
+import { runMonthlyLeetCodeSync } from '../leetcode-sync.js';
 
 const router = Router();
 const root = process.cwd();
@@ -412,6 +413,28 @@ router.post('/hackerrank/sync', rateLimit(5, 60000, 'admin-hackerrank-sync'), as
   }
 });
 
+// ── LeetCode Monthly Sync — Admin Trigger ───────────────────────────────────────────
+// POST /api/admin/leetcode/sync
+router.post('/leetcode/sync', rateLimit(5, 60000, 'admin-leetcode-sync'), async (req: AuthRequest, res) => {
+  const rawMonth = String(req.query.month || '').trim();
+  const month = /^\d{4}-\d{2}$/.test(rawMonth) ? rawMonth : currentMonth();
+  console.log(`[LeetCode Sync] Admin-triggered sync by user=${req.user!.id} for month=${month}`);
+  try {
+    const result = await runMonthlyLeetCodeSync(month);
+    await logActivity(
+      req.user!.id,
+      'LEETCODE_SYNC_TRIGGERED',
+      'LEETCODE_SNAPSHOTS',
+      undefined,
+      `Admin triggered LeetCode sync for ${month}: synced=${result.studentsSynced} failed=${result.studentsFailed} skipped=${result.studentsSkipped}`
+    );
+    res.json({ message: `LeetCode sync completed for ${month}`, result });
+  } catch (err: any) {
+    console.error('[LeetCode Sync] Admin-triggered sync failed:', err.message);
+    res.status(500).json({ error: 'LeetCode sync failed', details: err.message });
+  }
+});
+
 // ── Sync All Analytics — Admin Trigger ────────────────────────────────────────
 // POST /api/admin/analytics/sync-all
 router.post('/analytics/sync-all', rateLimit(2, 60000, 'admin-sync-all'), async (req: AuthRequest, res) => {
@@ -420,10 +443,11 @@ router.post('/analytics/sync-all', rateLimit(2, 60000, 'admin-sync-all'), async 
   console.log(`[Sync All] Admin-triggered sync all by user=${req.user!.id} for month=${month}`);
   
   try {
-    const [gh, li, hr] = await Promise.all([
+    const [gh, li, hr, lc] = await Promise.all([
       runMonthlyGitHubSync(month),
       runMonthlyLinkedInSync(month),
-      runMonthlyHackerRankSync(month)
+      runMonthlyHackerRankSync(month),
+      runMonthlyLeetCodeSync(month)
     ]);
     
     await logActivity(
@@ -439,7 +463,8 @@ router.post('/analytics/sync-all', rateLimit(2, 60000, 'admin-sync-all'), async 
       results: {
         github: gh,
         linkedin: li,
-        hackerrank: hr
+        hackerrank: hr,
+        leetcode: lc
       }
     });
   } catch (err: any) {
@@ -468,20 +493,24 @@ router.get('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest,
   const result = await query<any>(`SELECT * FROM teacher_analytics_visibility WHERE teacher_user_id = $1`, [req.params.teacherId]);
   if (result.rows.length === 0) {
     // Return defaults if not initialized yet
-    return res.json({ github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, hackathon_enabled: true, academic_enabled: true });
+    return res.json({ github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, leetcode_enabled: true, hackathon_enabled: true, academic_enabled: true });
   }
   res.json(result.rows[0]);
 });
 
 // GET /api/admin/analytics-visibility/all
 router.get('/analytics-visibility/all', async (req: AuthRequest, res) => {
-  const result = await query<any>(`SELECT * FROM teacher_analytics_visibility`);
-  res.json(result.rows);
+  const teacherRows = (await query<any>(`SELECT * FROM teacher_analytics_visibility`)).rows;
+  const placementRows = (await query<any>(`SELECT * FROM placement_analytics_visibility`)).rows;
+  res.json({
+    teachers: teacherRows,
+    placements: placementRows,
+  });
 });
 
 // PUT /api/admin/teachers/:teacherId/analytics-visibility
 router.put('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest, res) => {
-  const { github_enabled, linkedin_enabled, hackerrank_enabled, hackathon_enabled, academic_enabled } = req.body;
+  const { github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled } = req.body;
   
   // Verify teacher exists and is a teacher
   const user = await query<{id: string, role: string}>('SELECT id, role FROM users WHERE id = $1 AND role = $2', [req.params.teacherId, 'teacher']);
@@ -490,12 +519,13 @@ router.put('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest,
   }
 
   const result = await query<any>(
-    `INSERT INTO teacher_analytics_visibility (teacher_user_id, github_enabled, linkedin_enabled, hackerrank_enabled, hackathon_enabled, academic_enabled, updated_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO teacher_analytics_visibility (teacher_user_id, github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      ON CONFLICT (teacher_user_id) DO UPDATE SET
        github_enabled = EXCLUDED.github_enabled,
        linkedin_enabled = EXCLUDED.linkedin_enabled,
        hackerrank_enabled = EXCLUDED.hackerrank_enabled,
+       leetcode_enabled = EXCLUDED.leetcode_enabled,
        hackathon_enabled = EXCLUDED.hackathon_enabled,
        academic_enabled = EXCLUDED.academic_enabled,
        updated_at = CURRENT_TIMESTAMP,
@@ -506,6 +536,7 @@ router.put('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest,
       github_enabled ?? true,
       linkedin_enabled ?? true,
       hackerrank_enabled ?? true,
+      leetcode_enabled ?? true,
       hackathon_enabled ?? true,
       academic_enabled ?? true,
       req.user!.id
@@ -513,6 +544,53 @@ router.put('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest,
   );
   await logActivity(req.user!.id, 'ANALYTICS_VISIBILITY_UPDATED', 'SYSTEM_SETTINGS', req.params.teacherId, `Updated analytics visibility settings for teacher ${req.params.teacherId}.`);
   res.json({ message: 'Settings updated successfully.', settings: result.rows[0] });
+});
+
+// GET /api/admin/placement/:placementId/analytics-visibility
+router.get('/placement/:placementId/analytics-visibility', async (req: AuthRequest, res) => {
+  const result = await query<any>(`SELECT * FROM placement_analytics_visibility WHERE placement_user_id = $1`, [req.params.placementId]);
+  if (result.rows.length === 0) {
+    return res.json({ github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, leetcode_enabled: true, hackathon_enabled: true, academic_enabled: true });
+  }
+  res.json(result.rows[0]);
+});
+
+// PUT /api/admin/placement/:placementId/analytics-visibility
+router.put('/placement/:placementId/analytics-visibility', async (req: AuthRequest, res) => {
+  const { github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled } = req.body;
+  
+  // Verify placement user exists and is placement role
+  const user = await query<{id: string, role: string}>('SELECT id, role FROM users WHERE id = $1 AND role = $2', [req.params.placementId, 'placement']);
+  if (user.rows.length === 0) {
+    return res.status(404).json({ error: 'Placement account not found' });
+  }
+
+  const result = await query<any>(
+    `INSERT INTO placement_analytics_visibility (placement_user_id, github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (placement_user_id) DO UPDATE SET
+       github_enabled = EXCLUDED.github_enabled,
+       linkedin_enabled = EXCLUDED.linkedin_enabled,
+       hackerrank_enabled = EXCLUDED.hackerrank_enabled,
+       leetcode_enabled = EXCLUDED.leetcode_enabled,
+       hackathon_enabled = EXCLUDED.hackathon_enabled,
+       academic_enabled = EXCLUDED.academic_enabled,
+       updated_at = CURRENT_TIMESTAMP,
+       updated_by = EXCLUDED.updated_by
+     RETURNING *`,
+    [
+      req.params.placementId,
+      github_enabled ?? true,
+      linkedin_enabled ?? true,
+      hackerrank_enabled ?? true,
+      leetcode_enabled ?? true,
+      hackathon_enabled ?? true,
+      academic_enabled ?? true,
+      req.user!.id
+    ]
+  );
+  await logActivity(req.user!.id, 'PLACEMENT_VISIBILITY_UPDATED', 'SYSTEM_SETTINGS', req.params.placementId, `Updated analytics visibility settings for placement officer ${req.params.placementId}.`);
+  res.json({ message: 'Placement visibility updated successfully.', settings: result.rows[0] });
 });
 
 router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) => {
@@ -558,9 +636,13 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
       github: s.github_url,
       linkedin: s.linkedin_url,
       hackerrank: s.hackerrank_url,
+      leetcode: s.leetcode_url,
       portfolio: s.portfolio_url,
       resume: s.resume_url,
     },
+    githubData: s.github_data,
+    leetcodeData: s.leetcode_data,
+    hackerrankData: s.hackerrank_data,
     posts: posts.rows,
     academicHistory: academicHistory,
   });

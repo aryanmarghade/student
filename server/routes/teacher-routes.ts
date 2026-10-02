@@ -261,6 +261,18 @@ router.post('/analytics', async (req: AuthRequest, res) => {
   const regressionPoints = averageByStudent.map((st, i) => ({ x: i + 1, y: st.average }));
   const regression = linearRegression(regressionPoints);
 
+  const formattedRegressionPoints = averageByStudent.map((st, i) => {
+    const x = i + 1;
+    const actual = st.average;
+    const trend = regression ? Number((regression.slope * x + regression.intercept).toFixed(2)) : actual;
+    return {
+      x,
+      actual,
+      trend,
+      label: st.name || `Student ${x}`,
+    };
+  });
+
   const visibilityRes = await query<any>(`SELECT * FROM teacher_analytics_visibility WHERE teacher_user_id = $1`, [req.user!.id]);
   const visibility = visibilityRes.rows[0] || { github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, hackathon_enabled: true, academic_enabled: true };
 
@@ -381,7 +393,7 @@ router.post('/analytics', async (req: AuthRequest, res) => {
             intercept: Number(regression.intercept.toFixed(4)),
             rSquared: Number(regression.rSquared.toFixed(4)),
             predictedNextScore: Number(regression.predictedNextValue.toFixed(2)),
-            points: regression.pointsUsed,
+            points: formattedRegressionPoints,
             label: 'Linear Trend Projection (per-student averages)',
           }
         : {
@@ -389,7 +401,7 @@ router.post('/analytics', async (req: AuthRequest, res) => {
             intercept: Number(mean.toFixed(2)),
             rSquared: null,
             predictedNextScore: Number(mean.toFixed(2)),
-            points: regressionPoints,
+            points: formattedRegressionPoints,
             label: 'Not enough data for regression (need ≥2 students with marks)',
           },
     } : {}),
@@ -760,6 +772,7 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
       github_url: student.github_url,
       linkedin_url: student.linkedin_url,
       hackerrank_url: student.hackerrank_url,
+      leetcode_url: student.leetcode_url,
       profile_strength: student.profile_strength,
     },
     context: {
@@ -782,6 +795,10 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
     ...(visibility.hackerrank_enabled ? {
       hackerrankData,
       hackerrankUrl: student.hackerrank_url,
+    } : {}),
+    ...((visibility.leetcode_enabled ?? true) ? {
+      leetcodeData: student.leetcode_data,
+      leetcodeUrl: student.leetcode_url,
     } : {}),
     ...(visibility.linkedin_enabled ? {
       linkedinData,
@@ -834,6 +851,7 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
       github: s.github_url,
       linkedin: s.linkedin_url,
       hackerrank: s.hackerrank_url,
+      leetcode: s.leetcode_url,
       portfolio: s.portfolio_url,
       resume: s.resume_url,
     },
