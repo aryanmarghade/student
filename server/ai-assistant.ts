@@ -1,26 +1,26 @@
 /**
- * ai-assistant.ts — Scoped Academic AI Query Handler
+ * ai-assistant.ts — Scoped Academic AI Query Handler (Optional Local AI via Ollama)
  *
- * This module handles AI queries for all roles. When GEMINI_API_KEY is set
- * in the environment, queries are answered by Gemini using structured,
- * role-scoped PostgreSQL data as context. When no API key is configured,
- * a plain PostgreSQL summary is returned instead.
- *
- * Environment requirement:
- *   GEMINI_API_KEY — Google AI Studio API key (see .env.example)
+ * This module handles optional AI queries for all roles.
+ * - Ollama is the ONLY AI provider (100% local, no cloud dependencies, no API keys).
+ * - Core PostgreSQL analytics remain the absolute source of truth.
+ * - If Ollama is not running or unreachable, it returns a graceful non-500 response
+ *   with available: false.
  *
  * RBAC rules enforced:
- *   - Admin: sees institution-wide stats
- *   - Teacher: sees only their assigned classes/students
- *   - Student: sees only their own marks and profile data
+ *   - Admin: sees college-level permitted institutional stats
+ *   - Teacher: sees only assigned class/subject/semester context
+ *   - Student: sees only their own academic context
  */
 
 import { query } from './db.js';
 import { AuthenticatedUser } from './auth.js';
-import { GoogleGenAI } from '@google/genai';
 
-type AiResponse = {
-  text: string;
+export type AiResponse = {
+  available: boolean;
+  provider: string;
+  message: string;
+  answer: string;
   toolCallsExecuted: { name: string; role: string }[];
   resolvedIntent: string;
 };
@@ -82,46 +82,60 @@ async function buildScopedContext(user: AuthenticatedUser): Promise<string> {
 
 export async function processAiQuery(user: AuthenticatedUser, text: string): Promise<AiResponse> {
   const context = await buildScopedContext(user);
-  const apiKey = process.env.GEMINI_API_KEY;
+  const ollamaUrl = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
+  const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.2';
 
-  // Gemini path — only when API key is configured
-  if (apiKey) {
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-      const systemInstruction =
-        `You are an academic assistant for Vission Academy. You have access only to the ` +
-        `following data scoped to the current user (role: ${user.role}). ` +
-        `Do not invent data. Do not disclose data from other students, teachers, or classes. ` +
-        `Answer concisely and helpfully.\n\nData context:\n${context}`;
+  const systemInstruction =
+    `You are an academic assistant for Vission Academy. You have access strictly to the ` +
+    `following verified data scoped to the current user (role: ${user.role}). ` +
+    `Do not invent data. Do not disclose data outside this context. ` +
+    `Answer concisely and helpfully.\n\nAcademic Context:\n${context}`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: [{ role: 'user', parts: [{ text }] }],
-        config: { systemInstruction },
-      });
+  const prompt = `${systemInstruction}\n\nUser Question: ${text}\n\nResponse:`;
 
-      const geminiText = response.text ?? 'Gemini returned an empty response.';
-      return {
-        text: geminiText,
-        toolCallsExecuted: [{ name: 'gemini_scoped_response', role: user.role }],
-        resolvedIntent: 'gemini_academic_query',
-      };
-    } catch (err: any) {
-      // Log the error but gracefully fall through to the plain summary
-      console.error('[AI] Gemini API error:', err?.message ?? err);
-      return {
-        text: `Gemini API error: ${err?.message ?? 'Unknown error'}. ` +
-          `Here is a direct PostgreSQL summary:\n\n${context}`,
-        toolCallsExecuted: [{ name: 'gemini_error_fallback', role: user.role }],
-        resolvedIntent: 'gemini_error_fallback',
-      };
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    const response = await fetch(`${ollamaUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: ollamaModel,
+        prompt,
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const data = await response.json().catch(() => null) as any;
+      const responseText = data?.response?.trim();
+      if (responseText) {
+        return {
+          available: true,
+          provider: 'ollama',
+          message: 'Success',
+          answer: responseText,
+          toolCallsExecuted: [{ name: 'ollama_scoped_response', role: user.role }],
+          resolvedIntent: 'ollama_academic_query',
+        };
+      }
     }
+  } catch (err: any) {
+    // Local Ollama is unreachable, offline, or timed out.
+    // This is completely expected when Ollama is off.
   }
 
-  // No API key — return plain scoped summary
+  // Graceful local AI unavailable fallback (No 500, clean response)
   return {
-    text: `Academic AI Summary (Gemini not configured — set GEMINI_API_KEY to enable):\n\n${context}`,
-    toolCallsExecuted: [{ name: 'postgresql_scoped_summary', role: user.role }],
-    resolvedIntent: 'postgresql_scoped_summary',
+    available: false,
+    provider: 'ollama',
+    message: 'Local AI is unavailable. Start Ollama to enable AI features.',
+    answer: 'Local AI is unavailable. Start Ollama to enable AI features.',
+    toolCallsExecuted: [{ name: 'ollama_unavailable', role: user.role }],
+    resolvedIntent: 'ollama_unavailable',
   };
 }

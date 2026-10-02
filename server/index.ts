@@ -8,7 +8,7 @@ import { Pool } from 'pg'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { z } from 'zod'
 import { linearRegression, median, standardDeviation } from './analytics.js'
-import { AiScopeError, runGeminiQuery } from './ai.js'
+import { AiScopeError, runOllamaQuery } from './ai.js'
 import { parseResume } from './documents.js'
 
 const app = express()
@@ -1130,12 +1130,12 @@ async function handleAiQuery(request: AuthRequest, response: Response, next: Nex
   let input: z.infer<typeof aiQuerySchema> | undefined
   try {
     input = aiQuerySchema.parse(request.body)
-    const result = await runGeminiQuery(pool, request.user!, input.query)
+    const result = await runOllamaQuery(pool, request.user!, input.query)
     await pool.query(
       'INSERT INTO ai_query_logs (user_id, query_text, resolved_intent, response_summary) VALUES ($1, $2, $3, $4)',
       [request.user!.id, input.query, result.toolCalls.map((call) => call.name).join(',') || 'none', result.response],
     )
-    return response.json({ response: result.response, toolCalls: result.toolCalls.map((call) => ({ name: call.name, args: call.args })), provider: 'gemini-function-calling' })
+    return response.json({ response: result.response, toolCalls: result.toolCalls.map((call) => ({ name: call.name, args: call.args })), provider: 'ollama' })
   } catch (error) {
     if (input) {
       const resolvedIntent = error instanceof AiScopeError ? 'scope_rejected' : 'error'
