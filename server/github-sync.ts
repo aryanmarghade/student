@@ -439,7 +439,7 @@ export async function startGitHubScheduler(): Promise<void> {
 
   // Schedule future runs
   function scheduleNextRun(): void {
-    const ms = msUntilNextMonthlySync();
+    const ms = Math.min(msUntilNextMonthlySync(), 2147483647);
     const nextDate = new Date(Date.now() + ms);
     console.log(`[GitHub Sync] 🕐 Next monthly sync scheduled for ${nextDate.toLocaleDateString()} ${nextDate.toLocaleTimeString()}`);
     setTimeout(async () => {

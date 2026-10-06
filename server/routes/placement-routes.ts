@@ -1,10 +1,15 @@
 import { Router } from 'express';
 import { query } from '../db.js';
-import { requireAuth, requireRole, AuthRequest } from '../auth.js';
+import { requireAuth, requireRole, rateLimit, AuthRequest } from '../auth.js';
 import { calculateAcademicHistoryBulk, calculateAcademicHistory } from '../academic-service.js';
+import { processAiQuery } from '../ai-assistant.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('placement'));
+
+router.post('/ai-query', rateLimit(25, 60000, 'placement-ai'), async (req: AuthRequest, res) => {
+  res.json(await processAiQuery(req.user!, String(req.body.query || '')));
+});
 
 router.get('/visibility', async (req: AuthRequest, res) => {
   const result = await query<any>(`SELECT * FROM placement_analytics_visibility WHERE placement_user_id = $1`, [req.user!.id]);

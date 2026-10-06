@@ -242,7 +242,7 @@ export async function runOllamaQuery(pool: Pool, user: AiUser, query: string) {
   }
 
   const ollamaUrl = process.env.OLLAMA_URL || 'http://127.0.0.1:11434'
-  const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.2'
+  const ollamaModel = process.env.OLLAMA_MODEL || 'qwen2.5:3b'
 
   // Context gathering
   let contextInfo = ''

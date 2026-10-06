@@ -186,7 +186,7 @@ export async function startLinkedInScheduler(): Promise<void> {
   }
 
   function scheduleNextRun(): void {
-    const ms = msUntilNextMonthlySync();
+    const ms = Math.min(msUntilNextMonthlySync(), 2147483647);
     setTimeout(async () => {
       try {
         await runMonthlyLinkedInSync();

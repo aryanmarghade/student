@@ -114,6 +114,15 @@ export const TeacherView: React.FC = () => {
   const [analyticsData, setAnalyticsData] = useState<AnalyticsResponse | null>(null);
   const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false);
 
+  // AI Student Progress Panel State
+  const [aiProgressScope, setAiProgressScope] = useState<'whole_class' | 'selected_students' | 'single_student'>('whole_class');
+  const [aiSelectedStudentIds, setAiSelectedStudentIds] = useState<string[]>([]);
+  const [aiSingleStudentTarget, setAiSingleStudentTarget] = useState<string>('');
+  const [aiQuestion, setAiQuestion] = useState('');
+  const [isAiProgressLoading, setIsAiProgressLoading] = useState(false);
+  const [aiProgressResult, setAiProgressResult] = useState<any | null>(null);
+  const [aiProgressError, setAiProgressError] = useState<string | null>(null);
+
   // Chart ref for PNG export
   const trendChartRef = useRef<any>(null);
 
@@ -645,6 +654,58 @@ export const TeacherView: React.FC = () => {
       link.click();
       document.body.removeChild(link);
     }
+  };
+
+  // AI Student Progress Inquiry Handler
+  const handleAskAiProgress = async (customPrompt?: string) => {
+    if (!selectedAssignment) return;
+    const q = (customPrompt || aiQuestion).trim();
+    if (!q) {
+      setAiProgressError('Please enter a question or select a prompt.');
+      return;
+    }
+
+    let targetIds: string[] = [];
+    if (aiProgressScope === 'single_student') {
+      const singleId = aiSingleStudentTarget || (students[0]?.id ?? '');
+      if (!singleId) {
+        setAiProgressError('Please select a student for single-student progress analysis.');
+        return;
+      }
+      targetIds = [singleId];
+    } else if (aiProgressScope === 'selected_students') {
+      if (aiSelectedStudentIds.length === 0) {
+        setAiProgressError('Please select at least one student from the cohort.');
+        return;
+      }
+      targetIds = aiSelectedStudentIds;
+    }
+
+    setIsAiProgressLoading(true);
+    setAiProgressError(null);
+    setAiProgressResult(null);
+
+    try {
+      const res = await api.askTeacherAiStudentProgress({
+        classId: selectedAssignment.class_id,
+        subjectId: selectedAssignment.subject_id,
+        semesterId: selectedAssignment.semester_id,
+        scope: aiProgressScope,
+        studentIds: targetIds,
+        question: q,
+      });
+      setAiProgressResult(res);
+    } catch (err: any) {
+      setAiProgressError(err.message || 'Failed to analyze student progress. Please try again.');
+    } finally {
+      setIsAiProgressLoading(false);
+    }
+  };
+
+  const handleClearAiProgress = () => {
+    setAiQuestion('');
+    setAiProgressResult(null);
+    setAiProgressError(null);
   };
 
   const filteredStudents = students.filter(s => {
@@ -1452,6 +1513,252 @@ export const TeacherView: React.FC = () => {
                   )}
                 </div>
               )}
+
+              {/* 5. AI STUDENT PROGRESS PANEL */}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                <div className="p-4 bg-linear-to-r from-[#0f2744] to-[#1a3a60] text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" /> AI Student Progress & Deep Analysis
+                    </h3>
+                    <p className="text-xs text-slate-300">
+                      Local Ollama (qwen2.5:3b) analysis grounded strictly in authorized PostgreSQL academic & activity records.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                      Local Ollama
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-sky-500/20 text-sky-300 border border-sky-400/30">
+                      RBAC Enforced
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-5 space-y-4">
+                  {/* Controls: Scope, Student Target/Multi-select, Class/Subject/Semester Display */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">Class / Subject / Sem</span>
+                      <p className="font-bold text-slate-800">{selectedAssignment.className}</p>
+                      <p className="text-slate-600 text-[11px]">{selectedAssignment.subjectCode} ({selectedAssignment.subjectName}) • {selectedAssignment.semesterName}</p>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">Analysis Scope</span>
+                      <div className="flex gap-1 bg-white p-1 rounded-md border border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => setAiProgressScope('whole_class')}
+                          className={`flex-1 py-1 px-2 text-[11px] font-semibold rounded cursor-pointer transition-colors ${
+                            aiProgressScope === 'whole_class' ? 'bg-[#0f2744] text-white' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Whole Class
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAiProgressScope('selected_students')}
+                          className={`flex-1 py-1 px-2 text-[11px] font-semibold rounded cursor-pointer transition-colors ${
+                            aiProgressScope === 'selected_students' ? 'bg-[#0f2744] text-white' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Selected Students
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAiProgressScope('single_student');
+                            if (!aiSingleStudentTarget && students.length > 0) {
+                              setAiSingleStudentTarget(students[0].id);
+                            }
+                          }}
+                          className={`flex-1 py-1 px-2 text-[11px] font-semibold rounded cursor-pointer transition-colors ${
+                            aiProgressScope === 'single_student' ? 'bg-[#0f2744] text-white' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Single Student
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      {aiProgressScope === 'single_student' ? (
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">Target Student</span>
+                          <select
+                            value={aiSingleStudentTarget || (students[0]?.id ?? '')}
+                            onChange={(e) => setAiSingleStudentTarget(e.target.value)}
+                            className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white"
+                          >
+                            {students.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.full_name} ({s.roll_number})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : aiProgressScope === 'selected_students' ? (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                              Selected ({aiSelectedStudentIds.length}/{students.length})
+                            </span>
+                            <div className="flex gap-2 text-[10px]">
+                              <button
+                                type="button"
+                                onClick={() => setAiSelectedStudentIds(students.map((s) => s.id))}
+                                className="text-sky-700 hover:underline cursor-pointer"
+                              >
+                                All
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setAiSelectedStudentIds([])}
+                                className="text-slate-500 hover:underline cursor-pointer"
+                              >
+                                None
+                              </button>
+                            </div>
+                          </div>
+                          <div className="max-h-24 overflow-y-auto bg-white border border-slate-200 rounded p-1.5 space-y-1">
+                            {students.map((s) => {
+                              const isChecked = aiSelectedStudentIds.includes(s.id);
+                              return (
+                                <label key={s.id} className="flex items-center gap-1.5 text-[11px] text-slate-700 cursor-pointer hover:bg-slate-50 p-0.5 rounded">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setAiSelectedStudentIds((prev) => [...prev, s.id]);
+                                      } else {
+                                        setAiSelectedStudentIds((prev) => prev.filter((id) => id !== s.id));
+                                      }
+                                    }}
+                                    className="rounded text-[#0f2744]"
+                                  />
+                                  <span className="truncate">{s.full_name} ({s.roll_number})</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">Cohort Scope</span>
+                          <p className="text-xs text-slate-600">All {students.length} authorized students in this assigned class will be analyzed.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Quick Prompts */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-amber-500" /> Quick Prompts:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        'Give me a progress summary for this student.',
+                        'Who is improving the most?',
+                        'Which students need attention?',
+                        'Explain the marks trend.',
+                        'Identify weak subjects.',
+                        'Compare the selected students.',
+                        'Generate a teacher progress report.',
+                        'What intervention should I consider?',
+                      ].map((promptText) => (
+                        <button
+                          key={promptText}
+                          type="button"
+                          onClick={() => {
+                            setAiQuestion(promptText);
+                            handleAskAiProgress(promptText);
+                          }}
+                          className="px-2.5 py-1 text-[11px] bg-slate-100 text-slate-700 hover:bg-[#0f2744] hover:text-white rounded-full border border-slate-200 transition-colors cursor-pointer"
+                        >
+                          {promptText}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Question input + Actions */}
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={aiQuestion}
+                      onChange={(e) => setAiQuestion(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !isAiProgressLoading) {
+                          e.preventDefault();
+                          handleAskAiProgress();
+                        }
+                      }}
+                      placeholder="Ask any question about student progress, trends, or follow-ups..."
+                      className="flex-1 px-3.5 py-2 text-xs border border-slate-300 rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-[#0f2744]"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleAskAiProgress()}
+                        disabled={isAiProgressLoading || !aiQuestion.trim()}
+                        className="px-4 py-2 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-xs"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        {isAiProgressLoading ? 'Analyzing...' : 'Ask AI'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClearAiProgress}
+                        className="px-3 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-semibold cursor-pointer border border-slate-200"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Loading State */}
+                  {isAiProgressLoading && (
+                    <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 space-y-2 animate-pulse">
+                      <Sparkles className="w-6 h-6 text-sky-600 mx-auto animate-spin" />
+                      <p className="text-xs font-semibold text-slate-700">Analyzing student progress...</p>
+                      <p className="text-[11px] text-slate-500">Querying PostgreSQL marks, calculating deterministic trends, and consulting local Ollama.</p>
+                    </div>
+                  )}
+
+                  {/* Error State */}
+                  {aiProgressError && !isAiProgressLoading && (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-xs text-red-800">
+                      <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold">Analysis Request Issue</p>
+                        <p className="mt-0.5">{aiProgressError}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AI Response Output */}
+                  {aiProgressResult && !isAiProgressLoading && (
+                    <div className="space-y-3 pt-2 border-t border-slate-200">
+                      <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded border border-slate-200">
+                        <span className="font-mono text-[11px]">
+                          Scope: <strong className="text-slate-800">{aiProgressResult.scope}</strong> • Analyzed Students: <strong className="text-slate-800">{aiProgressResult.studentCount}</strong>
+                        </span>
+                        <span className="font-mono text-[11px]">
+                          Model: <strong className="text-slate-800">{aiProgressResult.model || 'qwen2.5:3b'}</strong>
+                        </span>
+                      </div>
+
+                      {/* Render Answer with clean formatting */}
+                      <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200 text-xs text-slate-800 space-y-2 leading-relaxed whitespace-pre-wrap font-sans">
+                        {aiProgressResult.answer}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 

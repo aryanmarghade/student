@@ -262,6 +262,29 @@ export const api = {
       body: JSON.stringify({ query }),
     }),
 
+  askTeacherAiStudentProgress: (payload: {
+    classId: string;
+    subjectId: string;
+    semesterId: string;
+    scope: 'whole_class' | 'selected_students' | 'single_student';
+    studentIds?: string[];
+    question: string;
+  }) =>
+    request<{
+      available: boolean;
+      provider: string;
+      model: string;
+      answer: string;
+      scope: string;
+      studentCount: number;
+      classSummary?: any;
+      studentsAnalytics?: any[];
+      error?: string;
+    }>('/api/teacher/ai/student-progress', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   getTeacherNotifications: () => request<NotificationItem[]>('/api/teacher/notifications'),
 
   markTeacherNotificationRead: (id: string) =>
@@ -457,4 +480,9 @@ export const api = {
   // Placement Routes
   getPlacementDashboard: () => request<any>('/api/placement/dashboard'),
   getStudentFullProfileForPlacement: (studentId: string) => request<any>(`/api/placement/students/${studentId}/full-profile`),
+  askPlacementAi: (query: string) =>
+    request<{ answer: string; toolCallsExecuted: any[]; resolvedIntent: string }>('/api/placement/ai-query', {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+    }),
 };

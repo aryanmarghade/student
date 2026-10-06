@@ -36,8 +36,7 @@ export async function logActivity(userId: string | undefined, action: string, en
 export async function initializeDatabase() {
   const root = process.cwd();
   const schema = await fs.readFile(path.join(root, 'db', 'schema.sql'), 'utf8');
-  const qaSeed = await fs.readFile(path.join(root, 'db', 'seed-qa.sql'), 'utf8');
-  const cleanup = await fs.readFile(path.join(root, 'db', 'cleanup-legacy.sql'), 'utf8');
+  const lockedSeed = await fs.readFile(path.join(root, 'db', 'seed-locked-academic.sql'), 'utf8');
 
   // Older live databases may already have legacy schema columns missing from the latest app.
   // Add the missing student profile fields and marks class-scoping column before reapplying schema/index updates.
@@ -65,9 +64,7 @@ export async function initializeDatabase() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_marks_class_subject_semester ON marks(class_id, subject_id, semester_id);`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_tca_active_assignment ON teacher_class_assignments (teacher_user_id, class_id, subject_id, semester_id) WHERE status = 'active';`);
 
-  await pool.query(qaSeed);
-  // Remove legacy seed.sql records that predate the QA migration — idempotent.
-  await pool.query(cleanup);
+  await pool.query(lockedSeed);
 }
 
 export function id(prefix: string) { return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }

@@ -193,7 +193,7 @@ export async function startHackerRankScheduler(): Promise<void> {
   }
 
   function scheduleNextRun(): void {
-    const ms = msUntilNextMonthlySync();
+    const ms = Math.min(msUntilNextMonthlySync(), 2147483647);
     setTimeout(async () => {
       try {
         await runMonthlyHackerRankSync();

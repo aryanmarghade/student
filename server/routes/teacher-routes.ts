@@ -7,6 +7,7 @@ import { processAiQuery } from '../ai-assistant.js';
 import { linearRegression, median, standardDeviation } from '../analytics.js';
 import { currentMonth } from '../github-sync.js';
 import { calculateAcademicHistory } from '../academic-service.js';
+import { processTeacherAiProgress } from '../teacher-ai-progress.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('teacher'));
@@ -930,7 +931,28 @@ router.post('/announcements', async (req: AuthRequest, res) => {
 });
 
 router.get('/events', async (_req, res) => res.json([]));
-router.post('/ai-query', rateLimit(25, 60000, 'teacher-ai'), async (req: AuthRequest, res) => res.json(await processAiQuery(req.user!, String(req.body.query || ''))));
+router.post('/ai-query', rateLimit(50, 60000, 'teacher-ai'), async (req: AuthRequest, res) => res.json(await processAiQuery(req.user!, String(req.body.query || ''))));
+
+router.post('/ai/student-progress', rateLimit(300, 60000, 'teacher-ai-progress'), async (req: AuthRequest, res) => {
+  try {
+    const { classId, subjectId, semesterId, scope = 'whole_class', studentIds = [], question } = req.body;
+    if (!question || typeof question !== 'string' || !question.trim()) {
+      return res.status(400).json({ error: 'Question is required.' });
+    }
+    const result = await processTeacherAiProgress(req.user!, {
+      classId: String(classId || ''),
+      subjectId: String(subjectId || ''),
+      semesterId: String(semesterId || ''),
+      scope: scope as any,
+      studentIds: Array.isArray(studentIds) ? studentIds : [],
+      question: question.trim(),
+    });
+    res.json(result);
+  } catch (err: any) {
+    const status = err.status || 400;
+    res.status(status).json({ error: err.message || 'Failed to process AI student progress inquiry.' });
+  }
+});
 
 router.post('/students/:studentId/portfolio/:type/:itemId/verify', async (req: AuthRequest, res) => {
   const { studentId, type, itemId } = req.params;
@@ -950,3 +972,4 @@ router.post('/students/:studentId/portfolio/:type/:itemId/verify', async (req: A
 });
 
 export default router;
+

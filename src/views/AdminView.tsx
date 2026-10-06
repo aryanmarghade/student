@@ -74,6 +74,7 @@ export const AdminView: React.FC = () => {
   const [resetUser, setResetUser] = useState<User | null>(null);
   const [resetPasswordInput, setResetPasswordInput] = useState('');
   const [resetConfirmInput, setResetConfirmInput] = useState('');
+  const [resetError, setResetError] = useState<string | null>(null);
   const [isResettingUser, setIsResettingUser] = useState(false);
 
   // Form states
@@ -493,21 +494,23 @@ export const AdminView: React.FC = () => {
     setResetUser(user);
     setResetPasswordInput('');
     setResetConfirmInput('');
+    setResetError(null);
   };
 
   const confirmResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetUser) return;
+    setResetError(null);
     if (!resetPasswordInput) {
-      showToast('Password is required.', true);
+      setResetError('Password is required.');
       return;
     }
     if (resetPasswordInput.length < 8) {
-      showToast('Password must be at least 8 characters.', true);
+      setResetError('Password must be at least 8 characters.');
       return;
     }
     if (resetPasswordInput !== resetConfirmInput) {
-      showToast('Passwords do not match.', true);
+      setResetError('Passwords do not match.');
       return;
     }
     setIsResettingUser(true);
@@ -516,6 +519,7 @@ export const AdminView: React.FC = () => {
       showToast(res.message);
       setResetUser(null);
     } catch (err: any) {
+      setResetError(err.message || 'Failed to reset password');
       showToast(err.message, true);
     } finally {
       setIsResettingUser(false);
@@ -2477,7 +2481,7 @@ export const AdminView: React.FC = () => {
       )}
       {/* MODAL: RESET PASSWORD */}
       {resetUser && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
           <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
             <div className="p-4 bg-[#0f2744] text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -2489,21 +2493,61 @@ export const AdminView: React.FC = () => {
               </button>
             </div>
             <form onSubmit={confirmResetPassword} className="p-5 space-y-4">
-              <div className="text-xs text-slate-600 mb-2">
+              <div className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
                 Resetting password for: <br />
-                <strong>{resetUser.full_name}</strong> ({resetUser.email})
+                <strong className="text-slate-900">{resetUser.full_name}</strong> ({resetUser.email})
               </div>
+
+              {resetError && (
+                <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>{resetError}</span>
+                </div>
+              )}
+
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">New Password (min 8 chars)</label>
-                <input type="password" required minLength={8} value={resetPasswordInput} onChange={e => setResetPasswordInput(e.target.value)} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">New Password (min 8 chars)</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const gen = `VA-${Math.random().toString(36).substring(2, 6).toUpperCase()}#2026`;
+                      setResetPasswordInput(gen);
+                      setResetConfirmInput(gen);
+                      setResetError(null);
+                    }}
+                    className="text-[11px] text-amber-700 hover:text-amber-800 font-semibold cursor-pointer underline"
+                  >
+                    Generate Random
+                  </button>
+                </div>
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={resetPasswordInput}
+                  onChange={e => { setResetPasswordInput(e.target.value); setResetError(null); }}
+                  placeholder="Enter new strong password"
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0f2744]"
+                />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Confirm Password</label>
-                <input type="password" required minLength={8} value={resetConfirmInput} onChange={e => setResetConfirmInput(e.target.value)} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={resetConfirmInput}
+                  onChange={e => { setResetConfirmInput(e.target.value); setResetError(null); }}
+                  placeholder="Re-enter password to confirm"
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0f2744]"
+                />
               </div>
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setResetUser(null)} className="px-3 py-1.5 bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold cursor-pointer">Cancel</button>
-                <button type="submit" disabled={isResettingUser} className="px-3 py-1.5 bg-[#0f2744] text-white rounded-lg text-xs font-semibold disabled:opacity-50 cursor-pointer">
+                <button type="button" onClick={() => setResetUser(null)} className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-xs font-semibold cursor-pointer transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" disabled={isResettingUser} className="px-3 py-1.5 bg-[#0f2744] hover:bg-[#18395f] text-white rounded-lg text-xs font-semibold disabled:opacity-50 cursor-pointer transition-colors">
                   {isResettingUser ? 'Resetting...' : 'Reset Password'}
                 </button>
               </div>
