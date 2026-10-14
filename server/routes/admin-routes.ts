@@ -493,7 +493,7 @@ router.get('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest,
   const result = await query<any>(`SELECT * FROM teacher_analytics_visibility WHERE teacher_user_id = $1`, [req.params.teacherId]);
   if (result.rows.length === 0) {
     // Return defaults if not initialized yet
-    return res.json({ github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, leetcode_enabled: true, hackathon_enabled: true, academic_enabled: true });
+    return res.json({ github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, leetcode_enabled: true, hackathon_enabled: true, academic_enabled: true, sports_enabled: true });
   }
   res.json(result.rows[0]);
 });
@@ -510,7 +510,7 @@ router.get('/analytics-visibility/all', async (req: AuthRequest, res) => {
 
 // PUT /api/admin/teachers/:teacherId/analytics-visibility
 router.put('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest, res) => {
-  const { github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled } = req.body;
+  const { github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled, sports_enabled } = req.body;
   
   // Verify teacher exists and is a teacher
   const user = await query<{id: string, role: string}>('SELECT id, role FROM users WHERE id = $1 AND role = $2', [req.params.teacherId, 'teacher']);
@@ -519,8 +519,8 @@ router.put('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest,
   }
 
   const result = await query<any>(
-    `INSERT INTO teacher_analytics_visibility (teacher_user_id, github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled, updated_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO teacher_analytics_visibility (teacher_user_id, github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled, sports_enabled, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (teacher_user_id) DO UPDATE SET
        github_enabled = EXCLUDED.github_enabled,
        linkedin_enabled = EXCLUDED.linkedin_enabled,
@@ -528,6 +528,7 @@ router.put('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest,
        leetcode_enabled = EXCLUDED.leetcode_enabled,
        hackathon_enabled = EXCLUDED.hackathon_enabled,
        academic_enabled = EXCLUDED.academic_enabled,
+       sports_enabled = EXCLUDED.sports_enabled,
        updated_at = CURRENT_TIMESTAMP,
        updated_by = EXCLUDED.updated_by
      RETURNING *`,
@@ -539,6 +540,7 @@ router.put('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest,
       leetcode_enabled ?? true,
       hackathon_enabled ?? true,
       academic_enabled ?? true,
+      sports_enabled ?? true,
       req.user!.id
     ]
   );
@@ -550,14 +552,14 @@ router.put('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest,
 router.get('/placement/:placementId/analytics-visibility', async (req: AuthRequest, res) => {
   const result = await query<any>(`SELECT * FROM placement_analytics_visibility WHERE placement_user_id = $1`, [req.params.placementId]);
   if (result.rows.length === 0) {
-    return res.json({ github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, leetcode_enabled: true, hackathon_enabled: true, academic_enabled: true });
+    return res.json({ github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, leetcode_enabled: true, hackathon_enabled: true, academic_enabled: true, sports_enabled: true });
   }
   res.json(result.rows[0]);
 });
 
 // PUT /api/admin/placement/:placementId/analytics-visibility
 router.put('/placement/:placementId/analytics-visibility', async (req: AuthRequest, res) => {
-  const { github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled } = req.body;
+  const { github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled, sports_enabled } = req.body;
   
   // Verify placement user exists and is placement role
   const user = await query<{id: string, role: string}>('SELECT id, role FROM users WHERE id = $1 AND role = $2', [req.params.placementId, 'placement']);
@@ -566,8 +568,8 @@ router.put('/placement/:placementId/analytics-visibility', async (req: AuthReque
   }
 
   const result = await query<any>(
-    `INSERT INTO placement_analytics_visibility (placement_user_id, github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled, updated_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO placement_analytics_visibility (placement_user_id, github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled, sports_enabled, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (placement_user_id) DO UPDATE SET
        github_enabled = EXCLUDED.github_enabled,
        linkedin_enabled = EXCLUDED.linkedin_enabled,
@@ -575,6 +577,7 @@ router.put('/placement/:placementId/analytics-visibility', async (req: AuthReque
        leetcode_enabled = EXCLUDED.leetcode_enabled,
        hackathon_enabled = EXCLUDED.hackathon_enabled,
        academic_enabled = EXCLUDED.academic_enabled,
+       sports_enabled = EXCLUDED.sports_enabled,
        updated_at = CURRENT_TIMESTAMP,
        updated_by = EXCLUDED.updated_by
      RETURNING *`,
@@ -586,6 +589,7 @@ router.put('/placement/:placementId/analytics-visibility', async (req: AuthReque
       leetcode_enabled ?? true,
       hackathon_enabled ?? true,
       academic_enabled ?? true,
+      sports_enabled ?? true,
       req.user!.id
     ]
   );

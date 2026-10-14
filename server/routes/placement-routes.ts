@@ -3,12 +3,35 @@ import { query } from '../db.js';
 import { requireAuth, requireRole, rateLimit, AuthRequest } from '../auth.js';
 import { calculateAcademicHistoryBulk, calculateAcademicHistory } from '../academic-service.js';
 import { processAiQuery } from '../ai-assistant.js';
+import {
+  getStudentComprehensiveEvidence,
+  evaluateRoleReadiness,
+  evaluateRoleReadinessWithAi
+} from '../student-evidence-service.js';
+import {
+  createJobDescription,
+  listJobDescriptions,
+  getJobDescriptionById,
+  deleteJobDescription,
+  matchCandidateToJob,
+  matchCohortToJob,
+} from '../placement-intelligence-service.js';
+import { handlePlacementAiRequest } from '../role-intelligence-engine.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('placement'));
 
 router.post('/ai-query', rateLimit(25, 60000, 'placement-ai'), async (req: AuthRequest, res) => {
-  res.json(await processAiQuery(req.user!, String(req.body.query || '')));
+  const task = req.body.task || 'placement_overview';
+  const queryText = String(req.body.query || '');
+  const response = await handlePlacementAiRequest(req.user!, {
+    role: 'placement',
+    task,
+    queryText,
+    studentId: req.body.studentId,
+    jobId: req.body.jobId,
+  });
+  res.json(response);
 });
 
 router.get('/visibility', async (req: AuthRequest, res) => {
@@ -20,8 +43,51 @@ router.get('/visibility', async (req: AuthRequest, res) => {
     leetcode_enabled: true,
     hackathon_enabled: true,
     academic_enabled: true,
+    sports_enabled: true,
   };
   res.json(visibility);
+});
+
+router.put('/visibility', async (req: AuthRequest, res) => {
+  const {
+    github_enabled = true,
+    linkedin_enabled = true,
+    hackerrank_enabled = true,
+    leetcode_enabled = true,
+    hackathon_enabled = true,
+    academic_enabled = true,
+    sports_enabled = true,
+  } = req.body;
+
+  const result = await query<any>(
+    `INSERT INTO placement_analytics_visibility (
+       placement_user_id, github_enabled, linkedin_enabled, hackerrank_enabled,
+       leetcode_enabled, hackathon_enabled, academic_enabled, sports_enabled, updated_by
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (placement_user_id) DO UPDATE SET
+       github_enabled = EXCLUDED.github_enabled,
+       linkedin_enabled = EXCLUDED.linkedin_enabled,
+       hackerrank_enabled = EXCLUDED.hackerrank_enabled,
+       leetcode_enabled = EXCLUDED.leetcode_enabled,
+       hackathon_enabled = EXCLUDED.hackathon_enabled,
+       academic_enabled = EXCLUDED.academic_enabled,
+       sports_enabled = EXCLUDED.sports_enabled,
+       updated_at = CURRENT_TIMESTAMP,
+       updated_by = EXCLUDED.updated_by
+     RETURNING *`,
+    [
+      req.user!.id,
+      github_enabled,
+      linkedin_enabled,
+      hackerrank_enabled,
+      leetcode_enabled,
+      hackathon_enabled,
+      academic_enabled,
+      sports_enabled,
+      req.user!.id,
+    ]
+  );
+  res.json({ message: 'Visibility preferences updated.', visibility: result.rows[0] });
 });
 
 router.get('/dashboard', async (req: AuthRequest, res) => {
@@ -33,6 +99,7 @@ router.get('/dashboard', async (req: AuthRequest, res) => {
     leetcode_enabled: true,
     hackathon_enabled: true,
     academic_enabled: true,
+    sports_enabled: true,
   };
 
   const students = (await query(`
@@ -124,6 +191,7 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
     leetcode_enabled: true,
     hackathon_enabled: true,
     academic_enabled: true,
+    sports_enabled: true,
   };
 
   const s = (await query<any>(
@@ -136,19 +204,23 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
   )).rows[0];
   if (!s) return res.status(404).json({ error: 'Student record not found.' });
 
-  const [projects, achievements, certifications, hackathons, documents, posts] = await Promise.all(
-    ['projects', 'achievements', 'certifications', 'hackathons', 'student_documents'].map(
-      table => query(`SELECT * FROM ${table} WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
-    ).concat([
-      query(`
-        SELECT p.*,
-               (SELECT json_agg(a.*) FROM post_attachments a WHERE a.post_id = p.id) as attachments
-        FROM posts p
-        WHERE p.student_id = $1
-        ORDER BY p.created_at DESC
-      `, [s.id])
-    ])
-  );
+  const [projects, achievements, certifications, hackathons, documents, posts, sports, hrEvidence, liPosts] = await Promise.all([
+    query(`SELECT * FROM projects WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`SELECT * FROM achievements WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`SELECT * FROM certifications WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`SELECT * FROM hackathons WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`SELECT * FROM student_documents WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`
+      SELECT p.*,
+             (SELECT json_agg(a.*) FROM post_attachments a WHERE a.post_id = p.id) as attachments
+      FROM posts p
+      WHERE p.student_id = $1
+      ORDER BY p.created_at DESC
+    `, [s.id]),
+    query(`SELECT * FROM sports WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`SELECT * FROM student_hackerrank_evidence WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`SELECT * FROM student_linkedin_posts WHERE student_id=$1 ORDER BY post_date DESC NULLS LAST, created_at DESC`, [s.id]),
+  ]);
 
   const academicHistory = visibility.academic_enabled ? await calculateAcademicHistory(s.id) : null;
 
@@ -160,6 +232,9 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
     certifications: certifications.rows,
     hackathons: visibility.hackathon_enabled ? hackathons.rows : [],
     documents: documents.rows,
+    sports: visibility.sports_enabled ? sports.rows : [],
+    hackerrank_evidence: visibility.hackerrank_enabled ? hrEvidence.rows : [],
+    linkedin_posts: visibility.linkedin_enabled ? liPosts.rows : [],
     profile_links: {
       github: visibility.github_enabled ? s.github_url : null,
       linkedin: visibility.linkedin_enabled ? s.linkedin_url : null,
@@ -178,6 +253,116 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
     posts: posts.rows,
     academicHistory
   });
+});
+
+router.get('/students/:studentId/intelligence-evidence', async (req: AuthRequest, res) => {
+  try {
+    const evidence = await getStudentComprehensiveEvidence(req.params.studentId);
+    res.json({
+      evidencePackage: evidence,
+      skillAssessments: evidence.domainAssessments,
+    });
+  } catch (err: any) {
+    console.error('[Placement Intelligence Evidence Error]', err);
+    res.status(500).json({ error: 'Failed to assemble student intelligence evidence.' });
+  }
+});
+
+router.post('/ai/role-match', rateLimit(25, 60000, 'placement-role-match'), async (req: AuthRequest, res) => {
+  const { studentId, roleName } = req.body;
+  if (!studentId || !roleName) {
+    return res.status(400).json({ error: 'studentId and roleName are required.' });
+  }
+
+  try {
+    const evidence = await getStudentComprehensiveEvidence(String(studentId));
+    if (!evidence) {
+      return res.status(404).json({ error: 'Student record not found.' });
+    }
+    const evaluation = await evaluateRoleReadinessWithAi(
+      evidence,
+      String(roleName)
+    );
+    res.json(evaluation);
+  } catch (err: any) {
+    console.error('[Placement Role Match Error]', err);
+    res.status(500).json({ error: 'Failed to compute role readiness.' });
+  }
+});
+
+// ── Job Description & Requirement Matrix Endpoints ─────────────────────────
+
+router.get('/job-descriptions', async (_req: AuthRequest, res) => {
+  try {
+    const list = await listJobDescriptions();
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to list job descriptions.' });
+  }
+});
+
+router.post('/job-descriptions', async (req: AuthRequest, res) => {
+  try {
+    const { title, company = 'Campus Recruitment Partner', descriptionText, description, minCgpa, maxBacklogs, requiredSkills, eligibleBranches } = req.body;
+    const desc = descriptionText || description;
+    if (!title || !desc) {
+      return res.status(400).json({ error: 'Job title and description text are required.' });
+    }
+    const created = await createJobDescription({
+      title,
+      company,
+      description: desc,
+      minCgpa: minCgpa !== undefined ? Number(minCgpa) : undefined,
+      maxBacklogs: maxBacklogs !== undefined ? Number(maxBacklogs) : undefined,
+      requiredSkills,
+      eligibleBranches,
+      createdBy: req.user!.id,
+    });
+    res.status(201).json(created);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to create job description.' });
+  }
+});
+
+router.get('/job-descriptions/:id', async (req: AuthRequest, res) => {
+  try {
+    const jd = await getJobDescriptionById(req.params.id);
+    if (!jd) return res.status(404).json({ error: 'Job description not found.' });
+    res.json(jd);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to retrieve job description.' });
+  }
+});
+
+router.delete('/job-descriptions/:id', async (req: AuthRequest, res) => {
+  try {
+    const ok = await deleteJobDescription(req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Job description not found.' });
+    res.json({ message: 'Job description removed successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete job description.' });
+  }
+});
+
+router.post('/job-descriptions/:id/match-candidate', async (req: AuthRequest, res) => {
+  try {
+    const { studentId } = req.body;
+    if (!studentId) return res.status(400).json({ error: 'studentId is required.' });
+    const match = await matchCandidateToJob(studentId, req.params.id);
+    res.json(match);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to match candidate against job description.' });
+  }
+});
+
+router.post('/job-descriptions/:id/cohort-match', async (req: AuthRequest, res) => {
+  try {
+    const { classId } = req.body;
+    const cohortResults = await matchCohortToJob(req.params.id, classId);
+    res.json(cohortResults);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to match cohort against job description.' });
+  }
 });
 
 export default router;

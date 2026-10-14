@@ -8,6 +8,7 @@ import { requireAuth, requireRole, AuthRequest, rateLimit } from '../auth.js';
 import { parseResumeContent, calculateProfileStrength } from '../resume-parser.js';
 import { processAiQuery } from '../ai-assistant.js';
 import { fetchLeetCodeStats, extractLeetCodeUsername } from '../leetcode-sync.js';
+import { getStudentComprehensiveEvidence } from '../student-evidence-service.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('student'));
@@ -122,25 +123,47 @@ router.post('/upload-resume', async (req: AuthRequest, res) => {
   res.json({ message: 'Resume scanned and parsed successfully', document: doc, profile_strength: await strength(await ownStudent(req.user!.id)) });
 });
 
-import { calculateAcademicHistory } from '../academic-service.js';
+import { calculateAcademicHistory, getInstitutionalGradingRules } from '../academic-service.js';
+import { handleStudentAiRequest, processRoleIntelligenceQuery } from '../role-intelligence-engine.js';
 
 router.get('/marks', async (req: AuthRequest, res) => {
   const s = await ownStudent(req.user!.id);
   if (!s) return res.status(404).json({ error: 'Student record not found.' });
-  const [marks, marksheets] = await Promise.all([
-    query<any>(`SELECT m.*,sem.name AS semester_name,sub.name AS subject_name,sub.code AS subject_code FROM marks m JOIN semesters sem ON sem.id=m.semester_id JOIN subjects sub ON sub.id=m.subject_id WHERE m.student_id=$1 ORDER BY m.created_at`, [s.id]),
+  const [marks, marksheets, gradingRules] = await Promise.all([
+    query<any>(`SELECT m.*,sem.name AS semester_name,sub.name AS subject_name,sub.code AS subject_code,sub.credits FROM marks m JOIN semesters sem ON sem.id=m.semester_id JOIN subjects sub ON sub.id=m.subject_id WHERE m.student_id=$1 ORDER BY m.created_at`, [s.id]),
     query('SELECT * FROM marksheets WHERE student_id=$1 ORDER BY created_at', [s.id]),
+    getInstitutionalGradingRules(),
   ]);
   const semesterMap: any = {};
   for (const m of marks.rows) {
     semesterMap[m.semester_id] ??= { semester_id: m.semester_id, semester_name: m.semester_name, subjects: {} };
-    semesterMap[m.semester_id].subjects[m.subject_id] ??= { subject_id: m.subject_id, subject_name: m.subject_name, subject_code: m.subject_code, marks: [] };
-    semesterMap[m.semester_id].subjects[m.subject_id].marks.push({ exam_type: m.exam_type, marks_obtained: Number(m.marks_obtained), max_marks: Number(m.max_marks), percentage: Number((m.marks_obtained / m.max_marks * 100).toFixed(1)) });
+    semesterMap[m.semester_id].subjects[m.subject_id] ??= { subject_id: m.subject_id, subject_name: m.subject_name, subject_code: m.subject_code, credits: m.credits, marks: [] };
+    semesterMap[m.semester_id].subjects[m.subject_id].marks.push({
+      exam_type: m.exam_type,
+      marks_obtained: Number(m.marks_obtained),
+      max_marks: Number(m.max_marks),
+      percentage: Number((m.marks_obtained / m.max_marks * 100).toFixed(1)),
+      status: m.status || 'entered',
+      teacher_feedback: m.feedback_published ? m.teacher_feedback : null,
+    });
   }
   
   const academicHistory = await calculateAcademicHistory(s.id);
   
-  res.json({ semestersData: Object.values(semesterMap), cgpaTrend: marksheets.rows.map((m: any) => ({ semesterId: m.semester_id, semesterName: m.semester_id, sgpa: Number(m.sgpa), cgpa: Number(m.cgpa), fileUrl: m.file_url, fileName: m.file_name })), officialMarksheets: marksheets.rows, academicHistory });
+  res.json({
+    semestersData: Object.values(semesterMap),
+    cgpaTrend: marksheets.rows.map((m: any) => ({
+      semesterId: m.semester_id,
+      semesterName: m.semester_id,
+      sgpa: Number(m.sgpa),
+      cgpa: Number(m.cgpa),
+      fileUrl: m.file_url,
+      fileName: m.file_name
+    })),
+    officialMarksheets: marksheets.rows,
+    academicHistory,
+    gradingRules,
+  });
 });
 
 router.get('/marksheets/:marksheetId/file', async (req: AuthRequest, res) => {
@@ -255,6 +278,8 @@ portfolio('projects', ['title', 'description', 'technologies', 'github_url', 'li
 portfolio('achievements', ['title', 'description', 'organization', 'date', 'link', 'certificate_url']);
 portfolio('certifications', ['name', 'issuer', 'issue_date', 'credential_id', 'credential_url', 'certificate_url']);
 portfolio('hackathons', ['name', 'organizer', 'date', 'position_result', 'team_name', 'project_name', 'project_description', 'github_url', 'demo_url', 'certificate_url']);
+portfolio('sports', ['sport_name', 'event_name', 'participation_type', 'position_role', 'competition_level', 'season_year', 'match_stats', 'result_award', 'leadership_role', 'evidence_url', 'notes']);
+portfolio('student_hackerrank_evidence', ['skill_name', 'badge_name', 'stars', 'certificate_url', 'evidence_url']);
 
 // ── Posts & Activity Feed ─────────────────────────────────────────────────────
 
@@ -339,7 +364,93 @@ router.delete('/posts/:id', async (req: AuthRequest, res) => {
 });
 
 router.get('/events', async (_req, res) => res.json((await query('SELECT * FROM events ORDER BY event_date DESC')).rows));
-router.post('/ai-query', rateLimit(25, 60000, 'student-ai'), async (req: AuthRequest, res) => res.json(await processAiQuery(req.user!, String(req.body.query || ''))));
+router.post('/ai-query', rateLimit(25, 60000, 'student-ai'), async (req: AuthRequest, res) => {
+  const task = req.body.task || 'student_academic_analysis';
+  const queryText = String(req.body.query || '');
+  const response = await handleStudentAiRequest(req.user!, {
+    role: 'student',
+    task,
+    queryText,
+  });
+  res.json(response);
+});
+
+router.post('/ai/academic-analysis', rateLimit(25, 60000, 'student-ai-analysis'), async (req: AuthRequest, res) => {
+  const response = await handleStudentAiRequest(req.user!, {
+    role: 'student',
+    task: 'student_academic_analysis',
+    queryText: String(req.body.query || 'Analyze my academic and career performance'),
+  });
+  res.json(response);
+});
+
+router.post('/ai/learning-plan', rateLimit(25, 60000, 'student-ai-plan'), async (req: AuthRequest, res) => {
+  const response = await handleStudentAiRequest(req.user!, {
+    role: 'student',
+    task: 'student_learning_plan',
+    queryText: String(req.body.query || 'Create a personalized learning and interview preparation plan'),
+  });
+  res.json(response);
+});
+
+router.post('/ai/grade-explanation', rateLimit(25, 60000, 'student-ai-grade'), async (req: AuthRequest, res) => {
+  const response = await handleStudentAiRequest(req.user!, {
+    role: 'student',
+    task: 'student_grade_explanation',
+    queryText: String(req.body.query || 'Explain how my grades, SGPA and CGPA were calculated'),
+  });
+  res.json(response);
+});
+
+// ── Student Submissions ───────────────────────────────────────────────────────
+
+router.get('/submissions', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s) return res.status(404).json({ error: 'Student record not found.' });
+  const rows = await query(`
+    SELECT sub.*, ad.title AS assessment_title, ad.exam_type, ad.max_marks,
+           s.name AS subject_name, s.code AS subject_code,
+           m.marks_obtained, m.status AS mark_status,
+           CASE WHEN m.feedback_published THEN m.teacher_feedback ELSE NULL END AS teacher_feedback
+    FROM student_submissions sub
+    JOIN assessment_definitions ad ON ad.id = sub.assessment_id
+    JOIN subjects s ON s.id = ad.subject_id
+    LEFT JOIN marks m ON m.assessment_definition_id = ad.id AND m.student_id = sub.student_id
+    WHERE sub.student_id = $1
+    ORDER BY sub.submitted_at DESC
+  `, [s.id]);
+  res.json(rows.rows);
+});
+
+router.post('/submissions', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s) return res.status(404).json({ error: 'Student record not found.' });
+  const { assessmentId, submissionText, submissionCode, repoUrl, commitSha } = req.body;
+  if (!assessmentId) return res.status(400).json({ error: 'Assessment ID is required.' });
+
+  const ad = (await query<any>(`SELECT id, class_id FROM assessment_definitions WHERE id = $1`, [assessmentId])).rows[0];
+  if (!ad) return res.status(404).json({ error: 'Assessment not found.' });
+  if (ad.class_id !== s.class_id) return res.status(403).json({ error: 'Assessment is not assigned to your class.' });
+
+  const subId = id('sub');
+  const now = new Date();
+  const result = await query(`
+    INSERT INTO student_submissions (
+      id, assessment_id, student_id, submission_text, submission_code, repo_url, commit_sha, status, submitted_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'submitted', $8, $8)
+    ON CONFLICT (assessment_id, student_id) DO UPDATE SET
+      submission_text = EXCLUDED.submission_text,
+      submission_code = EXCLUDED.submission_code,
+      repo_url = EXCLUDED.repo_url,
+      commit_sha = EXCLUDED.commit_sha,
+      status = 'submitted',
+      submitted_at = EXCLUDED.submitted_at,
+      updated_at = EXCLUDED.updated_at
+    RETURNING *
+  `, [subId, assessmentId, s.id, submissionText || null, submissionCode || null, repoUrl || null, commitSha || null, now]);
+
+  res.status(201).json({ message: 'Submission uploaded successfully', submission: result.rows[0] });
+});
 
 router.post('/github/sync', async (req: AuthRequest, res) => {
   const s = await ownStudent(req.user!.id);
@@ -421,4 +532,41 @@ router.post('/hackerrank/sync', async (req: AuthRequest, res) => {
   }
 });
 
+// ── LinkedIn Student Posts ───────────────────────────────────────────────────
+
+router.get('/linkedin/posts', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  const posts = await query(`SELECT * FROM student_linkedin_posts WHERE student_id=$1 ORDER BY post_date DESC, created_at DESC`, [s.id]);
+  res.json(posts.rows);
+});
+
+router.post('/linkedin/posts', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  const { title, content, post_url, post_date, category = 'Technical Writing', topics = [] } = req.body;
+  if (!content || !content.trim()) return res.status(400).json({ error: 'Post content is required.' });
+  const postId = id('lip');
+  await query(
+    `INSERT INTO student_linkedin_posts (id, student_id, title, content, post_url, post_date, category, topics, source_type, verification_status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'manual_submission', 'Student Submitted')`,
+    [postId, s.id, title || null, content.trim(), post_url || null, post_date || new Date().toISOString().slice(0, 10), category, JSON.stringify(Array.isArray(topics) ? topics : [])]
+  );
+  const newPost = (await query('SELECT * FROM student_linkedin_posts WHERE id=$1', [postId])).rows[0];
+  res.status(201).json({ message: 'LinkedIn post submitted for portfolio review', post: newPost });
+});
+
+router.delete('/linkedin/posts/:id', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  await query('DELETE FROM student_linkedin_posts WHERE id=$1 AND student_id=$2', [req.params.id, s.id]);
+  res.json({ message: 'LinkedIn post removed' });
+});
+
+// ── 360° Comprehensive Evidence Profile ──────────────────────────────────────
+
+router.get('/intelligence-evidence', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  const evidence = await getStudentComprehensiveEvidence(s.id);
+  res.json(evidence);
+});
+
 export default router;
+

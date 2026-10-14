@@ -43,6 +43,28 @@ export async function initializeDatabase() {
   await pool.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS hackerrank_url TEXT;`);
   await pool.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS portfolio_url TEXT;`);
   await pool.query(`ALTER TABLE marks ADD COLUMN IF NOT EXISTS class_id VARCHAR(64);`);
+  await pool.query(`ALTER TABLE marks ALTER COLUMN marks_obtained DROP NOT NULL;`);
+  await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS verification_status VARCHAR(64) DEFAULT 'Published';`);
+  await pool.query(`ALTER TABLE teacher_analytics_visibility ADD COLUMN IF NOT EXISTS sports_enabled BOOLEAN DEFAULT TRUE;`);
+  await pool.query(`ALTER TABLE placement_analytics_visibility ADD COLUMN IF NOT EXISTS sports_enabled BOOLEAN DEFAULT TRUE;`);
+  await pool.query(`ALTER TABLE subjects ADD COLUMN IF NOT EXISTS credits INT DEFAULT 3;`);
+  await pool.query(`ALTER TABLE assessment_definitions ADD COLUMN IF NOT EXISTS weight NUMERIC(5, 2) DEFAULT 1.0;`);
+  await pool.query(`ALTER TABLE assessment_definitions ADD COLUMN IF NOT EXISTS assessment_date DATE;`);
+  await pool.query(`ALTER TABLE assessment_definitions ADD COLUMN IF NOT EXISTS answer_key TEXT;`);
+  await pool.query(`ALTER TABLE assessment_definitions ADD COLUMN IF NOT EXISTS rubric_criteria JSONB DEFAULT '[]';`);
+  await pool.query(`ALTER TABLE marks ADD COLUMN IF NOT EXISTS assessment_definition_id VARCHAR(64);`);
+  await pool.query(`ALTER TABLE marks ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'entered';`);
+  await pool.query(`ALTER TABLE marks ADD COLUMN IF NOT EXISTS suggested_marks NUMERIC(5, 2);`);
+  await pool.query(`ALTER TABLE marks ADD COLUMN IF NOT EXISTS suggested_by_ai BOOLEAN DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE marks ADD COLUMN IF NOT EXISTS ai_justification TEXT;`);
+  await pool.query(`ALTER TABLE marks ADD COLUMN IF NOT EXISTS ai_criterion_scores JSONB DEFAULT '[]';`);
+  await pool.query(`ALTER TABLE marks ADD COLUMN IF NOT EXISTS teacher_override_reason TEXT;`);
+  await pool.query(`ALTER TABLE marks ADD COLUMN IF NOT EXISTS teacher_feedback TEXT;`);
+  await pool.query(`ALTER TABLE marks ADD COLUMN IF NOT EXISTS feedback_published BOOLEAN DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE marks ADD COLUMN IF NOT EXISTS reviewed_by VARCHAR(64);`);
+  await pool.query(`ALTER TABLE marks ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP WITH TIME ZONE;`);
+  await pool.query(`ALTER TABLE marks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`);
+
   // Deduplicate active teacher assignments before creating unique index (retain oldest record)
   await pool.query(`
     DELETE FROM teacher_class_assignments t1

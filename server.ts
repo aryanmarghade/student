@@ -7,6 +7,7 @@ import adminRoutes from './server/routes/admin-routes.js';
 import teacherRoutes from './server/routes/teacher-routes.js';
 import studentRoutes from './server/routes/student-routes.js';
 import placementRoutes from './server/routes/placement-routes.js';
+import aiRoutes from './server/routes/ai-feedback-routes.js';
 import { initializeDatabase } from './server/db.js';
 import { startGitHubScheduler } from './server/github-sync.js';
 import { startLinkedInScheduler } from './server/linkedin-sync.js';
@@ -55,6 +56,7 @@ async function startServer() {
   app.use('/api/teacher', teacherRoutes);
   app.use('/api/student', studentRoutes);
   app.use('/api/placement', placementRoutes);
+  app.use('/api/ai', aiRoutes);
 
   // Upload paths are served only by authenticated route handlers.
   app.get('/uploads/:folder/:filename', (_req, res) => {

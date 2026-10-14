@@ -1,4 +1,8 @@
-import { User, StudentProfile, AnalyticsResponse, AcademicClass, Subject, Department, TeacherAssignment, NotificationItem, Marksheet, TeacherStudentAnalytics } from '../types';
+import {
+  User, StudentProfile, AnalyticsResponse, AcademicClass, Subject, Department,
+  TeacherAssignment, NotificationItem, Marksheet, TeacherStudentAnalytics,
+  SportItem, StudentLinkedInPostItem, StudentHackerRankEvidenceItem, RoleReadinessEvaluation
+} from '../types';
 
 const TOKEN_KEY = 'vission_academy_jwt';
 
@@ -453,11 +457,52 @@ export const api = {
       method: 'DELETE',
     }),
 
+  // Student Sports
+  getStudentSports: () => request<SportItem[]>('/api/student/sports'),
+  createStudentSport: (payload: any) =>
+    request<{ message: string; sport: SportItem }>('/api/student/sports', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  deleteStudentSport: (id: string) =>
+    request<{ message: string }>(`/api/student/sports/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // Student LinkedIn Posts
+  getStudentLinkedInPosts: () => request<StudentLinkedInPostItem[]>('/api/student/linkedin/posts'),
+  createStudentLinkedInPost: (payload: any) =>
+    request<{ message: string; post: StudentLinkedInPostItem }>('/api/student/linkedin/posts', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  deleteStudentLinkedInPost: (id: string) =>
+    request<{ message: string }>(`/api/student/linkedin/posts/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // Student HackerRank Evidence
+  getStudentHackerRankEvidence: () => request<StudentHackerRankEvidenceItem[]>('/api/student/hackerrank/evidence'),
+  createStudentHackerRankEvidence: (payload: any) =>
+    request<{ message: string; evidence: StudentHackerRankEvidenceItem }>('/api/student/hackerrank/evidence', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  deleteStudentHackerRankEvidence: (id: string) =>
+    request<{ message: string }>(`/api/student/hackerrank/evidence/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // Student Intelligence Evidence
+  getStudentIntelligenceEvidence: () => request<any>('/api/student/intelligence-evidence'),
+
   // Faculty extensions
   getStudentFullProfileForTeacher: (studentId: string) =>
     request<any>(`/api/teacher/students/${studentId}/full-profile`),
   getStudentFullProfileForAdmin: (studentId: string) =>
     request<any>(`/api/admin/students/${studentId}/full-profile`),
+  getTeacherStudentIntelligenceEvidence: (studentId: string) =>
+    request<any>(`/api/teacher/students/${studentId}/intelligence-evidence`),
   createTeacherAssessment: (classId: string, subjectId: string, payload: { semester_id: string; title: string; max_marks: number; assessment_type?: string }) =>
     request<{ message: string; assessment: any }>(`/api/teacher/classes/${classId}/subjects/${subjectId}/assessments`, {
       method: 'POST',
@@ -480,9 +525,138 @@ export const api = {
   // Placement Routes
   getPlacementDashboard: () => request<any>('/api/placement/dashboard'),
   getStudentFullProfileForPlacement: (studentId: string) => request<any>(`/api/placement/students/${studentId}/full-profile`),
+  getPlacementStudentIntelligenceEvidence: (studentId: string) =>
+    request<any>(`/api/placement/students/${studentId}/intelligence-evidence`),
+  matchPlacementRole: (studentId: string, roleName: string) =>
+    request<RoleReadinessEvaluation>('/api/placement/ai/role-match', {
+      method: 'POST',
+      body: JSON.stringify({ studentId, roleName }),
+    }),
+  updatePlacementVisibility: (payload: any) =>
+    request<any>('/api/placement/visibility', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
   askPlacementAi: (query: string) =>
     request<{ answer: string; toolCallsExecuted: any[]; resolvedIntent: string }>('/api/placement/ai-query', {
       method: 'POST',
       body: JSON.stringify({ query }),
     }),
+
+  // Placement Job Descriptions & Cohort Matching
+  getPlacementJobDescriptions: () => request<any[]>('/api/placement/job-descriptions'),
+  createPlacementJobDescription: (payload: {
+    title: string;
+    company?: string;
+    description: string;
+    minCgpa?: number;
+    maxBacklogs?: number;
+    requiredSkills?: Array<{ name: string; category?: string; mandatory?: boolean }>;
+    eligibleBranches?: string[];
+  }) =>
+    request<any>('/api/placement/job-descriptions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  deletePlacementJobDescription: (id: string) =>
+    request<{ message: string }>(`/api/placement/job-descriptions/${id}`, {
+      method: 'DELETE',
+    }),
+  matchCandidateToPlacementJob: (jobId: string, studentId: string) =>
+    request<any>(`/api/placement/job-descriptions/${jobId}/match-candidate`, {
+      method: 'POST',
+      body: JSON.stringify({ studentId }),
+    }),
+  matchCohortToPlacementJob: (jobId: string, classId?: string) =>
+    request<any>(`/api/placement/job-descriptions/${jobId}/cohort-match`, {
+      method: 'POST',
+      body: JSON.stringify({ classId }),
+    }),
+
+  // AI Feedback & Persistent Memories
+  logAiFeedback: (payload: {
+    queryText?: string;
+    answerText?: string;
+    rating?: 'helpful' | 'unhelpful' | 'inaccurate' | 'flagged' | number;
+    isHelpful?: boolean;
+    userComment?: string;
+    feedbackCategory?: string;
+    correctedAnswer?: string;
+  }) =>
+    request<{ message: string; feedback: any }>('/api/ai/feedback', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getAiMemories: (params?: { category?: string; entityType?: string; entityId?: string }) => {
+    const q = new URLSearchParams(params as any).toString();
+    return request<any[]>(`/api/ai/memories${q ? `?${q}` : ''}`);
+  },
+
+  // Student Intelligence & Submissions
+  getStudentSubmissions: () => request<any[]>('/api/student/submissions'),
+  submitStudentWork: (payload: {
+    assessmentId: string;
+    submissionText?: string;
+    submissionCode?: string;
+    repoUrl?: string;
+    commitSha?: string;
+  }) =>
+    request<{ message: string; submission: any }>('/api/student/submissions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getStudentAcademicAnalysis: (query?: string) =>
+    request<any>('/api/student/ai/academic-analysis', {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+    }),
+  getStudentLearningPlan: (query?: string) =>
+    request<any>('/api/student/ai/learning-plan', {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+    }),
+  getStudentGradeExplanation: (query?: string) =>
+    request<any>('/api/student/ai/grade-explanation', {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+    }),
+
+  // Advanced Teacher Marking System
+  previewTeacherMarksCsv: (classId: string, subjectId: string, semesterId: string, csvText: string) =>
+    request<{
+      totalRows: number;
+      validRows: number;
+      invalidRows: number;
+      errors: Array<{ row: number; rollNumber: string; examType: string; marks: any; reason: string }>;
+      previewEntries: any[];
+    }>(`/api/teacher/classes/${classId}/subjects/${subjectId}/import-marks-preview`, {
+      method: 'POST',
+      body: JSON.stringify({ semester_id: semesterId, csvText }),
+    }),
+  updateAssessmentRubric: (
+    classId: string,
+    subjectId: string,
+    assessmentId: string,
+    payload: {
+      answerKey?: string;
+      rubricCriteria?: Array<{ name: string; maxScore: number; description?: string; scoringGuidance?: string }>;
+      weight?: number;
+      assessmentDate?: string;
+    }
+  ) =>
+    request<any>(`/api/teacher/classes/${classId}/subjects/${subjectId}/assessments/${assessmentId}/rubric`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  getAssessmentRubric: (classId: string, subjectId: string, assessmentId: string) =>
+    request<any>(`/api/teacher/classes/${classId}/subjects/${subjectId}/assessments/${assessmentId}/rubric`),
+  getAssessmentSubmissions: (classId: string, subjectId: string, assessmentId: string) =>
+    request<any[]>(`/api/teacher/classes/${classId}/subjects/${subjectId}/assessments/${assessmentId}/submissions`),
+  aiMarkSubmission: (classId: string, subjectId: string, assessmentId: string, submissionId: string) =>
+    request<any>(`/api/teacher/classes/${classId}/subjects/${subjectId}/assessments/${assessmentId}/ai-mark`, {
+      method: 'POST',
+      body: JSON.stringify({ submissionId }),
+    }),
+  getClassSubjectAnalytics: (classId: string, subjectId: string, semesterId: string) =>
+    request<any>(`/api/teacher/classes/${classId}/subjects/${subjectId}/class-analytics?semester_id=${semesterId}`),
 };

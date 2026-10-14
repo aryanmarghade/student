@@ -15,6 +15,7 @@
 
 import { query } from './db.js';
 import { AuthenticatedUser } from './auth.js';
+import { getStudentComprehensiveEvidence } from './student-evidence-service.js';
 
 export type AiResponse = {
   available: boolean;
@@ -106,9 +107,43 @@ async function buildScopedContext(user: AuthenticatedUser, queryText = ''): Prom
     const s = students.rows[0] as any;
     const p = projects.rows[0] as any;
     const h = hackathons.rows[0] as any;
-    return `Placement & Career records: ${s?.total ?? 0} total students tracked. ` +
+    let baseContext = `Placement & Career records: ${s?.total ?? 0} total students tracked. ` +
       `Resumes uploaded: ${s?.resume_cnt ?? 0}, Portfolios active: ${s?.portfolio_cnt ?? 0}, Average profile strength: ${s?.avg_profile_score ?? 'N/A'}. ` +
       `Total student projects: ${p?.cnt ?? 0}, Hackathons participated: ${h?.cnt ?? 0}.`;
+
+    const matchMention = queryText.match(/@([^\s,?!]+)/i);
+    const mentionTerm = matchMention ? matchMention[1].trim() : null;
+
+    const studentMatches = (await query<any>(
+      `SELECT s.id, s.roll_number, u.full_name, c.name AS class_name
+       FROM students s
+       JOIN users u ON u.id = s.user_id
+       LEFT JOIN classes c ON c.id = s.class_id
+       WHERE ($1::text IS NOT NULL AND (u.full_name ILIKE $1 OR s.roll_number ILIKE $1))
+          OR ($2::text IS NOT NULL AND $2 ILIKE '%' || u.full_name || '%')
+          OR ($2::text IS NOT NULL AND $2 ILIKE '%' || s.roll_number || '%')
+       LIMIT 3`,
+      [mentionTerm ? `%${mentionTerm}%` : null, queryText.trim()]
+    )).rows;
+
+    if (studentMatches.length > 0) {
+      for (const sm of studentMatches) {
+        try {
+          const evidence = await getStudentComprehensiveEvidence(sm.id);
+          if (evidence) {
+            baseContext += `\n\nCandidate Profile: ${evidence.fullName} (${evidence.rollNumber}) in ${evidence.className || 'N/A'}\n` +
+              `• Backlogs: ${evidence.academics.currentBacklogsCount} active\n` +
+              `• Projects: ${evidence.projects.map(pr => `${pr.title} (${pr.verificationStatus})`).join(', ') || 'None'}\n` +
+              `• LeetCode: ${evidence.leetcode.status === 'SYNCED' ? `${evidence.leetcode.totalSolved} solved (${evidence.leetcode.easySolved}E, ${evidence.leetcode.mediumSolved}M, ${evidence.leetcode.hardSolved}H)` : 'Not synced'}\n` +
+              `• GitHub: ${evidence.github.status === 'SYNCED' ? `${evidence.github.publicRepos} repos (${evidence.github.languages.join(', ')})` : 'Not synced'}\n` +
+              `• Hackathons: ${evidence.hackathons.map(hk => `${hk.name} (${hk.positionResult || 'Participant'}, ${hk.verificationStatus})`).join(', ') || 'None'}\n` +
+              `• Sports: ${evidence.sports.map(sp => `${sp.sportName} (${sp.competitionLevel}, ${sp.verificationStatus})`).join(', ') || 'None'}`;
+          }
+        } catch (_err) {}
+      }
+    }
+
+    return baseContext;
   }
 
   // student
@@ -129,7 +164,33 @@ async function buildScopedContext(user: AuthenticatedUser, queryText = ''): Prom
     `Marks: ${student.marks_count} evaluations, average score ${student.avg_pct ?? 'N/A'}%.`;
 }
 
-export async function processAiQuery(user: AuthenticatedUser, text: string): Promise<AiResponse> {
+import { processRoleIntelligenceQuery } from './role-intelligence-engine.js';
+
+export async function processAiQuery(user: AuthenticatedUser, text: string): Promise<AiResponse & { structuredData?: any; dataCoverage?: any; isGroundingVerified?: boolean }> {
+  try {
+    const roleReq = {
+      role: (user.role as any) || 'student',
+      task: user.role === 'student' ? 'student_academic_analysis' : user.role === 'teacher' ? 'teacher_assessment_analysis' : user.role === 'placement' ? 'placement_overview' : 'admin_overview',
+      queryText: text,
+    };
+    const roleRes = await processRoleIntelligenceQuery(user, roleReq);
+    if (roleRes && roleRes.answer) {
+      return {
+        available: roleRes.available,
+        provider: roleRes.provider,
+        message: 'Success',
+        answer: roleRes.answer,
+        toolCallsExecuted: [{ name: roleRes.task, role: user.role }],
+        resolvedIntent: roleRes.task,
+        structuredData: roleRes.structuredData,
+        dataCoverage: roleRes.dataCoverage,
+        isGroundingVerified: roleRes.isGroundingVerified,
+      };
+    }
+  } catch (err: any) {
+    console.warn('[AI Assistant] Role intelligence fallback to scoped prompt:', err?.message);
+  }
+
   const context = await buildScopedContext(user, text);
   const ollamaUrl = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
   const ollamaModel = process.env.OLLAMA_MODEL || 'qwen2.5:3b';

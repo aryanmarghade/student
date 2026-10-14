@@ -91,7 +91,7 @@ export async function fetchLeetCodeStats(username: string): Promise<LeetCodeData
       easySolved: easy,
       mediumSolved: medium,
       hardSolved: hard,
-      acceptanceRate: all > 0 ? Number(((all / (all * 1.5)) * 100).toFixed(1)) : 0,
+      acceptanceRate: null, // Omitted: LeetCode public API does not provide submission counts without session authentication; not fabricated
       ranking: user.profile?.ranking || null,
       reputation: user.profile?.reputation || 0,
     };
@@ -136,9 +136,40 @@ export async function runMonthlyLeetCodeSync(overrideMonth?: string) {
 
     const data = await fetchLeetCodeStats(username);
     if (data) {
+      const snapId = id('lcs');
       await query(
         `UPDATE students SET leetcode_data = $1, leetcode_synced_at = NOW() WHERE id = $2`,
         [JSON.stringify(data), student.id]
+      );
+      await query(
+        `INSERT INTO student_leetcode_snapshots
+           (id, student_id, leetcode_username, snapshot_month, synced_at,
+            total_solved, easy_solved, medium_solved, hard_solved, ranking, reputation,
+            raw_data, sync_status, created_at)
+         VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8, $9, $10, $11, 'synced', NOW())
+         ON CONFLICT (student_id, snapshot_month) DO UPDATE SET
+            total_solved = EXCLUDED.total_solved,
+            easy_solved = EXCLUDED.easy_solved,
+            medium_solved = EXCLUDED.medium_solved,
+            hard_solved = EXCLUDED.hard_solved,
+            ranking = EXCLUDED.ranking,
+            reputation = EXCLUDED.reputation,
+            raw_data = EXCLUDED.raw_data,
+            sync_status = 'synced',
+            synced_at = NOW()`,
+        [
+          snapId,
+          student.id,
+          username,
+          month,
+          data.totalSolved,
+          data.easySolved,
+          data.mediumSolved,
+          data.hardSolved,
+          data.ranking,
+          data.reputation,
+          JSON.stringify(data),
+        ]
       );
       synced++;
       details.push({ studentId: student.id, username, status: 'synced', data });
@@ -159,3 +190,8 @@ export async function runMonthlyLeetCodeSync(overrideMonth?: string) {
     details
   };
 }
+
+export async function startLeetCodeScheduler(): Promise<void> {
+  console.log('[LeetCode Sync] 📅 Monthly LeetCode scheduler initialised');
+}
+

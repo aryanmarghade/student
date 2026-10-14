@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
-import { StudentProfile, Marksheet, ProjectItem, CertificationItem, DocumentItem, CollegeEvent, PostItem } from '../types';
+import {
+  StudentProfile, Marksheet, ProjectItem, CertificationItem, DocumentItem, CollegeEvent, PostItem,
+  SportItem, StudentLinkedInPostItem, StudentHackerRankEvidenceItem
+} from '../types';
 import { PostCard } from '../components/PostCard';
 import {
   GraduationCap,
@@ -32,7 +35,12 @@ import {
   Activity,
   Code2,
   BarChart2,
-  RefreshCw
+  RefreshCw,
+  Shield,
+  Medal,
+  Check,
+  Info,
+  Target
 } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import '../lib/chart-setup';
@@ -50,7 +58,7 @@ const VerificationBadge = ({ status }: { status?: string }) => {
 };
 
 export const StudentView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'profile' | 'activity' | 'portfolio' | 'academics' | 'events' | 'documents'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'activity' | 'analytics' | 'portfolio' | 'sports' | 'intelligence' | 'academics' | 'events' | 'documents'>('profile');
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -69,6 +77,84 @@ export const StudentView: React.FC = () => {
   const [certifications, setCertifications] = useState<CertificationItem[]>([]);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [events, setEvents] = useState<CollegeEvent[]>([]);
+
+  // Sports Records State
+  const [sports, setSports] = useState<SportItem[]>([]);
+  const [showAddSportModal, setShowAddSportModal] = useState(false);
+  const [newSport, setNewSport] = useState({
+    sport_name: '',
+    event_name: '',
+    participation_type: 'individual' as 'individual' | 'team',
+    position_or_role: '',
+    competition_level: 'College',
+    season_or_year: '',
+    match_event_date: '',
+    stats_summary: '',
+    award_result: '',
+    is_captain_or_leader: false,
+    leadership_notes: '',
+    proof_url: '',
+  });
+
+  // LinkedIn & HackerRank Evidence State
+  const [linkedinPosts, setLinkedinPosts] = useState<StudentLinkedInPostItem[]>([]);
+  const [showAddLinkedInModal, setShowAddLinkedInModal] = useState(false);
+  const [newLinkedInPost, setNewLinkedInPost] = useState({
+    post_url: '',
+    post_date: '',
+    topic: '',
+    post_content: '',
+    content_category: 'Technical Article',
+    engagement_likes: 0,
+    engagement_comments: 0,
+  });
+
+  const [hackerrankEvidence, setHackerrankEvidence] = useState<StudentHackerRankEvidenceItem[]>([]);
+  const [showAddHRModal, setShowAddHRModal] = useState(false);
+  const [newHREvidence, setNewHREvidence] = useState({
+    badge_or_certificate_name: '',
+    skill_domain: 'Problem Solving',
+    evidence_type: 'badge' as 'badge' | 'certificate' | 'skill_assessment' | 'contest',
+    star_rating: 5,
+    score: 100,
+    certificate_url: '',
+    date_earned: '',
+  });
+
+  // Intelligence Evidence State
+  const [intelligenceEvidence, setIntelligenceEvidence] = useState<any>(null);
+
+  // Student AI Academic & Career Intelligence Modal State
+  const [showAcademicAiModal, setShowAcademicAiModal] = useState(false);
+  const [academicAiTitle, setAcademicAiTitle] = useState('');
+  const [academicAiContent, setAcademicAiContent] = useState('');
+  const [isAcademicAiLoading, setIsAcademicAiLoading] = useState(false);
+
+  const handleRunStudentAiAnalysis = async (type: 'analysis' | 'plan' | 'explanation') => {
+    setShowAcademicAiModal(true);
+    setIsAcademicAiLoading(true);
+    setAcademicAiContent('');
+    try {
+      if (type === 'analysis') {
+        setAcademicAiTitle('Comprehensive Academic & Career Performance Analysis');
+        const res = await api.getStudentAcademicAnalysis();
+        setAcademicAiContent(res.answer || 'Analysis complete.');
+      } else if (type === 'plan') {
+        setAcademicAiTitle('Personalized Academic Improvement & Interview Prep Plan');
+        const res = await api.getStudentLearningPlan();
+        setAcademicAiContent(res.answer || 'Plan generated.');
+      } else {
+        setAcademicAiTitle('UGC/AICTE Credit-Weighted Grade & SGPA Calculation Explanation');
+        const res = await api.getStudentGradeExplanation();
+        setAcademicAiContent(res.answer || 'Grade explanation generated.');
+      }
+    } catch (err: any) {
+      setAcademicAiContent(`Error running analysis: ${err.message || 'Service unavailable'}`);
+    } finally {
+      setIsAcademicAiLoading(false);
+    }
+  };
+  const [isLoadingIntelligence, setIsLoadingIntelligence] = useState(false);
 
   // Project Modal State
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
@@ -109,7 +195,10 @@ export const StudentView: React.FC = () => {
   const loadStudentData = async () => {
     setIsLoading(true);
     try {
-      const [profileRes, marksRes, eventsRes, docsRes, projsRes, certsRes, postsRes] = await Promise.all([
+      const [
+        profileRes, marksRes, eventsRes, docsRes, projsRes, certsRes, postsRes,
+        sportsRes, liPostsRes, hrEvidenceRes, intelRes
+      ] = await Promise.all([
         api.getStudentProfile(),
         api.getStudentMarks(),
         api.getCollegeEvents().catch(() => []),
@@ -117,6 +206,10 @@ export const StudentView: React.FC = () => {
         api.getStudentProjects().catch(() => []),
         api.getStudentCertifications().catch(() => []),
         api.getStudentPosts().catch(() => []),
+        api.getStudentSports().catch(() => []),
+        api.getStudentLinkedInPosts().catch(() => []),
+        api.getStudentHackerRankEvidence().catch(() => []),
+        api.getStudentIntelligenceEvidence().catch(() => null),
       ]);
 
       setProfile(profileRes);
@@ -132,6 +225,10 @@ export const StudentView: React.FC = () => {
       setProjects(projsRes || []);
       setCertifications(certsRes || []);
       setPosts(postsRes || []);
+      setSports(sportsRes || []);
+      setLinkedinPosts(liPostsRes || []);
+      setHackerrankEvidence(hrEvidenceRes || []);
+      setIntelligenceEvidence(intelRes);
 
       setSemestersData(marksRes.semestersData);
       setCgpaTrend(marksRes.cgpaTrend);
@@ -144,6 +241,89 @@ export const StudentView: React.FC = () => {
       setFeedbackError(err.message || 'Error loading student profile');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleCreateSport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await api.createStudentSport(newSport);
+      setSports(prev => [res.sport, ...prev]);
+      setShowAddSportModal(false);
+      setNewSport({
+        sport_name: '', event_name: '', participation_type: 'individual', position_or_role: '',
+        competition_level: 'College', season_or_year: '', match_event_date: '',
+        stats_summary: '', award_result: '', is_captain_or_leader: false,
+        leadership_notes: '', proof_url: '',
+      });
+      showToast('Sports activity recorded successfully for faculty verification!');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to record sports activity', true);
+    }
+  };
+
+  const handleDeleteSport = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this sports record?')) return;
+    try {
+      await api.deleteStudentSport(id);
+      setSports(prev => prev.filter(s => s.id !== id));
+      showToast('Sports record removed.');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete sports record', true);
+    }
+  };
+
+  const handleCreateLinkedInPost = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await api.createStudentLinkedInPost(newLinkedInPost);
+      setLinkedinPosts(prev => [res.post, ...prev]);
+      setShowAddLinkedInModal(false);
+      setNewLinkedInPost({
+        post_url: '', post_date: '', topic: '', post_content: '',
+        content_category: 'Technical Article', engagement_likes: 0, engagement_comments: 0,
+      });
+      showToast('LinkedIn post evidence submitted for faculty review!');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to submit LinkedIn post', true);
+    }
+  };
+
+  const handleDeleteLinkedInPost = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this LinkedIn post evidence?')) return;
+    try {
+      await api.deleteStudentLinkedInPost(id);
+      setLinkedinPosts(prev => prev.filter(p => p.id !== id));
+      showToast('LinkedIn post record removed.');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete record', true);
+    }
+  };
+
+  const handleCreateHREvidence = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await api.createStudentHackerRankEvidence(newHREvidence);
+      setHackerrankEvidence(prev => [res.evidence, ...prev]);
+      setShowAddHRModal(false);
+      setNewHREvidence({
+        badge_or_certificate_name: '', skill_domain: 'Problem Solving',
+        evidence_type: 'badge', star_rating: 5, score: 100, certificate_url: '', date_earned: '',
+      });
+      showToast('HackerRank evidence submitted for faculty verification!');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to submit HackerRank evidence', true);
+    }
+  };
+
+  const handleDeleteHREvidence = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this HackerRank evidence?')) return;
+    try {
+      await api.deleteStudentHackerRankEvidence(id);
+      setHackerrankEvidence(prev => prev.filter(h => h.id !== id));
+      showToast('HackerRank record removed.');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete record', true);
     }
   };
 
@@ -498,7 +678,7 @@ export const StudentView: React.FC = () => {
             {/* Profile Strength Meter */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 min-w-[220px]">
               <div className="flex items-center justify-between text-xs mb-1.5">
-                <span className="font-bold text-slate-700">Profile Strength</span>
+                <span className="font-bold text-slate-700">Profile Completeness</span>
                 <span className="font-mono font-bold text-amber-800">{profile.profile_strength}%</span>
               </div>
               <div className="w-full bg-slate-200 rounded-full h-2">
@@ -508,7 +688,7 @@ export const StudentView: React.FC = () => {
                 ></div>
               </div>
               <p className="text-[10px] text-slate-500 mt-1">
-                {profile.profile_strength >= 80 ? 'Distinguished Profile' : 'Complete checklist to reach 100%'}
+                Onboarding checklist (setup indicator; not an employability score)
               </p>
             </div>
           </div>
@@ -521,9 +701,11 @@ export const StudentView: React.FC = () => {
           { id: 'profile', label: 'Bio & Resume', icon: GraduationCap },
           { id: 'activity', label: 'Activity & Posts', icon: Activity },
           { id: 'analytics', label: 'Analytics', icon: BarChart2 },
-          { id: 'portfolio', label: 'Projects & Certifications', icon: FolderGit2 },
+          { id: 'portfolio', label: 'Projects & Badges', icon: FolderGit2 },
+          { id: 'sports', label: 'Sports & Athletics', icon: Trophy },
+          { id: 'intelligence', label: 'Student Intelligence', icon: Sparkles },
           { id: 'academics', label: 'Marks & Transcripts', icon: Award },
-          { id: 'events', label: 'Events & Hackathons', icon: Trophy },
+          { id: 'events', label: 'Events & Hackathons', icon: Calendar },
           { id: 'documents', label: 'Document Vault', icon: FileText },
         ].map(tab => {
           const Icon = tab.icon;
@@ -1044,15 +1226,49 @@ export const StudentView: React.FC = () => {
                 <TrendingUp className="w-4 h-4 text-[#0f2744]" /> Academic History & Backlogs
               </h3>
               
-              <div className="bg-emerald-50 text-emerald-900 p-4 rounded-xl flex items-center gap-4">
-                <div className="flex-1">
-                  <p className="text-sm font-semibold opacity-80">Current CGPA</p>
-                  <p className="text-3xl font-bold">{profile.academicHistory.currentCgpa?.toFixed(2) || 'N/A'}</p>
+              <div className="bg-emerald-50 text-emerald-900 p-4 rounded-xl space-y-3 border border-emerald-200">
+                <div className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold opacity-80 uppercase tracking-wider">Current CGPA (Credit-Weighted)</p>
+                    <p className="text-3xl font-bold">{profile.academicHistory.currentCgpa?.toFixed(2) || 'N/A'}</p>
+                    <span className="text-[10px] text-emerald-700 font-medium">Method: UGC 10-Point Scale</span>
+                  </div>
+                  <div className="w-px h-12 bg-emerald-200" />
+                  <div className="flex-1 pl-2">
+                    <p className="text-xs font-semibold opacity-80 uppercase tracking-wider">Credits Earned</p>
+                    <p className="text-3xl font-bold">{profile.academicHistory.totalCreditsEarned ?? 0} <span className="text-sm font-normal text-slate-500">/ {profile.academicHistory.totalCreditsAttempted ?? 0}</span></p>
+                    <span className="text-[10px] text-emerald-700 font-medium">Weight: Credit Points</span>
+                  </div>
+                  <div className="w-px h-12 bg-emerald-200" />
+                  <div className="flex-1 pl-2">
+                    <p className="text-xs font-semibold opacity-80 uppercase tracking-wider">Active Backlogs</p>
+                    <p className="text-3xl font-bold text-red-600">{profile.academicHistory.totalActiveBacklogs || 0}</p>
+                    <span className="text-[10px] text-red-600 font-medium">{profile.academicHistory.totalActiveBacklogs > 0 ? 'Requires Clearance' : 'Clear Ledger'}</span>
+                  </div>
                 </div>
-                <div className="w-px h-12 bg-emerald-200" />
-                <div className="flex-1 pl-4">
-                  <p className="text-sm font-semibold opacity-80">Active Backlogs</p>
-                  <p className="text-3xl font-bold text-red-600">{profile.academicHistory.totalActiveBacklogs || 0}</p>
+
+                <div className="pt-2 border-t border-emerald-200/70 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleRunStudentAiAnalysis('explanation')}
+                    className="px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Explain Grade Calculation
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRunStudentAiAnalysis('plan')}
+                    className="px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <Target className="w-3.5 h-3.5 text-emerald-600" /> Generate Learning Plan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRunStudentAiAnalysis('analysis')}
+                    className="px-3 py-1.5 bg-[#0f2744] hover:bg-[#163354] text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs ml-auto"
+                  >
+                    <BookOpen className="w-3.5 h-3.5 text-amber-400" /> Deep Academic Analysis
+                  </button>
                 </div>
               </div>
 
@@ -1270,6 +1486,341 @@ export const StudentView: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* HackerRank Skill & Certification Evidence Section */}
+          <div className="space-y-4 pt-4 border-t border-slate-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Code2 className="w-4 h-4 text-emerald-600" /> HackerRank Skill Badges & Certificates
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Student-submitted, verifiable skill badges and problem-solving certifications (subject to faculty verification)
+                </p>
+              </div>
+              <button
+                onClick={() => setShowAddHRModal(true)}
+                className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              >
+                <Plus className="w-3.5 h-3.5" /> Submit Badge / Cert
+              </button>
+            </div>
+
+            {hackerrankEvidence.length === 0 ? (
+              <div className="bg-white p-8 rounded-xl border border-slate-200 text-center space-y-2">
+                <Code2 className="w-8 h-8 text-slate-300 mx-auto" />
+                <p className="text-xs text-slate-600 font-medium">No HackerRank evidence submitted yet.</p>
+                <p className="text-[11px] text-slate-400">Add your verified skill assessment badges or certificates with public proof links.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {hackerrankEvidence.map(hr => (
+                  <div key={hr.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900">{hr.badge_or_certificate_name}</h4>
+                        <p className="text-[10px] text-slate-500 font-mono uppercase">{hr.skill_domain || 'Problem Solving'} • {hr.evidence_type}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <VerificationBadge status={hr.verification_status} />
+                        <button
+                          onClick={() => handleDeleteHREvidence(hr.id)}
+                          className="text-slate-400 hover:text-red-500 p-1"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-600 pt-1 border-t border-slate-100">
+                      <span>Stars: {hr.star_rating ? `${hr.star_rating}★` : 'N/A'}</span>
+                      {hr.date_earned && <span>Earned: {new Date(hr.date_earned).toLocaleDateString()}</span>}
+                    </div>
+                    {hr.certificate_url && (
+                      <a href={hr.certificate_url} target="_blank" rel="noreferrer" className="text-[11px] text-sky-700 hover:underline flex items-center gap-1 font-medium">
+                        <ExternalLink className="w-3 h-3" /> Public Proof Link
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* LinkedIn Posts & Technical Writing Evidence Section */}
+          <div className="space-y-4 pt-4 border-t border-slate-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Linkedin className="w-4 h-4 text-blue-600" /> LinkedIn Technical Writing & Professional Articles
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Student-submitted professional posts, project announcements, and learning reflections (separate from campus posts)
+                </p>
+              </div>
+              <button
+                onClick={() => setShowAddLinkedInModal(true)}
+                className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              >
+                <Plus className="w-3.5 h-3.5" /> Submit LinkedIn Post
+              </button>
+            </div>
+
+            {linkedinPosts.length === 0 ? (
+              <div className="bg-white p-8 rounded-xl border border-slate-200 text-center space-y-2">
+                <Linkedin className="w-8 h-8 text-slate-300 mx-auto" />
+                <p className="text-xs text-slate-600 font-medium">No LinkedIn post evidence submitted yet.</p>
+                <p className="text-[11px] text-slate-400">Share links to your technical writing, engineering case studies, or learning reflections.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {linkedinPosts.map(lp => (
+                  <div key={lp.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900">{lp.topic || 'Professional Post'}</h4>
+                        <span className="text-[10px] font-semibold text-blue-800 bg-blue-50 px-2 py-0.5 rounded">{lp.content_category || 'Article'}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <VerificationBadge status={lp.verification_status} />
+                        <button
+                          onClick={() => handleDeleteLinkedInPost(lp.id)}
+                          className="text-slate-400 hover:text-red-500 p-1"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    {lp.post_content && (
+                      <p className="text-xs text-slate-600 line-clamp-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                        "{lp.post_content}"
+                      </p>
+                    )}
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                      <span>{lp.post_date ? new Date(lp.post_date).toLocaleDateString() : 'Date N/A'}</span>
+                      <span>Likes: {lp.engagement_likes || 0} • Comments: {lp.engagement_comments || 0}</span>
+                    </div>
+                    {lp.post_url && (
+                      <a href={lp.post_url} target="_blank" rel="noreferrer" className="text-[11px] text-blue-700 hover:underline flex items-center gap-1 font-medium">
+                        <ExternalLink className="w-3 h-3" /> View on LinkedIn
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB: SPORTS & ATHLETICS */}
+      {activeTab === 'sports' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
+            <div>
+              <h2 className="text-base font-serif font-bold text-[#0f2744] flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-amber-500" /> Sports, Athletics & Team Leadership
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Faculty-verified athletic participation, competitive match statistics, leadership roles, and sports achievements
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAddSportModal(true)}
+              className="px-4 py-2 bg-[#0f2744] text-white hover:bg-[#163354] rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4 text-amber-400" /> Record Sports Activity
+            </button>
+          </div>
+
+          {/* Quick Metrics Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <span className="text-[10px] uppercase font-bold text-slate-500">Total Activities</span>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{sports.length}</p>
+            </div>
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <span className="text-[10px] uppercase font-bold text-emerald-700">Verified by Faculty</span>
+              <p className="text-2xl font-bold text-emerald-700 mt-1">
+                {sports.filter(s => s.verification_status === 'verified').length}
+              </p>
+            </div>
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <span className="text-[10px] uppercase font-bold text-amber-700">Team Leadership</span>
+              <p className="text-2xl font-bold text-amber-700 mt-1">
+                {sports.filter(s => s.is_captain_or_leader).length}
+              </p>
+            </div>
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <span className="text-[10px] uppercase font-bold text-blue-700">Awards & Medals</span>
+              <p className="text-2xl font-bold text-blue-700 mt-1">
+                {sports.filter(s => Boolean(s.award_result)).length}
+              </p>
+            </div>
+          </div>
+
+          {/* Sports List */}
+          {sports.length === 0 ? (
+            <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-3">
+              <Trophy className="w-12 h-12 text-slate-300 mx-auto" />
+              <h3 className="text-sm font-bold text-slate-800">No Sports Records Logged</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Record your inter-collegiate tournaments, university trials, sports awards, and leadership roles for official faculty and coach verification.
+              </p>
+              <button
+                onClick={() => setShowAddSportModal(true)}
+                className="mt-2 px-4 py-2 bg-[#0f2744] text-white text-xs font-semibold rounded-lg hover:bg-[#163354] inline-flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add First Record
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {sports.map(sp => (
+                <div key={sp.id} className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex flex-col justify-between space-y-3">
+                  <div className="space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                          {sp.competition_level} • {sp.participation_type}
+                        </span>
+                        <h4 className="text-sm font-bold text-slate-900 mt-1">{sp.sport_name}</h4>
+                        {sp.event_name && (
+                          <p className="text-xs text-slate-600 font-medium">{sp.event_name}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <VerificationBadge status={sp.verification_status} />
+                        <button
+                          onClick={() => handleDeleteSport(sp.id)}
+                          className="text-slate-400 hover:text-red-500 p-1"
+                          title="Delete Record"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {sp.is_captain_or_leader && (
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900 bg-amber-50/80 px-2.5 py-1 rounded-lg border border-amber-200">
+                        <Medal className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Team Captain / Leader</span>
+                        {sp.position_or_role && <span className="font-normal text-amber-800">({sp.position_or_role})</span>}
+                      </div>
+                    )}
+
+                    {sp.stats_summary && (
+                      <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 text-xs text-slate-700 font-mono">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Match Statistics</span>
+                        {sp.stats_summary}
+                      </div>
+                    )}
+
+                    {sp.award_result && (
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                        <Trophy className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Award / Result: {sp.award_result}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                    <span>{sp.match_event_date ? new Date(sp.match_event_date).toLocaleDateString() : sp.season_or_year || 'Recent'}</span>
+                    {sp.proof_url && (
+                      <a href={sp.proof_url} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline flex items-center gap-1 font-semibold">
+                        <ExternalLink className="w-3 h-3" /> Proof Document
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB: STUDENT INTELLIGENCE & EVIDENCE */}
+      {activeTab === 'intelligence' && (
+        <div className="space-y-6">
+          {/* Transparency & Disclaimer Banner */}
+          <div className="bg-gradient-to-r from-[#0f2744] to-[#1a3a60] text-white p-5 rounded-2xl shadow-sm space-y-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-amber-400" />
+              <h2 className="text-base font-serif font-bold">Evidence-Grounded Student Intelligence</h2>
+            </div>
+            <p className="text-xs text-slate-200 max-w-3xl leading-relaxed">
+              This system analyses student competencies across 7 independent, verified domains directly from authoritative records, code repositories, and faculty assessments. In accordance with institutional policy, LinkedIn is disconnected from intelligence scoring and recommendation pipelines. Profile completeness is an onboarding setup checklist, not an employability prediction.
+            </p>
+          </div>
+
+          {intelligenceEvidence ? (
+            <div className="space-y-6">
+              {/* Domain Assessments Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(intelligenceEvidence.domainAssessments ||
+                  intelligenceEvidence.skillAssessments ||
+                  []).map((da: any, idx: number) => {
+                  const statusColors: Record<string, string> = {
+                    VERIFIED_EXCELLENCE: 'bg-emerald-50 border-emerald-200 text-emerald-900',
+                    VERIFIED_COMPETENCE: 'bg-blue-50 border-blue-200 text-blue-900',
+                    UNVERIFIED_ACTIVITY: 'bg-amber-50 border-amber-200 text-amber-900',
+                    INSUFFICIENT_DATA: 'bg-slate-50 border-slate-200 text-slate-700',
+                    NOT_AVAILABLE: 'bg-slate-50 border-slate-200 text-slate-500',
+                  };
+                  const badgeColor = statusColors[da.domainStatus] || 'bg-slate-50 border-slate-200 text-slate-700';
+
+                  return (
+                    <div key={idx} className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs space-y-3 flex flex-col justify-between">
+                      <div className="space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className="text-sm font-bold text-slate-900">{da.domain}</h3>
+                          <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${badgeColor}`}>
+                            {da.domainStatus.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-3 text-[11px] text-slate-500">
+                          <span className="font-semibold text-slate-700">Confidence: {da.confidence}</span>
+                          <span>•</span>
+                          <span>Source: {da.dataProvenance}</span>
+                        </div>
+
+                        {da.observedFacts?.length > 0 && (
+                          <div className="space-y-1 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Observed Facts</span>
+                            {da.observedFacts.map((fact: string, fi: number) => (
+                              <p key={fi} className="text-xs text-slate-700 leading-snug">• {fact}</p>
+                            ))}
+                          </div>
+                        )}
+
+                        {da.limitations?.length > 0 && (
+                          <div className="space-y-0.5 text-[11px] text-amber-800 bg-amber-50/60 p-2.5 rounded-lg border border-amber-200/60">
+                            <span className="font-bold text-[10px] uppercase block text-amber-900">Data Limitations & Bounds</span>
+                            {da.limitations.map((lim: string, li: number) => (
+                              <p key={li}>• {lim}</p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {da.recommendations?.length > 0 && (
+                        <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-600">
+                          <span className="font-bold text-slate-800 block text-[10px] uppercase mb-0.5">Recommended Next Action</span>
+                          <p>{da.recommendations[0]}</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white p-8 rounded-xl border border-slate-200 text-center">
+              <p className="text-xs text-slate-500">Assembling multi-domain evidence intelligence...</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -1810,6 +2361,441 @@ export const StudentView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD SPORTS RECORD */}
+      {showAddSportModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-amber-500" /> Record Sports Activity & Athletic Achievement
+              </h3>
+              <button onClick={() => setShowAddSportModal(false)} className="text-slate-400 hover:text-slate-600 text-sm font-bold">✕</button>
+            </div>
+
+            <form onSubmit={handleCreateSport} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Sport Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Cricket, Football, Athletics, Chess"
+                    value={newSport.sport_name}
+                    onChange={e => setNewSport({ ...newSport, sport_name: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Event / Tournament</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Annual University Sports Meet"
+                    value={newSport.event_name}
+                    onChange={e => setNewSport({ ...newSport, event_name: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Participation Type</label>
+                  <select
+                    value={newSport.participation_type}
+                    onChange={e => setNewSport({ ...newSport, participation_type: e.target.value as any })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  >
+                    <option value="individual">Individual Event</option>
+                    <option value="team">Team Sport</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Competition Level</label>
+                  <select
+                    value={newSport.competition_level}
+                    onChange={e => setNewSport({ ...newSport, competition_level: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  >
+                    <option value="College">College / Inter-Department</option>
+                    <option value="University">University Level</option>
+                    <option value="District">District Level</option>
+                    <option value="State">State Championship</option>
+                    <option value="National">National Championship</option>
+                    <option value="International">International</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Position / Role</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Captain, Striker, 100m Sprinter"
+                    value={newSport.position_or_role}
+                    onChange={e => setNewSport({ ...newSport, position_or_role: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Event Date</label>
+                  <input
+                    type="date"
+                    value={newSport.match_event_date}
+                    onChange={e => setNewSport({ ...newSport, match_event_date: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 p-2.5 bg-amber-50/60 rounded-lg border border-amber-200/60">
+                <input
+                  type="checkbox"
+                  id="is_captain"
+                  checked={newSport.is_captain_or_leader}
+                  onChange={e => setNewSport({ ...newSport, is_captain_or_leader: e.target.checked })}
+                  className="rounded text-amber-600"
+                />
+                <label htmlFor="is_captain" className="text-xs font-semibold text-amber-900 cursor-pointer">
+                  Team Captain or Athletic Leadership Role
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Match Statistics / Quantitative Metrics</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 100m sprint: 11.4s | 5 matches, 180 runs, 6 wickets"
+                  value={newSport.stats_summary}
+                  onChange={e => setNewSport({ ...newSport, stats_summary: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Award / Outcome</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Gold Medal, Runner-up, Finalist"
+                    value={newSport.award_result}
+                    onChange={e => setNewSport({ ...newSport, award_result: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Proof URL / Certificate Link</label>
+                  <input
+                    type="url"
+                    placeholder="https://..."
+                    value={newSport.proof_url}
+                    onChange={e => setNewSport({ ...newSport, proof_url: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  />
+                </div>
+              </div>
+
+              <p className="text-[10px] text-slate-400">
+                Submitted records will be reviewed and verified by faculty physical education advisors before appearing as verified athletic credentials.
+              </p>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowAddSportModal(false)}
+                  className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold"
+                >
+                  Save Sports Activity
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD LINKEDIN POST EVIDENCE */}
+      {showAddLinkedInModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Linkedin className="w-4 h-4 text-blue-600" /> Submit LinkedIn Post Evidence
+              </h3>
+              <button onClick={() => setShowAddLinkedInModal(false)} className="text-slate-400 hover:text-slate-600 text-sm font-bold">✕</button>
+            </div>
+
+            <form onSubmit={handleCreateLinkedInPost} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Post Title / Topic *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Scalable API Design with Node.js & Docker"
+                  value={newLinkedInPost.topic}
+                  onChange={e => setNewLinkedInPost({ ...newLinkedInPost, topic: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Content Category</label>
+                  <select
+                    value={newLinkedInPost.content_category}
+                    onChange={e => setNewLinkedInPost({ ...newLinkedInPost, content_category: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  >
+                    <option value="Technical Article">Technical Article</option>
+                    <option value="Project Announcement">Project Announcement</option>
+                    <option value="Learning Reflection">Learning Reflection</option>
+                    <option value="Hackathon Recap">Hackathon Recap</option>
+                    <option value="Career Milestone">Career Milestone</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Publication Date</label>
+                  <input
+                    type="date"
+                    value={newLinkedInPost.post_date}
+                    onChange={e => setNewLinkedInPost({ ...newLinkedInPost, post_date: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Public LinkedIn Post URL *</label>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://www.linkedin.com/posts/..."
+                  value={newLinkedInPost.post_url}
+                  onChange={e => setNewLinkedInPost({ ...newLinkedInPost, post_url: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Post Content Excerpt / Summary</label>
+                <textarea
+                  rows={3}
+                  placeholder="Paste excerpt or summary of your post..."
+                  value={newLinkedInPost.post_content}
+                  onChange={e => setNewLinkedInPost({ ...newLinkedInPost, post_content: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Likes Count</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newLinkedInPost.engagement_likes}
+                    onChange={e => setNewLinkedInPost({ ...newLinkedInPost, engagement_likes: Number(e.target.value) })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Comments Count</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newLinkedInPost.engagement_comments}
+                    onChange={e => setNewLinkedInPost({ ...newLinkedInPost, engagement_comments: Number(e.target.value) })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowAddLinkedInModal(false)}
+                  className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-xs font-semibold"
+                >
+                  Submit LinkedIn Evidence
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD HACKERRANK EVIDENCE */}
+      {showAddHRModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Code2 className="w-4 h-4 text-emerald-600" /> Submit HackerRank Skill / Certificate Evidence
+              </h3>
+              <button onClick={() => setShowAddHRModal(false)} className="text-slate-400 hover:text-slate-600 text-sm font-bold">✕</button>
+            </div>
+
+            <form onSubmit={handleCreateHREvidence} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Badge or Certificate Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Problem Solving (Intermediate) Certificate, Python (5 Stars)"
+                  value={newHREvidence.badge_or_certificate_name}
+                  onChange={e => setNewHREvidence({ ...newHREvidence, badge_or_certificate_name: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Skill Domain</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Problem Solving, Python, SQL, Java"
+                    value={newHREvidence.skill_domain}
+                    onChange={e => setNewHREvidence({ ...newHREvidence, skill_domain: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Evidence Type</label>
+                  <select
+                    value={newHREvidence.evidence_type}
+                    onChange={e => setNewHREvidence({ ...newHREvidence, evidence_type: e.target.value as any })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  >
+                    <option value="badge">Skill Badge</option>
+                    <option value="certificate">Verified Certificate</option>
+                    <option value="skill_assessment">Skill Assessment</option>
+                    <option value="contest">Contest Performance</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Star Rating (1 - 6)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="6"
+                    value={newHREvidence.star_rating}
+                    onChange={e => setNewHREvidence({ ...newHREvidence, star_rating: Number(e.target.value) })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Date Earned</label>
+                  <input
+                    type="date"
+                    value={newHREvidence.date_earned}
+                    onChange={e => setNewHREvidence({ ...newHREvidence, date_earned: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Public HackerRank Verification URL *</label>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://www.hackerrank.com/certificates/..."
+                  value={newHREvidence.certificate_url}
+                  onChange={e => setNewHREvidence({ ...newHREvidence, certificate_url: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowAddHRModal(false)}
+                  className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg text-xs font-semibold"
+                >
+                  Submit HackerRank Evidence
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: STUDENT AI ACADEMIC & CAREER INTELLIGENCE */}
+      {showAcademicAiModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-4 bg-[#0f2744] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-amber-400" />
+                <h3 className="font-bold text-sm">{academicAiTitle}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAcademicAiModal(false)}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-4 flex-1">
+              {isAcademicAiLoading ? (
+                <div className="py-12 flex flex-col items-center justify-center space-y-3 text-slate-500">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-bounce"></div>
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-bounce [animation-delay:0.2s]"></div>
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-bounce [animation-delay:0.4s]"></div>
+                  </div>
+                  <p className="text-xs font-semibold">Running evidence analysis across authorized PostgreSQL records...</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs sm:text-sm text-slate-800 whitespace-pre-wrap leading-relaxed font-sans">
+                    {academicAiContent}
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-100">
+                    <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-medium border border-emerald-200">
+                      <Shield className="w-3 h-3 text-emerald-600" /> Verified Student Evidence Grounding
+                    </span>
+                    <span>Institutional Ledger Source</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAcademicAiModal(false)}
+                className="px-4 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -8,6 +8,18 @@ import { linearRegression, median, standardDeviation } from '../analytics.js';
 import { currentMonth } from '../github-sync.js';
 import { calculateAcademicHistory } from '../academic-service.js';
 import { processTeacherAiProgress } from '../teacher-ai-progress.js';
+import { getStudentComprehensiveEvidence } from '../student-evidence-service.js';
+import {
+  createAssessmentWithRubric,
+  updateAssessmentRubricAndKey,
+  getAssessmentWithRubric,
+  getSubmissionsForAssessment,
+  evaluateSubmissionWithAi,
+  saveOrUpdateMarks,
+  previewCsvMarksImport,
+  calculateClassSubjectAnalytics,
+} from '../teacher-marking-service.js';
+import { handleTeacherAiRequest } from '../role-intelligence-engine.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('teacher'));
@@ -65,19 +77,41 @@ router.get('/classes/:classId/subjects/:subjectId/marks', async (req: AuthReques
   const students = (await query(`SELECT s.id,s.roll_number,u.full_name FROM students s JOIN users u ON u.id=s.user_id WHERE s.class_id=$1 ORDER BY s.roll_number`, [classId])).rows;
   const [marks, assessmentDefs] = await Promise.all([
     query<any>(`SELECT * FROM marks WHERE class_id=$1 AND subject_id=$2 ${semester ? 'AND semester_id=$3' : ''}`, semester ? [classId, subjectId, semester] : [classId, subjectId]),
-    query<any>(`SELECT id, title, max_marks, assessment_type FROM assessment_definitions WHERE class_id=$1 AND subject_id=$2 AND semester_id=$3 AND status='active' ORDER BY created_at ASC`, [classId, subjectId, semester || ''] ),
+    query<any>(`SELECT id, title, max_marks, weight, assessment_type, assessment_date, answer_key, rubric_criteria FROM assessment_definitions WHERE class_id=$1 AND subject_id=$2 AND semester_id=$3 AND status='active' ORDER BY created_at ASC`, [classId, subjectId, semester || ''] ),
   ]);
 
   const columnDefs = assessmentDefs.rows.length > 0
-    ? assessmentDefs.rows.map((a: any) => ({ type: a.title, max: Number(a.max_marks), assessmentType: a.assessment_type, id: a.id }))
-    : defaultExams;
+    ? assessmentDefs.rows.map((a: any) => ({
+        type: a.title,
+        max: Number(a.max_marks),
+        weight: Number(a.weight || 1.0),
+        assessmentType: a.assessment_type,
+        assessmentDate: a.assessment_date,
+        id: a.id,
+        answerKey: a.answer_key,
+        rubricCriteria: a.rubric_criteria || []
+      }))
+    : defaultExams.map(d => ({ ...d, weight: 1.0, rubricCriteria: [] }));
 
   const grid: any = {};
   for (const s of students) {
     grid[s.id] = {};
     for (const exam of columnDefs) {
       const m = marks.rows.find((x: any) => x.student_id === s.id && x.exam_type === exam.type);
-      grid[s.id][exam.type] = { marks_obtained: m?.marks_obtained ?? null, max_marks: exam.max, id: m?.id ?? null };
+      grid[s.id][exam.type] = {
+        marks_obtained: m?.marks_obtained ?? null,
+        max_marks: exam.max,
+        id: m?.id ?? null,
+        status: m?.status || (m?.marks_obtained !== null && m?.marks_obtained !== undefined ? 'entered' : 'pending'),
+        suggested_marks: m?.suggested_marks ?? null,
+        suggested_by_ai: m?.suggested_by_ai ?? false,
+        ai_justification: m?.ai_justification ?? null,
+        ai_criterion_scores: m?.ai_criterion_scores ?? [],
+        teacher_override_reason: m?.teacher_override_reason ?? null,
+        teacher_feedback: m?.teacher_feedback ?? null,
+        feedback_published: m?.feedback_published ?? false,
+        reviewed_at: m?.reviewed_at ?? null,
+      };
     }
   }
   res.json({ students, examColumns: columnDefs, grid });
@@ -85,7 +119,7 @@ router.get('/classes/:classId/subjects/:subjectId/marks', async (req: AuthReques
 
 router.post('/classes/:classId/subjects/:subjectId/assessments', async (req: AuthRequest, res) => {
   const { classId, subjectId } = req.params;
-  const { semester_id, title, max_marks, assessment_type = 'Other' } = req.body;
+  const { semester_id, title, max_marks, weight = 1.0, assessment_type = 'Other', assessment_date, answer_key, rubric_criteria = [] } = req.body;
 
   if (!await verifyTeacherClassScope(classId, subjectId, semester_id, req.user!.id))
     return res.status(403).json({ error: 'Access Denied: You are not assigned to this class and subject.' });
@@ -101,25 +135,54 @@ router.post('/classes/:classId/subjects/:subjectId/assessments', async (req: Aut
   );
   if (existing.rowCount) return res.status(409).json({ error: 'An active assessment with this title already exists for this class and subject.' });
 
-  const assessment = {
-    id: id('asmt'),
-    class_id: classId,
-    subject_id: subjectId,
-    semester_id,
-    teacher_user_id: req.user!.id,
+  const asmt = await createAssessmentWithRubric({
+    classId,
+    subjectId,
+    semesterId: semester_id,
+    teacherUserId: req.user!.id,
     title: safeTitle,
-    max_marks: safeMaxMarks,
-    assessment_type: ['Internal', 'Mid Sem', 'Final', 'Assignment', 'Practical', 'Other'].includes(assessment_type) ? assessment_type : 'Other',
-    status: 'active',
-  };
+    maxMarks: safeMaxMarks,
+    weight: Number(weight) || 1.0,
+    assessmentType: assessment_type,
+    assessmentDate: assessment_date,
+    answerKey: answer_key,
+    rubricCriteria: rubric_criteria,
+  });
 
-  await query(
-    `INSERT INTO assessment_definitions (id,class_id,subject_id,semester_id,teacher_user_id,title,max_marks,assessment_type,status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-    [assessment.id, assessment.class_id, assessment.subject_id, assessment.semester_id, assessment.teacher_user_id, assessment.title, assessment.max_marks, assessment.assessment_type, assessment.status],
+  res.status(201).json({ message: 'Assessment definition created successfully with rubrics.', assessment: asmt });
+});
+
+router.get('/classes/:classId/subjects/:subjectId/assessments/:assessmentId/rubric', async (req: AuthRequest, res) => {
+  const asmt = await getAssessmentWithRubric(req.params.assessmentId);
+  if (!asmt) return res.status(404).json({ error: 'Assessment not found.' });
+  res.json(asmt);
+});
+
+router.put('/classes/:classId/subjects/:subjectId/assessments/:assessmentId/rubric', async (req: AuthRequest, res) => {
+  const { rubricCriteria, answerKey } = req.body;
+  const ok = await updateAssessmentRubricAndKey(req.params.assessmentId, req.user!.id, rubricCriteria || [], answerKey);
+  if (!ok) return res.status(400).json({ error: 'Failed to update rubric or unauthorized.' });
+  res.json({ message: 'Rubric and answer key updated successfully.' });
+});
+
+router.get('/classes/:classId/subjects/:subjectId/assessments/:assessmentId/submissions', async (req: AuthRequest, res) => {
+  const submissions = await getSubmissionsForAssessment(req.params.assessmentId);
+  res.json(submissions);
+});
+
+router.post('/classes/:classId/subjects/:subjectId/assessments/:assessmentId/ai-mark', async (req: AuthRequest, res) => {
+  const { submissionText, codeContent, studentId } = req.body;
+  const asmt = await getAssessmentWithRubric(req.params.assessmentId);
+  if (!asmt) return res.status(404).json({ error: 'Assessment not found.' });
+
+  const suggestion = await evaluateSubmissionWithAi(
+    { text: submissionText, code: codeContent },
+    asmt.rubricCriteria,
+    asmt.answerKey,
+    asmt.maxMarks
   );
 
-  res.status(201).json({ message: 'Assessment definition created successfully.', assessment });
+  res.json({ ...suggestion, studentId: studentId || '' });
 });
 
 router.post('/classes/:classId/subjects/:subjectId/marks', async (req: AuthRequest, res) => {
@@ -129,58 +192,120 @@ router.post('/classes/:classId/subjects/:subjectId/marks', async (req: AuthReque
     return res.status(403).json({ error: 'Access Denied: You are not authorized to update marks for this class/subject.' });
   if (!Array.isArray(updates) || !updates.length) return res.status(400).json({ error: 'Updates array is required.' });
 
-  const [assessmentDefs] = await Promise.all([
-    query<any>('SELECT title, max_marks FROM assessment_definitions WHERE class_id=$1 AND subject_id=$2 AND semester_id=$3 AND status=\'active\' ORDER BY created_at ASC', [classId, subjectId, semester_id || '']),
-  ]);
+  const result = await saveOrUpdateMarks({
+    classId,
+    subjectId,
+    semesterId: semester_id || 'sem_1',
+    teacherUserId: req.user!.id,
+    updates: updates.map(u => ({
+      studentId: u.student_id,
+      examType: u.exam_type,
+      marksObtained: u.marks_obtained,
+      maxMarks: u.max_marks || 100,
+      status: u.status || 'entered',
+      suggestedMarks: u.suggested_marks,
+      suggestedByAi: u.suggested_by_ai,
+      aiJustification: u.ai_justification,
+      aiCriterionScores: u.ai_criterion_scores,
+      teacherOverrideReason: u.teacher_override_reason,
+      teacherFeedback: u.teacher_feedback,
+      feedbackPublished: u.feedback_published,
+      reviewedBy: req.user!.id,
+    })),
+  });
 
-  const lookup = new Map((assessmentDefs.rows || []).map((row: any) => [row.title, Number(row.max_marks)]));
-  const errors: string[] = [];
-  let saved = 0;
-  for (const item of updates) {
-    if (item.marks_obtained === null || item.marks_obtained === undefined || item.marks_obtained === '') continue;
-    const value = Number(item.marks_obtained);
-    const max = Number(item.max_marks) || lookup.get(item.exam_type) || 100;
-    if (!Number.isFinite(value) || value < 0 || value > max) { errors.push(`${item.student_id} ${item.exam_type}: invalid mark`); continue; }
-    const student = (await query('SELECT 1 FROM students WHERE id=$1 AND class_id=$2', [item.student_id, classId])).rowCount;
-    if (!student) { errors.push(`${item.student_id}: student is outside this class`); continue; }
-    await query(
-      `INSERT INTO marks (id,student_id,class_id,subject_id,semester_id,teacher_user_id,exam_type,marks_obtained,max_marks)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       ON CONFLICT (student_id,class_id,subject_id,semester_id,exam_type)
-       DO UPDATE SET marks_obtained=EXCLUDED.marks_obtained,max_marks=EXCLUDED.max_marks,teacher_user_id=EXCLUDED.teacher_user_id`,
-      [id('mrk'), item.student_id, classId, subjectId, semester_id || 'sem_1', req.user!.id, item.exam_type, value, max],
-    );
-    saved++;
-  }
-  if (saved) await logActivity(req.user!.id, 'MARKS_SAVED', 'MARKS', undefined, `Saved ${saved} mark entries.`);
-  if (errors.length && !saved) return res.status(400).json({ error: 'Validation failed on submitted marks', details: errors });
-  res.json({ message: `Successfully saved ${saved} mark entries.`, savedCount: saved, validationWarnings: errors });
+  if (result.errors.length && !result.savedCount)
+    return res.status(400).json({ error: 'Validation failed on submitted marks', details: result.errors });
+
+  res.json({ message: `Successfully recorded ${result.savedCount} mark entries.`, savedCount: result.savedCount, validationWarnings: result.errors });
+});
+
+router.post('/classes/:classId/subjects/:subjectId/import-marks-preview', async (req: AuthRequest, res) => {
+  const { classId, subjectId } = req.params;
+  const { semester_id, entries = [] } = req.body;
+  if (!await verifyTeacherClassScope(classId, subjectId, semester_id, req.user!.id))
+    return res.status(403).json({ error: 'Access Denied: You are not assigned to this class and subject.' });
+
+  const preview = await previewCsvMarksImport(classId, subjectId, semester_id || 'sem_1', entries);
+  res.json(preview);
 });
 
 router.post('/classes/:classId/subjects/:subjectId/import-marks', async (req: AuthRequest, res) => {
   const { classId, subjectId } = req.params;
-  if (!await verifyTeacherClassScope(classId, subjectId, req.body.semester_id, req.user!.id))
+  const { semester_id, entries = [] } = req.body;
+  if (!await verifyTeacherClassScope(classId, subjectId, semester_id, req.user!.id))
     return res.status(403).json({ error: 'Access Denied: You are not assigned to this class and subject.' });
+
   const students = (await query<{ id: string; roll_number: string }>('SELECT id,roll_number FROM students WHERE class_id=$1', [classId])).rows;
-  const errors: any[] = [], updates: any[] = [];
-  for (const [i, item] of (req.body.entries || []).entries()) {
-    const s = students.find(x => x.roll_number.toUpperCase() === String(item.roll_number || '').toUpperCase());
-    if (!s) { errors.push({ row: i + 1, reason: 'Student not found in assigned class' }); continue; }
-    updates.push({ student_id: s.id, exam_type: item.exam_type || 'Internal 1', marks_obtained: item.marks_obtained, max_marks: item.max_marks || 25 });
+  const updates: any[] = [];
+  const errors: any[] = [];
+
+  for (const [i, item] of entries.entries()) {
+    const s = students.find(x => x.roll_number.toUpperCase() === String(item.rollNumber || item.roll_number || '').toUpperCase());
+    if (!s) { errors.push({ row: i + 1, reason: `Student ${item.rollNumber || item.roll_number} not in class` }); continue; }
+    updates.push({
+      studentId: s.id,
+      examType: item.examType || item.exam_type || 'Internal 1',
+      marksObtained: item.marksObtained !== undefined ? item.marksObtained : item.marks_obtained,
+      maxMarks: Number(item.maxMarks || item.max_marks) || 100,
+      status: item.status || 'entered',
+      reviewedBy: req.user!.id,
+    });
   }
-  let saved = 0;
-  for (const u of updates) {
-    await query(
-      `INSERT INTO marks (id,student_id,class_id,subject_id,semester_id,teacher_user_id,exam_type,marks_obtained,max_marks)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       ON CONFLICT (student_id,class_id,subject_id,semester_id,exam_type)
-       DO UPDATE SET marks_obtained=EXCLUDED.marks_obtained,max_marks=EXCLUDED.max_marks`,
-      [id('mrk'), u.student_id, classId, subjectId, req.body.semester_id || 'sem_1', req.user!.id, u.exam_type, Number(u.marks_obtained), Number(u.max_marks)],
-    );
-    saved++;
-  }
-  res.json({ message: `Batch import completed. Successfully recorded ${saved} marks entries.`, importedCount: saved, errors });
+
+  const result = await saveOrUpdateMarks({
+    classId,
+    subjectId,
+    semesterId: semester_id || 'sem_1',
+    teacherUserId: req.user!.id,
+    updates,
+  });
+
+  res.json({
+    message: `Batch import completed. Successfully recorded ${result.savedCount} marks entries.`,
+    importedCount: result.savedCount,
+    errors: [...errors, ...result.errors],
+  });
 });
+
+router.get('/classes/:classId/subjects/:subjectId/export-marks', async (req: AuthRequest, res) => {
+  const { classId, subjectId } = req.params;
+  const semester = String(req.query.semester_id || 'sem_1');
+  if (!await verifyTeacherClassScope(classId, subjectId, semester, req.user!.id))
+    return res.status(403).json({ error: 'Access Denied.' });
+
+  const [students, marks, asmtDefs] = await Promise.all([
+    query<any>(`SELECT s.id, s.roll_number, u.full_name FROM students s JOIN users u ON u.id=s.user_id WHERE s.class_id=$1 ORDER BY s.roll_number`, [classId]),
+    query<any>(`SELECT * FROM marks WHERE class_id=$1 AND subject_id=$2 AND semester_id=$3`, [classId, subjectId, semester]),
+    query<any>(`SELECT title, max_marks FROM assessment_definitions WHERE class_id=$1 AND subject_id=$2 AND semester_id=$3 AND status='active'`, [classId, subjectId, semester]),
+  ]);
+
+  const exams = asmtDefs.rows.length ? asmtDefs.rows.map(a => a.title) : ['Internal 1', 'Internal 2', 'Midterm', 'Final'];
+  const exportRows = students.rows.map(s => {
+    const row: Record<string, any> = {
+      roll_number: s.roll_number,
+      full_name: s.full_name,
+    };
+    for (const exam of exams) {
+      const m = marks.rows.find((x: any) => x.student_id === s.id && x.exam_type === exam);
+      row[exam] = m ? (m.status === 'entered' ? m.marks_obtained : m.status) : 'unassessed';
+    }
+    return row;
+  });
+
+  res.json({ classId, subjectId, semesterId: semester, exams, records: exportRows });
+});
+
+router.get('/classes/:classId/subjects/:subjectId/class-analytics', async (req: AuthRequest, res) => {
+  const { classId, subjectId } = req.params;
+  const semester = String(req.query.semester_id || 'sem_1');
+  if (!await verifyTeacherClassScope(classId, subjectId, semester, req.user!.id))
+    return res.status(403).json({ error: 'Access Denied.' });
+
+  const analytics = await calculateClassSubjectAnalytics(classId, subjectId, semester);
+  res.json(analytics);
+});
+
 
 // ── Analytics — full calculation set ─────────────────────────────────────────
 
@@ -258,24 +383,61 @@ router.post('/analytics', async (req: AuthRequest, res) => {
     count: vals.length,
   }));
 
-  // Linear regression on per-student aggregated scores (ordered by student index)
-  const regressionPoints = averageByStudent.map((st, i) => ({ x: i + 1, y: st.average }));
-  const regression = linearRegression(regressionPoints);
+  // Statistically Sound Longitudinal Regression
+  // Evaluates sequential chronological milestones rather than misleading rank-order student falloff
+  let regression: any = null;
+  let formattedRegressionPoints: any[] = [];
+  let regressionLabel = 'Longitudinal Trend Projection';
 
-  const formattedRegressionPoints = averageByStudent.map((st, i) => {
-    const x = i + 1;
-    const actual = st.average;
-    const trend = regression ? Number((regression.slope * x + regression.intercept).toFixed(2)) : actual;
-    return {
-      x,
-      actual,
-      trend,
-      label: st.name || `Student ${x}`,
-    };
-  });
+  if (scope === 'single_student') {
+    const studentRows = rows.filter(r => r.marks_obtained !== null);
+    if (studentRows.length >= 2) {
+      const timePoints = studentRows.map((r, i) => ({ x: i + 1, y: Number(r.marks_obtained) / Number(r.max_marks) * 100 }));
+      regression = linearRegression(timePoints);
+      formattedRegressionPoints = studentRows.map((r, i) => {
+        const x = i + 1;
+        const actual = Number((Number(r.marks_obtained) / Number(r.max_marks) * 100).toFixed(2));
+        const trend = regression ? Number((regression.slope * x + regression.intercept).toFixed(2)) : actual;
+        return { x, actual, trend, label: r.exam_type || `Assessment ${x}` };
+      });
+      regressionLabel = `Assessment Timeline Progression (${studentRows.length} sequential assessments)`;
+    } else {
+      regression = null;
+      regressionLabel = 'Single assessment recorded (insufficient sequential data; longitudinal trend unestablished)';
+      formattedRegressionPoints = studentRows.map((r) => ({
+        x: 1,
+        actual: Number((Number(r.marks_obtained) / Number(r.max_marks) * 100).toFixed(2)),
+        trend: Number((Number(r.marks_obtained) / Number(r.max_marks) * 100).toFixed(2)),
+        label: r.exam_type || 'Single Assessment'
+      }));
+    }
+  } else {
+    // Cohort / Whole Class: Check if multiple distinct chronological assessment types exist
+    const distinctExamTypes = Array.from(new Set(rows.map(r => r.exam_type)));
+    if (distinctExamTypes.length >= 2) {
+      const examPoints = averageByExamType.map((e, i) => ({ x: i + 1, y: e.average }));
+      regression = linearRegression(examPoints);
+      formattedRegressionPoints = averageByExamType.map((e, i) => {
+        const x = i + 1;
+        const actual = e.average;
+        const trend = regression ? Number((regression.slope * x + regression.intercept).toFixed(2)) : actual;
+        return { x, actual, trend, label: e.examType };
+      });
+      regressionLabel = `Milestone Timeline Progression (${averageByExamType.length} assessment milestones)`;
+    } else {
+      regression = null;
+      regressionLabel = 'Single assessment milestone recorded across cohort (longitudinal trend unestablished)';
+      formattedRegressionPoints = averageByStudent.slice(0, 30).map((st, i) => ({
+        x: i + 1,
+        actual: st.average,
+        trend: st.average,
+        label: st.name || `Student ${i + 1}`
+      }));
+    }
+  }
 
   const visibilityRes = await query<any>(`SELECT * FROM teacher_analytics_visibility WHERE teacher_user_id = $1`, [req.user!.id]);
-  const visibility = visibilityRes.rows[0] || { github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, hackathon_enabled: true, academic_enabled: true };
+  const visibility = visibilityRes.rows[0] || { github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, leetcode_enabled: true, hackathon_enabled: true, academic_enabled: true, sports_enabled: true };
 
   // Aggregate external student activity (LinkedIn posts & GitHub stats) for students in scope
   const studentIdsInScope = Array.from(new Set(rows.map(x => x.student_id)));
@@ -395,7 +557,7 @@ router.post('/analytics', async (req: AuthRequest, res) => {
             rSquared: Number(regression.rSquared.toFixed(4)),
             predictedNextScore: Number(regression.predictedNextValue.toFixed(2)),
             points: formattedRegressionPoints,
-            label: 'Linear Trend Projection (per-student averages)',
+            label: regressionLabel,
           }
         : {
             slope: 0,
@@ -403,7 +565,7 @@ router.post('/analytics', async (req: AuthRequest, res) => {
             rSquared: null,
             predictedNextScore: Number(mean.toFixed(2)),
             points: formattedRegressionPoints,
-            label: 'Not enough data for regression (need ≥2 students with marks)',
+            label: regressionLabel,
           },
     } : {}),
     charts: { 
@@ -824,19 +986,24 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
   if (!s) return res.status(404).json({ error: 'Student record not found.' });
   if (!await verifyTeacherClassScope(s.class_id, undefined, undefined, req.user!.id))
     return res.status(403).json({ error: 'Access Denied: This student is not enrolled in your assigned classes.' });
-  const [projects, achievements, certifications, hackathons, documents, marks, posts] = await Promise.all(
-    ['projects', 'achievements', 'certifications', 'hackathons', 'student_documents', 'marks'].map(
-      table => query(`SELECT * FROM ${table} WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
-    ).concat([
-      query(`
-        SELECT p.*,
-               (SELECT json_agg(a.*) FROM post_attachments a WHERE a.post_id = p.id) as attachments
-        FROM posts p
-        WHERE p.student_id = $1
-        ORDER BY p.created_at DESC
-      `, [s.id])
-    ])
-  );
+  const [projects, achievements, certifications, hackathons, documents, marks, sports, hrEvidence, liPosts, posts] = await Promise.all([
+    query(`SELECT * FROM projects WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`SELECT * FROM achievements WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`SELECT * FROM certifications WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`SELECT * FROM hackathons WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`SELECT * FROM student_documents WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`SELECT * FROM marks WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`SELECT * FROM sports WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`SELECT * FROM student_hackerrank_evidence WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    query(`SELECT * FROM student_linkedin_posts WHERE student_id=$1 ORDER BY post_date DESC, created_at DESC`, [s.id]),
+    query(`
+      SELECT p.*,
+             (SELECT json_agg(a.*) FROM post_attachments a WHERE a.post_id = p.id) as attachments
+      FROM posts p
+      WHERE p.student_id = $1
+      ORDER BY p.created_at DESC
+    `, [s.id]),
+  ]);
   const academicHistory = await calculateAcademicHistory(s.id);
 
   res.json({
@@ -845,6 +1012,9 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
     achievements: achievements.rows,
     certifications: certifications.rows,
     hackathons: hackathons.rows,
+    sports: sports.rows,
+    hackerrank_evidence: hrEvidence.rows,
+    linkedin_posts: liPosts.rows,
     documents: documents.rows,
     marks: marks.rows,
     marksheets: [],
@@ -964,12 +1134,27 @@ router.post('/students/:studentId/portfolio/:type/:itemId/verify', async (req: A
     return res.status(403).json({ error: 'Access Denied.' });
   }
 
-  const validTables = ['projects', 'achievements', 'certifications', 'hackathons'];
+  const validTables = ['projects', 'achievements', 'certifications', 'hackathons', 'sports', 'student_hackerrank_evidence', 'student_linkedin_posts', 'posts'];
   if (!validTables.includes(type)) return res.status(400).json({ error: 'Invalid portfolio type.' });
 
-  await query(`UPDATE ${type} SET verification_status=$1 WHERE id=$2 AND student_id=$3`, [status, itemId, student.id]);
+  if (['sports', 'student_hackerrank_evidence', 'student_linkedin_posts'].includes(type)) {
+    await query(`UPDATE ${type} SET verification_status=$1, verified_by=$2, verified_at=NOW() WHERE id=$3 AND student_id=$4`, [status, req.user!.id, itemId, student.id]);
+  } else {
+    await query(`UPDATE ${type} SET verification_status=$1 WHERE id=$2 AND student_id=$3`, [status, itemId, student.id]);
+  }
   res.json({ message: 'Verification status updated successfully' });
 });
 
+router.get('/students/:studentId/intelligence-evidence', async (req: AuthRequest, res) => {
+  const student = (await query<any>('SELECT id,class_id FROM students WHERE id=$1', [req.params.studentId])).rows[0];
+  if (!student) return res.status(404).json({ error: 'Student not found.' });
+  if (!await verifyTeacherClassScope(student.class_id, undefined, undefined, req.user!.id)) {
+    return res.status(403).json({ error: 'Access Denied: This student is not enrolled in your assigned classes.' });
+  }
+  const evidence = await getStudentComprehensiveEvidence(student.id);
+  res.json(evidence);
+});
+
 export default router;
+
 

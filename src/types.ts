@@ -404,3 +404,92 @@ export interface GitHubMonthlyAggregate {
   totalStars: number;
   totalContributions: number;
 }
+
+// ── Sports, Intelligence & Role Readiness Types ───────────────────────────────
+
+export interface SportItem {
+  id: string;
+  student_id: string;
+  sport_name: string;
+  event_name?: string;
+  participation_type: 'individual' | 'team';
+  position_or_role?: string;
+  competition_level: string;
+  season_or_year?: string;
+  match_event_date?: string;
+  match_stats?: Record<string, any>;
+  stats_summary?: string;
+  award_result?: string;
+  is_captain_or_leader?: boolean;
+  leadership_notes?: string;
+  proof_url?: string;
+  verification_status: 'unverified' | 'verified' | 'rejected';
+  verified_by?: string;
+  verified_at?: string;
+  verification_notes?: string;
+  created_at: string;
+}
+
+export interface StudentLinkedInPostItem {
+  id: string;
+  student_id: string;
+  post_url?: string;
+  post_date?: string;
+  topic?: string;
+  post_content?: string;
+  content_category?: string;
+  engagement_likes?: number;
+  engagement_comments?: number;
+  verification_status: 'unverified' | 'verified' | 'rejected';
+  created_at: string;
+}
+
+export interface StudentHackerRankEvidenceItem {
+  id: string;
+  student_id: string;
+  badge_or_certificate_name: string;
+  skill_domain?: string;
+  evidence_type: 'badge' | 'certificate' | 'skill_assessment' | 'contest';
+  star_rating?: number;
+  score?: number;
+  certificate_url?: string;
+  date_earned?: string;
+  verification_status: 'unverified' | 'verified' | 'rejected';
+  created_at: string;
+}
+
+export interface RoleReadinessEvaluation {
+  role: string;
+  targetRole: string;
+  candidateName: string;
+  rollNumber: string;
+  readinessTier: 'DEMONSTRATED_FIT' | 'DEVELOPING_FIT' | 'EARLY_STAGE' | 'INSUFFICIENT_EVIDENCE';
+  readinessLevel: 'DEMONSTRATED_FIT' | 'DEVELOPING_FIT' | 'EARLY_STAGE' | 'INSUFFICIENT_EVIDENCE';
+  alignmentScore: number;
+  readinessIndex: number;
+  verifiedMatchesCount: number;
+  selfReportedMatchesCount: number;
+  missingRequirementsCount: number;
+  requirementsBreakdown: Array<{
+    requirement: string;
+    category: string;
+    status: 'VERIFIED_MATCH' | 'SELF_REPORTED_MATCH' | 'PARTIALLY_MET' | 'MISSING';
+    supportingEvidence: string[];
+    confidence: 'HIGH' | 'MODERATE' | 'LOW' | 'NONE';
+  }>;
+  requirements: Array<{
+    requirement: string;
+    category: string;
+    status: 'VERIFIED' | 'SELF_REPORTED' | 'NOT_MET';
+    rationale: string;
+    citations: string[];
+    confidence: 'HIGH' | 'MODERATE' | 'LOW' | 'NONE';
+  }>;
+  strengths: string[];
+  developmentGaps: string[];
+  recommendations: string[];
+  recommendedPreparation: string[];
+  limitations: string[];
+  disclaimer: string;
+  aiAnalysis?: string;
+}

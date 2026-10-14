@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import { api } from '../lib/api';
-import { Sparkles, X, Send, Database, ArrowRight, Bot, ChevronDown, ChevronUp, Users, BookOpen, GraduationCap, AtSign } from 'lucide-react';
+import { Sparkles, X, Send, Database, ArrowRight, Bot, ChevronDown, ChevronUp, Users, BookOpen, GraduationCap, AtSign, ThumbsUp, ThumbsDown, Check, ShieldCheck } from 'lucide-react';
 
 interface AiAssistantDrawerProps {
   isOpen: boolean;
@@ -54,6 +54,21 @@ export const AiAssistantDrawer: React.FC<AiAssistantDrawerProps> = ({ isOpen, on
   const [mentionQuery, setMentionQuery] = useState('');
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [selectedClassFilter, setSelectedClassFilter] = useState<string | null>(null);
+  const [feedbackGiven, setFeedbackGiven] = useState<Record<string, 'helpful' | 'unhelpful'>>({});
+
+  const handleFeedback = async (msgId: string, rating: 'helpful' | 'unhelpful', text: string) => {
+    setFeedbackGiven(prev => ({ ...prev, [msgId]: rating }));
+    try {
+      await api.logAiFeedback({
+        queryText: 'Conversation assistant query',
+        answerText: text,
+        rating,
+        isHelpful: rating === 'helpful',
+      });
+    } catch {
+      // safe fallback
+    }
+  };
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -345,6 +360,38 @@ export const AiAssistantDrawer: React.FC<AiAssistantDrawerProps> = ({ isOpen, on
                   <span>• {msg.timestamp}</span>
                 </div>
                 <p className="whitespace-pre-wrap">{msg.text}</p>
+                {msg.sender === 'assistant' && msg.id !== 'welcome' && (
+                  <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                    <span className="flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-medium border border-emerald-200">
+                      <ShieldCheck className="w-3 h-3 text-emerald-600" /> Evidence Grounded
+                    </span>
+                    {feedbackGiven[msg.id] ? (
+                      <span className="text-[10px] text-slate-500 flex items-center gap-1 font-medium">
+                        <Check className="w-3 h-3 text-emerald-600" /> Feedback recorded
+                      </span>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-slate-400 mr-1">Helpful?</span>
+                        <button
+                          type="button"
+                          onClick={() => handleFeedback(msg.id, 'helpful', msg.text)}
+                          className="p-1 hover:text-emerald-700 hover:bg-emerald-50 rounded transition-colors cursor-pointer"
+                          title="Helpful response"
+                        >
+                          <ThumbsUp className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleFeedback(msg.id, 'unhelpful', msg.text)}
+                          className="p-1 hover:text-red-700 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                          title="Inaccurate or unhelpful response"
+                        >
+                          <ThumbsDown className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ))}

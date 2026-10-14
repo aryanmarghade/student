@@ -10,10 +10,15 @@ import {
   AlertCircle,
   Globe,
   ExternalLink,
-  Code2
+  Code2,
+  Trophy,
+  Sparkles,
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react';
 import { Bar } from 'react-chartjs-2';
 import '../lib/chart-setup';
+import { RoleReadinessEvaluation } from '../types';
 
 export const PlacementView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'students'>('dashboard');
@@ -25,6 +30,10 @@ export const PlacementView: React.FC = () => {
   // Student Profile Modal
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [targetRole, setTargetRole] = useState<string>('Software Engineer');
+  const [isMatchingRole, setIsMatchingRole] = useState(false);
+  const [roleMatchResult, setRoleMatchResult] = useState<RoleReadinessEvaluation | null>(null);
+  const [roleMatchError, setRoleMatchError] = useState<string | null>(null);
 
   useEffect(() => {
     loadDashboard();
@@ -44,6 +53,8 @@ export const PlacementView: React.FC = () => {
 
   const openStudentProfile = async (studentId: string) => {
     setIsProfileLoading(true);
+    setRoleMatchResult(null);
+    setRoleMatchError(null);
     try {
       const data = await api.getStudentFullProfileForPlacement(studentId);
       setSelectedStudent(data);
@@ -51,6 +62,19 @@ export const PlacementView: React.FC = () => {
       console.error('Failed to load profile', err);
     } finally {
       setIsProfileLoading(false);
+    }
+  };
+
+  const handleEvaluateRole = async (studentId: string, role: string) => {
+    setIsMatchingRole(true);
+    setRoleMatchError(null);
+    try {
+      const result = await api.matchPlacementRole(studentId, role);
+      setRoleMatchResult(result);
+    } catch (err: any) {
+      setRoleMatchError(err.message || 'Failed to evaluate candidate role readiness');
+    } finally {
+      setIsMatchingRole(false);
     }
   };
 
@@ -504,6 +528,172 @@ export const PlacementView: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {/* Sports & Athletics Intelligence */}
+              {selectedStudent.sports?.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                    <Trophy className="w-4 h-4 text-emerald-600" /> Sports & Athletics ({selectedStudent.sports.length})
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {selectedStudent.sports.map((sport: any) => (
+                      <div key={sport.id} className="p-3 bg-emerald-50/40 border border-emerald-200 rounded-xl space-y-1">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-semibold text-slate-900 text-xs">{sport.sport_name}</h4>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                            sport.verification_status === 'Verified' ? 'bg-emerald-200 text-emerald-900' : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {sport.verification_status === 'Verified' ? '✓ Verified' : 'Self-Reported'}
+                          </span>
+                        </div>
+                        <p className="text-slate-600 text-xs">
+                          {sport.competition_level} • {sport.participation_type} {sport.position ? `(${sport.position})` : ''}
+                          {sport.team_role ? ` • ${sport.team_role}` : ''}
+                        </p>
+                        {sport.metrics && typeof sport.metrics === 'object' && Object.keys(sport.metrics).length > 0 && (
+                          <div className="text-[10px] font-mono bg-white p-1.5 rounded border border-emerald-100 text-slate-700">
+                            {Object.entries(sport.metrics).map(([k, v]) => `${k}: ${v}`).join(' | ')}
+                          </div>
+                        )}
+                        {sport.awards && <p className="text-[11px] font-semibold text-amber-800">🏆 {sport.awards}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* AI Placement Role Readiness Matcher */}
+              <div className="bg-slate-900 text-white p-5 rounded-xl space-y-4 border border-slate-800 shadow-md">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-bold text-base flex items-center gap-2 text-emerald-400">
+                      <Sparkles className="w-5 h-5 text-emerald-400" /> AI Candidate Role Readiness Matcher
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Evaluate candidate against target engineering roles with transparent, evidence-grounded requirement mapping.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={targetRole}
+                      onChange={(e) => setTargetRole(e.target.value)}
+                      className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="Software Engineer">Software Engineer (General)</option>
+                      <option value="Full Stack Developer">Full Stack Developer</option>
+                      <option value="Frontend Engineer">Frontend Engineer</option>
+                      <option value="Backend Engineer">Backend Engineer</option>
+                      <option value="Data Scientist">Data Scientist / ML Engineer</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => handleEvaluateRole(selectedStudent.id, targetRole)}
+                      disabled={isMatchingRole}
+                      className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                    >
+                      {isMatchingRole ? (
+                        <span>Evaluating Evidence...</span>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5" /> Evaluate Fit
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {roleMatchError && (
+                  <div className="p-3 bg-red-900/40 border border-red-700/60 rounded-lg text-xs text-red-200">
+                    {roleMatchError}
+                  </div>
+                )}
+
+                {roleMatchResult && (
+                  <div className="space-y-4 pt-3 border-t border-slate-800">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700/60">
+                        <div className="text-[10px] uppercase font-bold text-slate-400">Target Role</div>
+                        <div className="text-sm font-bold text-white mt-0.5">{roleMatchResult.role}</div>
+                      </div>
+                      <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700/60">
+                        <div className="text-[10px] uppercase font-bold text-slate-400">Readiness Tier</div>
+                        <div className="text-sm font-bold text-emerald-400 mt-0.5">{roleMatchResult.readinessTier.replace(/_/g, ' ')}</div>
+                      </div>
+                      <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700/60">
+                        <div className="text-[10px] uppercase font-bold text-slate-400">Requirement Alignment</div>
+                        <div className="text-sm font-bold text-sky-400 mt-0.5">{roleMatchResult.alignmentScore}% Met</div>
+                      </div>
+                    </div>
+
+                    {/* Requirements Mapping */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">Evidence-Mapped Requirements</h4>
+                      <div className="space-y-2">
+                        {roleMatchResult.requirements.map((req, idx) => (
+                          <div key={idx} className="bg-slate-800/60 p-3 rounded-lg border border-slate-700/40 space-y-1.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-xs font-semibold text-slate-200">{req.requirement}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 ${
+                                req.status === 'VERIFIED'
+                                  ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50'
+                                  : req.status === 'SELF_REPORTED'
+                                  ? 'bg-amber-900/60 text-amber-300 border border-amber-700/50'
+                                  : 'bg-red-900/60 text-red-300 border border-red-700/50'
+                              }`}>
+                                {req.status}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400">{req.rationale}</p>
+                            {req.citations.length > 0 && (
+                              <div className="flex flex-wrap gap-1 pt-1">
+                                {req.citations.map((cite, cIdx) => (
+                                  <span key={cIdx} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-900 text-sky-300 font-mono">
+                                    {cite}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Deep AI Candidate Evaluation Narrative */}
+                    {roleMatchResult.aiAnalysis && (
+                      <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> Evidence-Grounded Candidate Intelligence Report
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                            qwen2.5:3b (Local Ollama)
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap font-sans space-y-2 max-h-96 overflow-y-auto pr-1">
+                          {roleMatchResult.aiAnalysis}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Recommendations */}
+                    {roleMatchResult.recommendations.length > 0 && (
+                      <div className="bg-slate-800/40 p-3 rounded-lg border border-slate-700/40 space-y-1">
+                        <div className="text-xs font-bold text-amber-300">Recommended Preparation:</div>
+                        <ul className="list-disc list-inside text-[11px] text-slate-300 space-y-0.5">
+                          {roleMatchResult.recommendations.map((rec, rIdx) => (
+                            <li key={rIdx}>{rec}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Disclaimer */}
+                    <div className="p-2.5 bg-slate-950/80 rounded border border-slate-800 text-[10px] text-slate-400 leading-relaxed">
+                      ⚠️ <strong className="text-slate-300">Ethical AI Notice:</strong> {roleMatchResult.disclaimer}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

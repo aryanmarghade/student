@@ -429,6 +429,7 @@ CREATE TABLE IF NOT EXISTS teacher_analytics_visibility (
     leetcode_enabled BOOLEAN DEFAULT TRUE,
     hackathon_enabled BOOLEAN DEFAULT TRUE,
     academic_enabled BOOLEAN DEFAULT TRUE,
+    sports_enabled BOOLEAN DEFAULT TRUE,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL
 );
@@ -443,6 +444,199 @@ CREATE TABLE IF NOT EXISTS placement_analytics_visibility (
     leetcode_enabled BOOLEAN DEFAULT TRUE,
     hackathon_enabled BOOLEAN DEFAULT TRUE,
     academic_enabled BOOLEAN DEFAULT TRUE,
+    sports_enabled BOOLEAN DEFAULT TRUE,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL
 );
+
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS verification_status VARCHAR(64) DEFAULT 'Published';
+ALTER TABLE teacher_analytics_visibility ADD COLUMN IF NOT EXISTS sports_enabled BOOLEAN DEFAULT TRUE;
+ALTER TABLE placement_analytics_visibility ADD COLUMN IF NOT EXISTS sports_enabled BOOLEAN DEFAULT TRUE;
+
+-- 19. SPORTS & ATHLETICS
+CREATE TABLE IF NOT EXISTS sports (
+    id VARCHAR(64) PRIMARY KEY,
+    student_id VARCHAR(64) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    sport_name VARCHAR(128) NOT NULL,
+    event_name VARCHAR(255) NOT NULL,
+    participation_type VARCHAR(32) NOT NULL DEFAULT 'individual' CHECK (participation_type IN ('individual', 'team')),
+    position_role VARCHAR(128),
+    competition_level VARCHAR(64) NOT NULL DEFAULT 'college' CHECK (competition_level IN ('intra_college', 'inter_college', 'district', 'state', 'national', 'international')),
+    season_year VARCHAR(32),
+    match_stats JSONB DEFAULT '{}',
+    result_award VARCHAR(255),
+    leadership_role VARCHAR(64) DEFAULT 'member' CHECK (leadership_role IN ('member', 'captain', 'vice_captain', 'lead')),
+    evidence_url TEXT,
+    verification_status VARCHAR(64) NOT NULL DEFAULT 'Student Submitted' CHECK (verification_status IN ('Student Submitted', 'Verified', 'Rejected')),
+    verified_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    verified_at TIMESTAMP WITH TIME ZONE,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sports_student ON sports(student_id);
+
+-- 20. STUDENT LEETCODE MONTHLY SNAPSHOTS
+CREATE TABLE IF NOT EXISTS student_leetcode_snapshots (
+    id VARCHAR(64) PRIMARY KEY,
+    student_id VARCHAR(64) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    leetcode_username VARCHAR(255) NOT NULL,
+    snapshot_month VARCHAR(7) NOT NULL,
+    synced_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    total_solved INT,
+    easy_solved INT,
+    medium_solved INT,
+    hard_solved INT,
+    ranking INT,
+    reputation INT,
+    raw_data JSONB,
+    sync_status VARCHAR(32) NOT NULL DEFAULT 'synced' CHECK (sync_status IN ('synced', 'failed', 'not_synced')),
+    error_message TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_student_leetcode_snapshot_month UNIQUE (student_id, snapshot_month)
+);
+CREATE INDEX IF NOT EXISTS idx_leetcode_snapshots_student ON student_leetcode_snapshots(student_id);
+CREATE INDEX IF NOT EXISTS idx_leetcode_snapshots_month ON student_leetcode_snapshots(snapshot_month);
+
+-- 21. STUDENT LINKEDIN POSTS (Authorized student-submitted or imported posts)
+CREATE TABLE IF NOT EXISTS student_linkedin_posts (
+    id VARCHAR(64) PRIMARY KEY,
+    student_id VARCHAR(64) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    post_url TEXT,
+    title VARCHAR(255),
+    content TEXT NOT NULL,
+    post_date DATE,
+    topics JSONB DEFAULT '[]',
+    category VARCHAR(64) DEFAULT 'Technical Writing' CHECK (category IN ('Technical Writing', 'Project Update', 'Learning Reflection', 'Professional Communication', 'Career Milestone', 'Other')),
+    likes_count INT DEFAULT 0,
+    comments_count INT DEFAULT 0,
+    shares_count INT DEFAULT 0,
+    source_type VARCHAR(32) DEFAULT 'manual_submission' CHECK (source_type IN ('manual_submission', 'verified_import', 'api_synced')),
+    verification_status VARCHAR(64) DEFAULT 'Student Submitted' CHECK (verification_status IN ('Student Submitted', 'Verified', 'Rejected')),
+    verified_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    verified_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_linkedin_posts_student ON student_linkedin_posts(student_id);
+
+-- 22. STUDENT HACKERRANK EVIDENCE
+CREATE TABLE IF NOT EXISTS student_hackerrank_evidence (
+    id VARCHAR(64) PRIMARY KEY,
+    student_id VARCHAR(64) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    skill_name VARCHAR(128) NOT NULL,
+    badge_name VARCHAR(128),
+    stars INT DEFAULT 0,
+    certificate_url TEXT,
+    evidence_url TEXT,
+    verification_status VARCHAR(64) DEFAULT 'Student Submitted' CHECK (verification_status IN ('Student Submitted', 'Verified', 'Rejected')),
+    verified_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    verified_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_hackerrank_evidence_student ON student_hackerrank_evidence(student_id);
+
+-- 23. INSTITUTIONAL GRADING RULES (Official 10-point scale)
+CREATE TABLE IF NOT EXISTS institutional_grading_rules (
+    id VARCHAR(64) PRIMARY KEY,
+    grade VARCHAR(8) NOT NULL,
+    min_percentage NUMERIC(5,2) NOT NULL,
+    max_percentage NUMERIC(5,2) NOT NULL,
+    grade_point NUMERIC(3,1) NOT NULL,
+    description TEXT,
+    is_passing BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE subjects ADD COLUMN IF NOT EXISTS credits INT DEFAULT 3;
+ALTER TABLE assessment_definitions ADD COLUMN IF NOT EXISTS weight NUMERIC(5, 2) DEFAULT 1.0;
+ALTER TABLE assessment_definitions ADD COLUMN IF NOT EXISTS assessment_date DATE;
+ALTER TABLE assessment_definitions ADD COLUMN IF NOT EXISTS answer_key TEXT;
+ALTER TABLE assessment_definitions ADD COLUMN IF NOT EXISTS rubric_criteria JSONB DEFAULT '[]';
+
+-- 24. STUDENT SUBMISSIONS (For AI-assisted marking and teacher review)
+CREATE TABLE IF NOT EXISTS student_submissions (
+    id VARCHAR(64) PRIMARY KEY,
+    assessment_definition_id VARCHAR(64) REFERENCES assessment_definitions(id) ON DELETE CASCADE,
+    student_id VARCHAR(64) REFERENCES students(id) ON DELETE CASCADE,
+    submission_text TEXT,
+    code_content TEXT,
+    file_url TEXT,
+    submitted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(32) DEFAULT 'submitted',
+    CONSTRAINT uq_submission UNIQUE (assessment_definition_id, student_id)
+);
+CREATE INDEX IF NOT EXISTS idx_student_submissions_asmt ON student_submissions(assessment_definition_id);
+CREATE INDEX IF NOT EXISTS idx_student_submissions_student ON student_submissions(student_id);
+
+ALTER TABLE marks ADD COLUMN IF NOT EXISTS assessment_definition_id VARCHAR(64) REFERENCES assessment_definitions(id) ON DELETE SET NULL;
+ALTER TABLE marks ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'entered';
+ALTER TABLE marks ADD COLUMN IF NOT EXISTS suggested_marks NUMERIC(5, 2);
+ALTER TABLE marks ADD COLUMN IF NOT EXISTS suggested_by_ai BOOLEAN DEFAULT FALSE;
+ALTER TABLE marks ADD COLUMN IF NOT EXISTS ai_justification TEXT;
+ALTER TABLE marks ADD COLUMN IF NOT EXISTS ai_criterion_scores JSONB DEFAULT '[]';
+ALTER TABLE marks ADD COLUMN IF NOT EXISTS teacher_override_reason TEXT;
+ALTER TABLE marks ADD COLUMN IF NOT EXISTS teacher_feedback TEXT;
+ALTER TABLE marks ADD COLUMN IF NOT EXISTS feedback_published BOOLEAN DEFAULT FALSE;
+ALTER TABLE marks ADD COLUMN IF NOT EXISTS reviewed_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE marks ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE marks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+-- 25. PLACEMENT JOB DESCRIPTIONS
+CREATE TABLE IF NOT EXISTS placement_job_descriptions (
+    id VARCHAR(64) PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    company VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    required_skills JSONB DEFAULT '[]',
+    min_cgpa NUMERIC(4, 2) DEFAULT 6.0,
+    max_backlogs INT DEFAULT 0,
+    eligible_branches JSONB DEFAULT '["Computer Science", "Information Technology"]',
+    created_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pjd_company ON placement_job_descriptions(company);
+
+-- 26. AI PERSISTENT MEMORIES & FACT STORE
+CREATE TABLE IF NOT EXISTS ai_persistent_memories (
+    id VARCHAR(64) PRIMARY KEY,
+    category VARCHAR(64) NOT NULL,
+    entity_type VARCHAR(64) NOT NULL,
+    entity_id VARCHAR(64),
+    memory_key VARCHAR(128) NOT NULL,
+    content JSONB NOT NULL,
+    provenance VARCHAR(64) NOT NULL,
+    created_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_ai_memory UNIQUE (category, entity_type, entity_id, memory_key)
+);
+CREATE INDEX IF NOT EXISTS idx_ai_memories_lookup ON ai_persistent_memories(category, entity_type, entity_id);
+
+-- 27. AI FEEDBACK LOGS & CONTROLLED LEARNING
+CREATE TABLE IF NOT EXISTS ai_feedback_logs (
+    id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    role VARCHAR(32) NOT NULL,
+    query_text TEXT NOT NULL,
+    response_text TEXT NOT NULL,
+    rating VARCHAR(16) NOT NULL,
+    feedback_comment TEXT,
+    failure_category VARCHAR(64),
+    verified_correction TEXT,
+    reviewer_user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    is_approved_for_training BOOLEAN DEFAULT FALSE,
+    dataset_version VARCHAR(32),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ai_feedback_role ON ai_feedback_logs(role);
+CREATE INDEX IF NOT EXISTS idx_ai_feedback_approved ON ai_feedback_logs(is_approved_for_training);
+
+CREATE TABLE IF NOT EXISTS ai_benchmark_datasets (
+    id VARCHAR(64) PRIMARY KEY,
+    version VARCHAR(32) NOT NULL UNIQUE,
+    test_cases JSONB NOT NULL,
+    benchmark_scores JSONB DEFAULT '{}',
+    promoted_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+
