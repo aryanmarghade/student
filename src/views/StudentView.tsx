@@ -243,14 +243,14 @@ export const StudentView: React.FC = () => {
       setLeetcodeInput(profileRes.leetcode_url || '');
       setPortfolioInput(profileRes.portfolio_url || '');
 
-      setEvents(eventsRes || []);
-      setDocuments(docsRes || []);
-      setProjects(projsRes || []);
-      setCertifications(certsRes || []);
-      setPosts(postsRes || []);
-      setSports(sportsRes || []);
-      setLinkedinPosts(liPostsRes || []);
-      setHackerrankEvidence(hrEvidenceRes || []);
+      setEvents(Array.isArray(eventsRes) ? eventsRes : []);
+      setDocuments(Array.isArray(docsRes) ? docsRes : []);
+      setProjects(Array.isArray(projsRes) ? projsRes : []);
+      setCertifications(Array.isArray(certsRes) ? certsRes : []);
+      setPosts(Array.isArray(postsRes) ? postsRes : []);
+      setSports(Array.isArray(sportsRes) ? sportsRes : []);
+      setLinkedinPosts(Array.isArray(liPostsRes) ? liPostsRes : (Array.isArray((liPostsRes as any)?.posts) ? (liPostsRes as any).posts : []));
+      setHackerrankEvidence(Array.isArray(hrEvidenceRes) ? hrEvidenceRes : (Array.isArray((hrEvidenceRes as any)?.evidence) ? (hrEvidenceRes as any).evidence : []));
       setIntelligenceEvidence(intelRes);
 
       setSemestersData(marksRes.semestersData);
@@ -811,6 +811,7 @@ export const StudentView: React.FC = () => {
           return (
             <button type="button"
               key={tab.id}
+              data-testid={`student-tab-${tab.id}`}
               onClick={() => setActiveTab(tab.id as any)}
               className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
                 isActive
@@ -1048,6 +1049,7 @@ export const StudentView: React.FC = () => {
                   <p className="text-xs text-slate-500">Share updates, achievements, and insights with your network.</p>
                </div>
                <button type="button"
+                 data-testid="student-create-post-btn"
                  onClick={() => setShowAddPostModal(true)}
                  className="px-4 py-2 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-sm font-semibold flex items-center gap-1.5 shadow-sm"
                >
@@ -1428,6 +1430,7 @@ export const StudentView: React.FC = () => {
                 </p>
               </div>
               <button type="button"
+                data-testid="student-add-project-btn"
                 onClick={() => setShowAddProjectModal(true)}
                 className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
               >
@@ -1518,6 +1521,7 @@ export const StudentView: React.FC = () => {
                 </p>
               </div>
               <button type="button"
+                data-testid="student-add-cert-btn"
                 onClick={() => setShowAddCertModal(true)}
                 className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
               >
@@ -1602,7 +1606,7 @@ export const StudentView: React.FC = () => {
               </button>
             </div>
 
-            {hackerrankEvidence.length === 0 ? (
+            {!Array.isArray(hackerrankEvidence) || hackerrankEvidence.length === 0 ? (
               <div className="bg-white p-8 rounded-xl border border-slate-200 text-center space-y-2">
                 <Code2 className="w-8 h-8 text-slate-300 mx-auto" />
                 <p className="text-xs text-slate-600 font-medium">No HackerRank evidence submitted yet.</p>
@@ -1661,7 +1665,7 @@ export const StudentView: React.FC = () => {
               </button>
             </div>
 
-            {linkedinPosts.length === 0 ? (
+            {!Array.isArray(linkedinPosts) || linkedinPosts.length === 0 ? (
               <div className="bg-white p-8 rounded-xl border border-slate-200 text-center space-y-2">
                 <Linkedin className="w-8 h-8 text-slate-300 mx-auto" />
                 <p className="text-xs text-slate-600 font-medium">No LinkedIn post evidence submitted yet.</p>
@@ -2080,15 +2084,17 @@ export const StudentView: React.FC = () => {
                 <FolderGit2 className="w-4 h-4 text-sky-400" />
                 <h3 className="font-bold text-sm">Add Portfolio Project</h3>
               </div>
-              <button type="button" onClick={() => setShowAddProjectModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" aria-label="Close modal" onClick={() => setShowAddProjectModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
 
             <form onSubmit={handleCreateProject} className="p-5 space-y-3.5">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Project Title</label>
+                <label htmlFor="project-title-input" className="block text-xs font-semibold text-slate-700 mb-1">Project Title</label>
                 <input
+                  id="project-title-input"
+                  aria-label="Project Title"
                   type="text"
                   required
                   placeholder="e.g. Distributed Task Orchestrator"
@@ -2099,8 +2105,10 @@ export const StudentView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Description</label>
+                <label htmlFor="project-desc-textarea" className="block text-xs font-semibold text-slate-700 mb-1">Description</label>
                 <textarea
+                  id="project-desc-textarea"
+                  aria-label="Description"
                   rows={3}
                   required
                   placeholder="Brief summary of architecture, problems solved, and technical depth..."
@@ -2111,8 +2119,10 @@ export const StudentView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Tech Stack (comma separated)</label>
+                <label htmlFor="project-techstack-input" className="block text-xs font-semibold text-slate-700 mb-1">Tech Stack (comma separated)</label>
                 <input
+                  id="project-techstack-input"
+                  aria-label="Tech Stack (comma separated)"
                   type="text"
                   placeholder="e.g. TypeScript, Rust, Docker, PostgreSQL"
                   value={newProject.tech_stack}
@@ -2123,8 +2133,10 @@ export const StudentView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Live Demo URL</label>
+                  <label htmlFor="project-url-input" className="block text-xs font-semibold text-slate-700 mb-1">Live Demo URL</label>
                   <input
+                    id="project-url-input"
+                    aria-label="Live Demo URL"
                     type="url"
                     placeholder="https://..."
                     value={newProject.project_url}
@@ -2133,8 +2145,10 @@ export const StudentView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Repository URL</label>
+                  <label htmlFor="project-repo-input" className="block text-xs font-semibold text-slate-700 mb-1">Repository URL</label>
                   <input
+                    id="project-repo-input"
+                    aria-label="Repository URL"
                     type="url"
                     placeholder="https://github.com/..."
                     value={newProject.repo_url}
@@ -2173,15 +2187,17 @@ export const StudentView: React.FC = () => {
                 <Award className="w-4 h-4 text-amber-400" />
                 <h3 className="font-bold text-sm">Add Certification Record</h3>
               </div>
-              <button type="button" onClick={() => setShowAddCertModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" aria-label="Close modal" onClick={() => setShowAddCertModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
 
             <form onSubmit={handleCreateCert} className="p-5 space-y-3.5">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Certification Title</label>
+                <label htmlFor="cert-title-input" className="block text-xs font-semibold text-slate-700 mb-1">Certification Title</label>
                 <input
+                  id="cert-title-input"
+                  aria-label="Certification Title"
                   type="text"
                   required
                   placeholder="e.g. AWS Certified Solutions Architect"
@@ -2193,8 +2209,10 @@ export const StudentView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Issuing Organization</label>
+                  <label htmlFor="cert-org-input" className="block text-xs font-semibold text-slate-700 mb-1">Issuing Organization</label>
                   <input
+                    id="cert-org-input"
+                    aria-label="Issuing Organization"
                     type="text"
                     required
                     placeholder="e.g. Amazon Web Services"
@@ -2204,8 +2222,10 @@ export const StudentView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Issue Date</label>
+                  <label htmlFor="cert-date-input" className="block text-xs font-semibold text-slate-700 mb-1">Issue Date</label>
                   <input
+                    id="cert-date-input"
+                    aria-label="Issue Date"
                     type="date"
                     value={newCert.issue_date}
                     onChange={e => setNewCert({ ...newCert, issue_date: e.target.value })}
@@ -2216,8 +2236,10 @@ export const StudentView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Credential ID (optional)</label>
+                  <label htmlFor="cert-cred-id-input" className="block text-xs font-semibold text-slate-700 mb-1">Credential ID (optional)</label>
                   <input
+                    id="cert-cred-id-input"
+                    aria-label="Credential ID"
                     type="text"
                     placeholder="e.g. AWS-9482938"
                     value={newCert.credential_id}
@@ -2226,8 +2248,10 @@ export const StudentView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Credential Verification URL</label>
+                  <label htmlFor="cert-cred-url-input" className="block text-xs font-semibold text-slate-700 mb-1">Credential Verification URL</label>
                   <input
+                    id="cert-cred-url-input"
+                    aria-label="Credential Verification URL"
                     type="url"
                     placeholder="https://..."
                     value={newCert.credential_url}
@@ -2351,14 +2375,17 @@ export const StudentView: React.FC = () => {
                 <Activity className="w-4 h-4 text-sky-400" />
                 <h3 className="font-bold text-sm">Create New Post</h3>
               </div>
-              <button type="button" onClick={() => setShowAddPostModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" aria-label="Close modal" onClick={() => setShowAddPostModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
 
             <form onSubmit={handleCreatePost} className="p-5 space-y-4">
               <div>
+                <label htmlFor="post-title-input" className="sr-only">Post Title</label>
                 <input
+                  id="post-title-input"
+                  aria-label="Post Title"
                   type="text"
                   required
                   placeholder="Post Title (e.g. Won 1st Prize in Hackathon)"
@@ -2369,7 +2396,10 @@ export const StudentView: React.FC = () => {
               </div>
 
               <div>
+                <label htmlFor="post-content-textarea" className="sr-only">Post Description</label>
                 <textarea
+                  id="post-content-textarea"
+                  aria-label="Post Description"
                   required
                   rows={4}
                   placeholder="What do you want to talk about?"
@@ -2381,8 +2411,10 @@ export const StudentView: React.FC = () => {
               
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Category</label>
+                  <label htmlFor="post-category-select" className="block text-xs font-semibold text-slate-700 mb-1">Category</label>
                   <select
+                    id="post-category-select"
+                    aria-label="Category"
                     value={newPost.category}
                     onChange={e => setNewPost({ ...newPost, category: e.target.value })}
                     className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
@@ -2396,8 +2428,10 @@ export const StudentView: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Tags (comma separated)</label>
+                  <label htmlFor="post-tags-input" className="block text-xs font-semibold text-slate-700 mb-1">Tags (comma separated)</label>
                   <input
+                    id="post-tags-input"
+                    aria-label="Tags (comma separated)"
                     type="text"
                     placeholder="react, webdev, hackathon"
                     value={newPost.tags}
@@ -2408,8 +2442,10 @@ export const StudentView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">External Link (Optional)</label>
+                <label htmlFor="post-external-link-input" className="block text-xs font-semibold text-slate-700 mb-1">External Link (Optional)</label>
                 <input
+                  id="post-external-link-input"
+                  aria-label="External Link"
                   type="url"
                   placeholder="https://github.com/..."
                   value={newPost.external_link}
@@ -2419,8 +2455,10 @@ export const StudentView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Attachments (Images, PDF, PPT, Video)</label>
+                <label htmlFor="post-attachments-file-input" className="block text-xs font-semibold text-slate-700 mb-1">Attachments (Images, PDF, PPT, Video)</label>
                 <input
+                  id="post-attachments-file-input"
+                  aria-label="Attachments (Images, PDF, PPT, Video)"
                   type="file"
                   multiple
                   accept=".pdf,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp,.mp4,.webm"

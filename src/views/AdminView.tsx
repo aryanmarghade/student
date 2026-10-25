@@ -1095,6 +1095,7 @@ export const AdminView: React.FC = () => {
             </div>
             <select
               value={userRoleFilter}
+              aria-label="Filter users by role"
               onChange={e => setUserRoleFilter(e.target.value)}
               className="px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
             >
@@ -1308,6 +1309,7 @@ export const AdminView: React.FC = () => {
               <label className="block text-xs font-semibold text-slate-700 mb-1">Select Student</label>
               <select
                 value={marksheetData.student_id}
+                aria-label="Select Student"
                 onChange={e => setMarksheetData({ ...marksheetData, student_id: e.target.value })}
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-slate-50"
               >
@@ -1324,6 +1326,7 @@ export const AdminView: React.FC = () => {
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Semester</label>
                 <select
                   value={marksheetData.semester_id}
+                  aria-label="Select Semester"
                   onChange={e => setMarksheetData({ ...marksheetData, semester_id: e.target.value })}
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-slate-50"
                 >
@@ -1338,6 +1341,7 @@ export const AdminView: React.FC = () => {
                 <input
                   type="file"
                   accept=".pdf"
+                  aria-label="Document File Name"
                   onChange={e => {
                     if (e.target.files && e.target.files[0]) {
                       setMarksheetFile(e.target.files[0]);
@@ -1356,6 +1360,7 @@ export const AdminView: React.FC = () => {
                   step="0.01"
                   min="0"
                   max="10"
+                  aria-label="Semester SGPA"
                   value={marksheetData.sgpa}
                   onChange={e => setMarksheetData({ ...marksheetData, sgpa: Number(e.target.value) })}
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-slate-50"
@@ -1368,6 +1373,7 @@ export const AdminView: React.FC = () => {
                   step="0.01"
                   min="0"
                   max="10"
+                  aria-label="Cumulative CGPA"
                   value={marksheetData.cgpa}
                   onChange={e => setMarksheetData({ ...marksheetData, cgpa: Number(e.target.value) })}
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-slate-50"
@@ -1402,6 +1408,7 @@ export const AdminView: React.FC = () => {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Target Semester</label>
                   <select
                     value={zipSemesterId}
+                    aria-label="Target Semester for ZIP Archive"
                     onChange={e => setZipSemesterId(e.target.value)}
                     className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
                   >
@@ -1416,6 +1423,7 @@ export const AdminView: React.FC = () => {
                   <input
                     type="file"
                     accept=".zip,application/zip"
+                    aria-label="Select ZIP Archive"
                     onChange={e => setZipFile(e.target.files?.[0] || null)}
                     className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded-lg bg-white file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-slate-200 file:text-slate-800"
                   />
@@ -1540,8 +1548,10 @@ export const AdminView: React.FC = () => {
 
           <form onSubmit={handleBroadcastNotice} className="max-w-xl space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Notice Headline</label>
+              <label htmlFor="notice-headline-input" className="block text-xs font-semibold text-slate-700 mb-1">Notice Headline</label>
               <input
+                id="notice-headline-input"
+                aria-label="Notice Headline"
                 type="text"
                 required
                 placeholder="e.g. End-Semester Examination Registration Schedule"
@@ -1552,8 +1562,10 @@ export const AdminView: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Target Audience</label>
+              <label htmlFor="notice-target-role" className="block text-xs font-semibold text-slate-700 mb-1">Target Audience</label>
               <select
+                id="notice-target-role"
+                aria-label="Target Audience"
                 value={noticeData.target_role}
                 onChange={e => setNoticeData({ ...noticeData, target_role: e.target.value })}
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-slate-50"
@@ -1567,8 +1579,10 @@ export const AdminView: React.FC = () => {
 
             {noticeData.target_role === 'class' && (
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Target Class Cohort</label>
+                <label htmlFor="notice-target-class" className="block text-xs font-semibold text-slate-700 mb-1">Target Class Cohort</label>
                 <select
+                  id="notice-target-class"
+                  aria-label="Target Class Cohort"
                   value={noticeData.target_class_id}
                   onChange={e => setNoticeData({ ...noticeData, target_class_id: e.target.value })}
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-slate-50"
@@ -1582,8 +1596,10 @@ export const AdminView: React.FC = () => {
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Notice Body / Directives</label>
+              <label htmlFor="notice-body-input" className="block text-xs font-semibold text-slate-700 mb-1">Notice Body / Directives</label>
               <textarea
+                id="notice-body-input"
+                aria-label="Notice Body / Directives"
                 required
                 rows={4}
                 placeholder="Details of the circular, deadlines, guidelines..."
@@ -1892,6 +1908,9 @@ export const AdminView: React.FC = () => {
                               <label className={`relative inline-flex items-center cursor-pointer shrink-0 mt-0.5 ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                 <input 
                                   type="checkbox" 
+                                  role="switch"
+                                  aria-checked={isEnabled}
+                                  aria-label={`Toggle ${setting.label} for ${teacher.full_name}`}
                                   className="sr-only peer" 
                                   checked={isEnabled} 
                                   disabled={isSaving}
@@ -2123,7 +2142,7 @@ export const AdminView: React.FC = () => {
                 <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
                 <h3 className="font-bold text-sm">Bulk CSV User Importer</h3>
               </div>
-              <button type="button" onClick={() => { setShowBulkImportModal(false); setBulkReport(null); }} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" aria-label="Close modal" onClick={() => { setShowBulkImportModal(false); setBulkReport(null); }} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
@@ -2160,8 +2179,10 @@ export const AdminView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Paste CSV Content</label>
+                <label htmlFor="bulk-user-csv-content" className="block text-xs font-semibold text-slate-700 mb-1">Paste CSV Content</label>
                 <textarea
+                  id="bulk-user-csv-content"
+                  aria-label="Paste CSV Content"
                   rows={6}
                   value={csvContent}
                   onChange={e => setCsvContent(e.target.value)}
@@ -2307,8 +2328,10 @@ export const AdminView: React.FC = () => {
             <p className="text-xs text-slate-500">Link an instructor to a class cohort, subject curriculum, and semester.</p>
             <form onSubmit={handleCreateAssignment} className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Faculty Member</label>
+                <label htmlFor="assign-teacher-select" className="block text-xs font-semibold text-slate-700 mb-1">Faculty Member</label>
                 <select
+                  id="assign-teacher-select"
+                  aria-label="Faculty Member"
                   value={newAssignData.teacher_user_id}
                   onChange={e => setNewAssignData({ ...newAssignData, teacher_user_id: e.target.value })}
                   className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
@@ -2319,8 +2342,10 @@ export const AdminView: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Class Cohort</label>
+                <label htmlFor="assign-class-select" className="block text-xs font-semibold text-slate-700 mb-1">Class Cohort</label>
                 <select
+                  id="assign-class-select"
+                  aria-label="Class Cohort"
                   value={newAssignData.class_id}
                   onChange={e => setNewAssignData({ ...newAssignData, class_id: e.target.value })}
                   className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
@@ -2331,8 +2356,10 @@ export const AdminView: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Subject Course</label>
+                <label htmlFor="assign-subject-select" className="block text-xs font-semibold text-slate-700 mb-1">Subject Course</label>
                 <select
+                  id="assign-subject-select"
+                  aria-label="Subject Course"
                   value={newAssignData.subject_id}
                   onChange={e => setNewAssignData({ ...newAssignData, subject_id: e.target.value })}
                   className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
@@ -2343,8 +2370,10 @@ export const AdminView: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Semester Term</label>
+                <label htmlFor="assign-semester-select" className="block text-xs font-semibold text-slate-700 mb-1">Semester Term</label>
                 <select
+                  id="assign-semester-select"
+                  aria-label="Semester Term"
                   value={newAssignData.semester_id}
                   onChange={e => setNewAssignData({ ...newAssignData, semester_id: e.target.value })}
                   className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50"
@@ -2384,7 +2413,7 @@ export const AdminView: React.FC = () => {
                 <Calendar className="w-4 h-4 text-amber-400" />
                 <h3 className="font-bold text-sm">Advance Academic Term / Semester</h3>
               </div>
-              <button type="button" onClick={() => setShowStartSemesterModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" aria-label="Close modal" onClick={() => setShowStartSemesterModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
@@ -2395,8 +2424,10 @@ export const AdminView: React.FC = () => {
               </p>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">New Term Name / Label</label>
+                <label htmlFor="new-semester-name-input" className="block text-xs font-semibold text-slate-700 mb-1">New Term Name / Label</label>
                 <input
+                  id="new-semester-name-input"
+                  aria-label="New Term Name / Label"
                   type="text"
                   required
                   placeholder="e.g. Spring 2026 or Semester VI (2025-26)"
@@ -2564,23 +2595,23 @@ export const AdminView: React.FC = () => {
                 <Users className="w-4 h-4 text-emerald-400" />
                 <h3 className="font-bold text-sm">Register New User</h3>
               </div>
-              <button type="button" onClick={() => setShowAddUserModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" aria-label="Close modal" onClick={() => setShowAddUserModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
             <form onSubmit={handleCreateUser} className="p-5 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
-                <input type="text" required value={newUserData.full_name} onChange={e => setNewUserData({ ...newUserData, full_name: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
+                <label htmlFor="user-fullname-input" className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
+                <input id="user-fullname-input" aria-label="Full Name" type="text" required value={newUserData.full_name} onChange={e => setNewUserData({ ...newUserData, full_name: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
-                <input type="email" required value={newUserData.email} onChange={e => setNewUserData({ ...newUserData, email: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
+                <label htmlFor="user-email-input" className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+                <input id="user-email-input" aria-label="Email Address" type="email" required value={newUserData.email} onChange={e => setNewUserData({ ...newUserData, email: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Role</label>
-                  <select value={newUserData.role} onChange={e => setNewUserData({ ...newUserData, role: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50">
+                  <label htmlFor="user-role-select" className="block text-xs font-semibold text-slate-700 mb-1">Role</label>
+                  <select id="user-role-select" aria-label="Role" value={newUserData.role} onChange={e => setNewUserData({ ...newUserData, role: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50">
                     <option value="student">Student</option>
                     <option value="teacher">Teacher / Faculty</option>
                     <option value="admin">Administrator</option>
@@ -2588,19 +2619,19 @@ export const AdminView: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Initial Password</label>
-                  <input type="text" required minLength={8} value={newUserData.password} onChange={e => setNewUserData({ ...newUserData, password: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
+                  <label htmlFor="user-password-input" className="block text-xs font-semibold text-slate-700 mb-1">Initial Password</label>
+                  <input id="user-password-input" aria-label="Initial Password" type="text" required minLength={8} value={newUserData.password} onChange={e => setNewUserData({ ...newUserData, password: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" />
                 </div>
               </div>
               {newUserData.role === 'student' && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Roll Number</label>
-                    <input type="text" value={newUserData.roll_number} onChange={e => setNewUserData({ ...newUserData, roll_number: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" placeholder="Optional" />
+                    <label htmlFor="user-rollnumber-input" className="block text-xs font-semibold text-slate-700 mb-1">Roll Number</label>
+                    <input id="user-rollnumber-input" aria-label="Roll Number" type="text" value={newUserData.roll_number} onChange={e => setNewUserData({ ...newUserData, roll_number: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50" placeholder="Optional" />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Class Assignment</label>
-                    <select value={newUserData.class_id} onChange={e => setNewUserData({ ...newUserData, class_id: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50">
+                    <label htmlFor="user-class-select" className="block text-xs font-semibold text-slate-700 mb-1">Class Assignment</label>
+                    <select id="user-class-select" aria-label="Class Assignment" value={newUserData.class_id} onChange={e => setNewUserData({ ...newUserData, class_id: e.target.value })} className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-slate-50">
                       {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>

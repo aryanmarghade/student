@@ -20,3 +20,7 @@ You are working on the Vission Academy project. The following rules are MANDATOR
 
 5. **Documentation Synchronization**:
    - After completing code modifications, run `project-map-sync` to update `PROJECT_MAP.txt` with change summaries, schema updates, and audit records.
+
+6. **Strict Visual & Design Freeze**:
+   - Do NOT change the website's look, layout, colors, text, or design.
+   - Only fix bugs and add tests.

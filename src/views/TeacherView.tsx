@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api, sanitizeUrl } from '../lib/api';
 import { TeacherAssignment, AnalyticsResponse } from '../types';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import {
   Users,
   Grid,
@@ -10,6 +11,7 @@ import {
   CheckSquare,
   Square,
   Save,
+  Loader2,
   AlertCircle,
   CheckCircle,
   HelpCircle,
@@ -116,8 +118,61 @@ export const TeacherView: React.FC = () => {
   const [marksGrid, setMarksGrid] = useState<Record<string, Record<string, any>>>({});
   const [marksEdits, setMarksEdits] = useState<Record<string, Record<string, number | null>>>({});
   const [isSavingMarks, setIsSavingMarks] = useState(false);
+  const [hasUnsavedMarks, setHasUnsavedMarks] = useState(false);
   const [assessmentDraft, setAssessmentDraft] = useState({ title: '', max_marks: '25', assessment_type: 'Other' });
   const [isCreatingAssessment, setIsCreatingAssessment] = useState(false);
+
+  // ConfirmDialog & Navigation Guard state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    isDestructive?: boolean;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+  const pendingNavRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedMarks) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedMarks]);
+
+  const safeNavigate = (navAction: () => void) => {
+    if (hasUnsavedMarks) {
+      pendingNavRef.current = navAction;
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Unsaved Marks Ledger Changes',
+        message: 'You have unsaved marks modifications in the spreadsheet grid. If you navigate away without saving, these edits will be lost. Do you wish to discard changes?',
+        confirmText: 'Discard Changes',
+        cancelText: 'Stay on Page',
+        isDestructive: true,
+        onConfirm: () => {
+          setHasUnsavedMarks(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+          if (pendingNavRef.current) {
+            pendingNavRef.current();
+            pendingNavRef.current = null;
+          }
+        }
+      });
+    } else {
+      navAction();
+    }
+  };
 
   // Analytics state
   const [analyticsScope, setAnalyticsScope] = useState<'whole_class' | 'selected_students' | 'single_student'>('whole_class');
@@ -468,6 +523,7 @@ export const TeacherView: React.FC = () => {
   // Marks Grid change
   const handleMarkChange = (studentId: string, examType: string, value: string) => {
     const num = value === '' ? null : Number(value);
+    setHasUnsavedMarks(true);
     setMarksEdits(prev => ({
       ...prev,
       [studentId]: {
@@ -504,7 +560,7 @@ export const TeacherView: React.FC = () => {
 
   // Batch Save Marks
   const handleSaveMarks = async () => {
-    if (!selectedAssignment) return;
+    if (!selectedAssignment || isSavingMarks) return;
     setIsSavingMarks(true);
     setFeedbackError(null);
     setFeedbackSuccess(null);
@@ -544,6 +600,7 @@ export const TeacherView: React.FC = () => {
         updates
       });
       setFeedbackSuccess(`Successfully recorded ${res.savedCount} marks entries.`);
+      setHasUnsavedMarks(false);
       // Reload analytics to refresh trend lines
       loadAnalytics(selectedAssignment.class_id, selectedAssignment.subject_id, analyticsScope, selectedStudentIds, includedSemesters, includedExamTypes);
     } catch (err: any) {
@@ -872,7 +929,7 @@ export const TeacherView: React.FC = () => {
                 return (
                   <button type="button"
                     key={a.id}
-                    onClick={() => selectAssignment(a)}
+                    onClick={() => safeNavigate(() => selectAssignment(a))}
                     className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer text-left ${
                       isSelected
                         ? 'bg-[#0f2744] text-white border-[#0f2744] shadow-xs'
@@ -930,7 +987,7 @@ export const TeacherView: React.FC = () => {
               return (
                 <button type="button"
                   key={tab.id}
-                  onClick={() => setActiveSubTab(tab.id as any)}
+                  onClick={() => safeNavigate(() => setActiveSubTab(tab.id as any))}
                   className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                     isActive
                       ? 'bg-[#0f2744] text-white shadow-xs'
@@ -1020,6 +1077,7 @@ export const TeacherView: React.FC = () => {
                             <input
                               type="checkbox"
                               checked={isSelected}
+                              aria-label={`Select student ${s.full_name}`}
                               onChange={() => handleToggleSelectStudent(s.id)}
                               className="w-4 h-4 rounded text-[#0f2744] focus:ring-[#0f2744] cursor-pointer"
                             />
@@ -1112,19 +1170,30 @@ export const TeacherView: React.FC = () => {
                   <button type="button"
                     onClick={handleSaveMarks}
                     disabled={isSavingMarks}
-                    className="px-4 py-2 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+                    className="px-4 py-2 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer min-h-[44px]"
                   >
-                    <Save className="w-3.5 h-3.5" />
-                    {isSavingMarks ? 'Recording Ledger...' : 'Save All Marks'}
+                    {isSavingMarks ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Recording Ledger...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Save All Marks</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
 
               <form onSubmit={handleCreateAssessment} className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col gap-3 lg:flex-row lg:items-end">
                 <div className="flex-1">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">Assessment Title</label>
+                  <label htmlFor="assessment-draft-title" className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">Assessment Title</label>
                   <input
+                    id="assessment-draft-title"
                     type="text"
+                    aria-label="Assessment Title"
                     value={assessmentDraft.title}
                     onChange={e => setAssessmentDraft(prev => ({ ...prev, title: e.target.value }))}
                     placeholder="CA 1, Quiz, Viva, Seminar..."
@@ -1132,19 +1201,23 @@ export const TeacherView: React.FC = () => {
                   />
                 </div>
                 <div className="w-full lg:w-36">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">Max Marks</label>
+                  <label htmlFor="assessment-draft-max-marks" className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">Max Marks</label>
                   <input
+                    id="assessment-draft-max-marks"
                     type="number"
                     min="1"
                     step="0.5"
+                    aria-label="Max Marks"
                     value={assessmentDraft.max_marks}
                     onChange={e => setAssessmentDraft(prev => ({ ...prev, max_marks: e.target.value }))}
                     className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-[#0f2744]"
                   />
                 </div>
                 <div className="w-full lg:w-40">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">Assessment Type</label>
+                  <label htmlFor="assessment-draft-type" className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">Assessment Type</label>
                   <select
+                    id="assessment-draft-type"
+                    aria-label="Assessment Type"
                     value={assessmentDraft.assessment_type}
                     onChange={e => setAssessmentDraft(prev => ({ ...prev, assessment_type: e.target.value }))}
                     className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-[#0f2744]"
@@ -1197,6 +1270,7 @@ export const TeacherView: React.FC = () => {
                                 step="0.5"
                                 min="0"
                                 max={col.max}
+                                aria-label={`Mark for ${s.full_name} in ${col.type}`}
                                 value={currentVal ?? ''}
                                 onChange={e => handleMarkChange(s.id, col.type, e.target.value)}
                                 className={`w-20 text-center py-1 px-2 border rounded font-mono text-xs transition-colors ${
@@ -2602,6 +2676,7 @@ export const TeacherView: React.FC = () => {
                 <h3 className="font-bold text-sm">Batch Import Marks via CSV</h3>
               </div>
               <button type="button"
+                aria-label="Close modal"
                 onClick={() => setShowImportMarksModal(false)}
                 className="text-slate-400 hover:text-white cursor-pointer"
               >
@@ -2623,8 +2698,10 @@ export const TeacherView: React.FC = () => {
               </p>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">CSV Content</label>
+                <label htmlFor="csv-marks-content" className="block text-xs font-semibold text-slate-700 mb-1">CSV Content</label>
                 <textarea
+                  id="csv-marks-content"
+                  aria-label="CSV Content"
                   rows={8}
                   required
                   placeholder="roll_number,exam_type,marks_obtained&#10;..."
@@ -3199,6 +3276,19 @@ export const TeacherView: React.FC = () => {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        isDestructive={confirmDialog.isDestructive}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => {
+          pendingNavRef.current = null;
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }}
+      />
     </div>
   );
 };

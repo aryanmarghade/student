@@ -9,6 +9,9 @@ let tokenExpiryTimestamp: number | null = null;
 let refreshPromise: Promise<string | null> | null = null;
 
 export function getToken(): string | null {
+  if (!inMemoryAccessToken && typeof window !== 'undefined' && (window as any).__INITIAL_TOKEN__) {
+    setToken((window as any).__INITIAL_TOKEN__);
+  }
   return inMemoryAccessToken;
 }
 

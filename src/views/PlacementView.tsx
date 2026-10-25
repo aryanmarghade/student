@@ -228,6 +228,7 @@ export const PlacementView: React.FC = () => {
               <div className="flex items-center gap-4">
                 <select
                   value={selectedYear}
+                  aria-label="Filter students by academic year"
                   onChange={e => setSelectedYear(e.target.value)}
                   className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                 >
