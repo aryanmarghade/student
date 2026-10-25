@@ -313,8 +313,9 @@ router.post('/marksheets/bulk-zip', (req: AuthRequest, res, next) => {
     }
   }
 
-  // Guard 3: Running actual decompressed bytes check (do NOT trust declared uncompressed sizes)
-  const MAX_TOTAL_UNCOMPRESSED_BYTES = 200 * 1024 * 1024; // 200 MB
+  // Guard 3: Streaming actual decompressed bytes check per entry and cumulative (do NOT trust declared uncompressed sizes)
+  const MAX_ENTRY_UNCOMPRESSED_BYTES = 25 * 1024 * 1024; // 25 MB per entry
+  const MAX_TOTAL_UNCOMPRESSED_BYTES = 200 * 1024 * 1024; // 200 MB total
   let cumulativeBytesExtracted = 0;
 
   const allStudents = (await query<any>('SELECT s.id, s.roll_number, u.full_name FROM students s JOIN users u ON u.id=s.user_id')).rows;
@@ -337,14 +338,46 @@ router.post('/marksheets/bulk-zip', (req: AuthRequest, res, next) => {
 
     let pdfBuffer: Buffer;
     try {
-      pdfBuffer = Buffer.from(await zipEntry.async('arraybuffer'));
-      cumulativeBytesExtracted += pdfBuffer.length;
-      if (cumulativeBytesExtracted > MAX_TOTAL_UNCOMPRESSED_BYTES) {
-        return res.status(400).json({
-          error: 'ZIP uncompressed size limit exceeded: actual decompressed size exceeds 200 MB threshold.',
+      pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
+        const stream = zipEntry.nodeStream('nodebuffer');
+        const chunks: Buffer[] = [];
+        let entryBytes = 0;
+        let streamAbortError: any = null;
+
+        stream.on('data', (chunk: Buffer) => {
+          if (streamAbortError) return;
+          entryBytes += chunk.length;
+          if (entryBytes > MAX_ENTRY_UNCOMPRESSED_BYTES) {
+            streamAbortError = new Error(`ZIP entry size limit exceeded: entry exceeds 25 MB decompressed limit.`);
+            streamAbortError.code = 'ENTRY_LIMIT_EXCEEDED';
+            stream.destroy();
+            reject(streamAbortError);
+            return;
+          }
+          if (cumulativeBytesExtracted + entryBytes > MAX_TOTAL_UNCOMPRESSED_BYTES) {
+            streamAbortError = new Error(`ZIP uncompressed size limit exceeded: actual decompressed size exceeds 200 MB threshold.`);
+            streamAbortError.code = 'TOTAL_LIMIT_EXCEEDED';
+            stream.destroy();
+            reject(streamAbortError);
+            return;
+          }
+          chunks.push(chunk);
         });
-      }
+
+        stream.on('end', () => {
+          if (streamAbortError) return;
+          cumulativeBytesExtracted += entryBytes;
+          resolve(Buffer.concat(chunks));
+        });
+
+        stream.on('error', (err: any) => {
+          if (!streamAbortError) reject(err);
+        });
+      });
     } catch (extractErr: any) {
+      if (extractErr?.code === 'ENTRY_LIMIT_EXCEEDED' || extractErr?.code === 'TOTAL_LIMIT_EXCEEDED') {
+        return res.status(400).json({ error: extractErr.message });
+      }
       results.push({
         file: basename,
         status: 'error',

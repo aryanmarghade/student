@@ -344,4 +344,30 @@ test.describe('Phase 2B: Bulk ZIP Archive Protection (Zip-Slip & Zip-Bomb Defens
       expect([400, 422]).toContain(res.status());
     }
   });
+
+  test('Bulk ZIP upload stream-aborts decompression when single entry exceeds 25MB decompressed limit', async ({ request }) => {
+    // Compression bomb: 30MB of zeroes compresses into ~15KB
+    const zip = new JSZip();
+    const bombBuffer = Buffer.alloc(30 * 1024 * 1024);
+    bombBuffer.write('%PDF-1.4');
+    zip.file(`${studentUser.roll_number}.pdf`, bombBuffer, { compression: 'DEFLATE', compressionOptions: { level: 9 } });
+
+    const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+
+    const res = await request.post(`${BASE_URL}/api/admin/marksheets/bulk-zip`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      multipart: {
+        semester_id: activeSemester.id,
+        file: {
+          name: 'entry_bomb.zip',
+          mimeType: 'application/zip',
+          buffer: zipBuffer,
+        },
+      },
+    });
+
+    expect(res.status()).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/entry.*size limit exceeded|entry exceeds 25 MB/i);
+  });
 });
