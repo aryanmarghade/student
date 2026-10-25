@@ -4,6 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import authRoutes from './server/routes/auth-routes.js';
 import adminRoutes from './server/routes/admin-routes.js';
 import teacherRoutes from './server/routes/teacher-routes.js';
@@ -99,9 +100,12 @@ async function startServer() {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Auth-Refresh'],
     })
   );
+
+  // Cookie parsing for secure refresh token
+  app.use(cookieParser());
 
   // Start background schedulers
   startGitHubScheduler().catch((err) =>

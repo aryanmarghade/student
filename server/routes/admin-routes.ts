@@ -11,6 +11,7 @@ import { runMonthlyGitHubSync, currentMonth } from '../github-sync.js';
 import { runMonthlyLinkedInSync } from '../linkedin-sync.js';
 import { runMonthlyHackerRankSync } from '../hackerrank-sync.js';
 import { runMonthlyLeetCodeSync } from '../leetcode-sync.js';
+import { revokeAllUserRefreshTokens } from '../refresh-tokens.js';
 
 const router = Router();
 const root = process.cwd();
@@ -127,6 +128,9 @@ router.patch('/users/:id/status', async (req: AuthRequest, res) => {
   if (req.params.id === req.user!.id) return res.status(400).json({ error: 'You cannot deactivate your own master administrator account.' });
   const r = await query<{ is_active: boolean; full_name: string }>('UPDATE users SET is_active=NOT is_active WHERE id=$1 RETURNING is_active,full_name', [req.params.id]);
   if (!r.rowCount) return res.status(404).json({ error: 'User not found.' });
+  if (!r.rows[0].is_active) {
+    await revokeAllUserRefreshTokens(req.params.id);
+  }
   await logActivity(req.user!.id, 'USER_STATUS_CHANGE', 'USER', req.params.id, `Changed account status for ${r.rows[0].full_name}.`);
   res.json({ message: 'Account status updated successfully.', is_active: r.rows[0].is_active });
 });
@@ -137,6 +141,7 @@ router.post('/users/:id/reset-password', async (req: AuthRequest, res) => {
   const tempPassword = password || `VA-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
   const r = await query<{ full_name: string }>('UPDATE users SET password_hash=$1,must_reset_password=TRUE WHERE id=$2 RETURNING full_name', [await hashPassword(tempPassword), req.params.id]);
   if (!r.rowCount) return res.status(404).json({ error: 'User not found.' });
+  await revokeAllUserRefreshTokens(req.params.id);
   await logActivity(req.user!.id, 'ADMIN_PASSWORD_RESET', 'USER', req.params.id, `Reset password for ${r.rows[0].full_name}.`);
   const msg = password ? `Password reset successfully for ${r.rows[0].full_name}.` : `Password reset successfully for ${r.rows[0].full_name}. Temporary password: ${tempPassword}`;
   res.json({ message: msg, tempPassword });

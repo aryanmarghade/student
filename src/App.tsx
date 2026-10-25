@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { api, getToken, clearToken, setToken } from './lib/api';
+import { api, getToken, clearToken, setToken, refreshSession, getTokenExpiry } from './lib/api';
 import { User, NotificationItem } from './types';
 import { Header } from './components/Header';
 import { AiAssistantDrawer } from './components/AiAssistantDrawer';
@@ -13,6 +13,8 @@ import { PlacementView } from './views/PlacementView';
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [sessionWarning, setSessionWarning] = useState<{ minutesLeft: number } | null>(null);
+  const [isRefreshingSession, setIsRefreshingSession] = useState(false);
 
   // Notifications
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -26,12 +28,14 @@ export default function App() {
   }, []);
 
   const checkInitialAuth = async () => {
-    const token = getToken();
+    let token = getToken();
+    if (!token) {
+      token = await refreshSession();
+    }
     if (token) {
       try {
         const res = await api.getCurrentUser();
         if (res.user.must_reset_password) {
-          // Enforce forced password reset; user cannot access workspace until reset
           clearToken();
           setCurrentUser(null);
         } else {
@@ -114,9 +118,63 @@ export default function App() {
     }
   }, [currentUser, currentPath]);
 
-  const handleLogout = () => {
-    clearToken();
+  // Background session manager & pre-expiry monitor
+  useEffect(() => {
+    if (!currentUser) {
+      setSessionWarning(null);
+      return;
+    }
+
+    const checkExpiry = async () => {
+      const expiry = getTokenExpiry();
+      if (!expiry) return;
+
+      const secondsLeft = Math.round((expiry - Date.now()) / 1000);
+
+      // Silent refresh when <= 2 minutes left
+      if (secondsLeft <= 120 && secondsLeft > 0) {
+        const refreshed = await refreshSession();
+        if (refreshed) {
+          setSessionWarning(null);
+          return;
+        }
+      }
+
+      // If <= 5 minutes left and refresh failed/did not occur, show pre-expiry warning!
+      if (secondsLeft <= 300 && secondsLeft > 0) {
+        setSessionWarning({ minutesLeft: Math.max(1, Math.ceil(secondsLeft / 60)) });
+      } else if (secondsLeft <= 0) {
+        // Expired completely
+        clearToken();
+        setCurrentUser(null);
+        setSessionWarning(null);
+      } else {
+        setSessionWarning(null);
+      }
+    };
+
+    const interval = setInterval(checkExpiry, 15000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  const handleStaySignedIn = async () => {
+    setIsRefreshingSession(true);
+    try {
+      const refreshed = await refreshSession();
+      if (refreshed) {
+        setSessionWarning(null);
+      } else {
+        alert('Session could not be extended. Please save your work and sign in again.');
+      }
+    } finally {
+      setIsRefreshingSession(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await api.logout();
     setCurrentUser(null);
+    setSessionWarning(null);
     window.history.pushState(null, '', '/login');
     setCurrentPath('/login');
   };
@@ -196,6 +254,39 @@ export default function App() {
         onOpenNotifs={() => setIsNotifsOpen(true)}
         unreadNotifsCount={unreadCount}
       />
+
+      {/* Accessible Pre-Expiry Session Warning Banner */}
+      {sessionWarning && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="bg-amber-500 text-amber-950 px-4 py-2.5 flex items-center justify-between text-xs font-semibold shadow-md border-b border-amber-600 sticky top-0 z-50 animate-bounce-subtle"
+        >
+          <div className="flex items-center space-x-2">
+            <span className="text-base" aria-hidden="true">⏳</span>
+            <span>
+              Your session expires in {sessionWarning.minutesLeft} minute{sessionWarning.minutesLeft > 1 ? 's' : ''}. Unsaved marks or form inputs may be lost.
+            </span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={handleStaySignedIn}
+              disabled={isRefreshingSession}
+              className="bg-amber-950 hover:bg-black text-amber-100 px-3 py-1.5 rounded font-medium transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {isRefreshingSession ? 'Extending...' : 'Stay Signed In'}
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="bg-amber-600/30 hover:bg-amber-600/50 text-amber-950 px-2.5 py-1.5 rounded transition-colors cursor-pointer"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main View Area by Role */}
       <main className="flex-1">

@@ -4,18 +4,98 @@ import {
   SportItem, StudentLinkedInPostItem, StudentHackerRankEvidenceItem, RoleReadinessEvaluation
 } from '../types';
 
-const TOKEN_KEY = 'vission_academy_jwt';
+let inMemoryAccessToken: string | null = null;
+let tokenExpiryTimestamp: number | null = null;
+let refreshPromise: Promise<string | null> | null = null;
 
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return inMemoryAccessToken;
 }
 
-export function setToken(token: string) {
-  localStorage.setItem(TOKEN_KEY, token);
+export function getTokenExpiry(): number | null {
+  return tokenExpiryTimestamp;
+}
+
+export function setToken(token: string | null) {
+  inMemoryAccessToken = token;
+  if (token) {
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]));
+        tokenExpiryTimestamp = payload.exp ? payload.exp * 1000 : null;
+      }
+    } catch {
+      tokenExpiryTimestamp = null;
+    }
+  } else {
+    tokenExpiryTimestamp = null;
+  }
 }
 
 export function clearToken() {
-  localStorage.removeItem(TOKEN_KEY);
+  inMemoryAccessToken = null;
+  tokenExpiryTimestamp = null;
+  try {
+    localStorage.removeItem('vission_academy_jwt');
+  } catch {}
+}
+
+// Cross-tab broadcast listener for session synchronization
+if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+  try {
+    const sessionChannel = new BroadcastChannel('va_session_channel');
+    sessionChannel.onmessage = (event) => {
+      if (event.data?.type === 'TOKEN_REFRESHED' && event.data?.token) {
+        setToken(event.data.token);
+      } else if (event.data?.type === 'SESSION_LOGOUT') {
+        clearToken();
+      }
+    };
+  } catch {}
+}
+
+export async function refreshSession(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Auth-Refresh': '1',
+        },
+        credentials: 'include',
+      });
+
+      if (!res.ok) {
+        clearToken();
+        return null;
+      }
+
+      const data = await res.json();
+      if (data.token) {
+        setToken(data.token);
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          try {
+            const bc = new BroadcastChannel('va_session_channel');
+            bc.postMessage({ type: 'TOKEN_REFRESHED', token: data.token });
+            bc.close();
+          } catch {}
+        }
+        return data.token;
+      }
+      clearToken();
+      return null;
+    } catch {
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
 
 export function sanitizeUrl(url?: string | null): string {
@@ -33,7 +113,7 @@ export function sanitizeUrl(url?: string | null): string {
 }
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken();
+  let token = getToken();
   const headers: Record<string, string> = {
     ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers as Record<string, string> || {}),
@@ -46,7 +126,26 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const res = await fetch(endpoint, {
     ...options,
     headers,
+    credentials: 'include',
   });
+
+  // Auto-retry on 401 using silent refresh
+  if (res.status === 401 && !endpoint.includes('/api/auth/login') && !endpoint.includes('/api/auth/refresh')) {
+    const newToken = await refreshSession();
+    if (newToken) {
+      headers['Authorization'] = `Bearer ${newToken}`;
+      const retryRes = await fetch(endpoint, {
+        ...options,
+        headers,
+        credentials: 'include',
+      });
+      const retryData = await retryRes.json().catch(() => ({}));
+      if (!retryRes.ok) {
+        throw new Error(retryData.error || retryData.message || `Request failed with status ${retryRes.status}`);
+      }
+      return retryData as T;
+    }
+  }
 
   const data = await res.json().catch(() => ({}));
 
@@ -85,6 +184,30 @@ export const api = {
     request<{ message: string }>('/api/auth/change-password', {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+
+  logout: async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Auth-Refresh': '1' },
+        credentials: 'include',
+      });
+    } catch {}
+    clearToken();
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        const bc = new BroadcastChannel('va_session_channel');
+        bc.postMessage({ type: 'SESSION_LOGOUT' });
+        bc.close();
+      } catch {}
+    }
+  },
+
+  logoutAll: () =>
+    request<{ message: string }>('/api/auth/logout-all', {
+      method: 'POST',
+      headers: { 'X-Auth-Refresh': '1' },
     }),
 
   // Admin
