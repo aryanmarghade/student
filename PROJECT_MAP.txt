@@ -347,4 +347,5 @@ Core Tables:
 - 2026-10-02: LeetCode toggle on/off verified with visual screenshot proof.
 - 2026-10-02: Placement Account Synced Data Verified for Aryan Marghade (16 Repos GitHub) & Atharva Ghodki (GitHub, LinkedIn) with browser screenshots.
 - 2026-10-02: Placement student search & multi-year filtering empty state handling resolved.
+- 2026-10-25: Phase 1 Critical Auth & Privilege Fixes verified via Playwright suite tests/rbac.spec.ts (43/43 passed). Server-side must_reset_password blocks non-auth endpoints with 403; PUT /api/placement/visibility returns 403.
 =============================================================================

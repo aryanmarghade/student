@@ -48,46 +48,10 @@ router.get('/visibility', async (req: AuthRequest, res) => {
   res.json(visibility);
 });
 
-router.put('/visibility', async (req: AuthRequest, res) => {
-  const {
-    github_enabled = true,
-    linkedin_enabled = true,
-    hackerrank_enabled = true,
-    leetcode_enabled = true,
-    hackathon_enabled = true,
-    academic_enabled = true,
-    sports_enabled = true,
-  } = req.body;
-
-  const result = await query<any>(
-    `INSERT INTO placement_analytics_visibility (
-       placement_user_id, github_enabled, linkedin_enabled, hackerrank_enabled,
-       leetcode_enabled, hackathon_enabled, academic_enabled, sports_enabled, updated_by
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     ON CONFLICT (placement_user_id) DO UPDATE SET
-       github_enabled = EXCLUDED.github_enabled,
-       linkedin_enabled = EXCLUDED.linkedin_enabled,
-       hackerrank_enabled = EXCLUDED.hackerrank_enabled,
-       leetcode_enabled = EXCLUDED.leetcode_enabled,
-       hackathon_enabled = EXCLUDED.hackathon_enabled,
-       academic_enabled = EXCLUDED.academic_enabled,
-       sports_enabled = EXCLUDED.sports_enabled,
-       updated_at = CURRENT_TIMESTAMP,
-       updated_by = EXCLUDED.updated_by
-     RETURNING *`,
-    [
-      req.user!.id,
-      github_enabled,
-      linkedin_enabled,
-      hackerrank_enabled,
-      leetcode_enabled,
-      hackathon_enabled,
-      academic_enabled,
-      sports_enabled,
-      req.user!.id,
-    ]
-  );
-  res.json({ message: 'Visibility preferences updated.', visibility: result.rows[0] });
+router.put('/visibility', async (_req: AuthRequest, res) => {
+  return res.status(403).json({
+    error: 'Access forbidden: Analytics visibility settings can only be configured by an institutional administrator.',
+  });
 });
 
 router.get('/dashboard', async (req: AuthRequest, res) => {
@@ -303,8 +267,10 @@ router.get('/job-descriptions', async (_req: AuthRequest, res) => {
 
 router.post('/job-descriptions', async (req: AuthRequest, res) => {
   try {
-    const { title, company = 'Campus Recruitment Partner', descriptionText, description, minCgpa, maxBacklogs, requiredSkills, eligibleBranches } = req.body;
-    const desc = descriptionText || description;
+    const title = req.body.title || req.body.roleTitle;
+    const company = req.body.company || req.body.companyName || 'Campus Recruitment Partner';
+    const desc = req.body.descriptionText || req.body.description;
+    const { minCgpa, maxBacklogs, requiredSkills, eligibleBranches } = req.body;
     if (!title || !desc) {
       return res.status(400).json({ error: 'Job title and description text are required.' });
     }

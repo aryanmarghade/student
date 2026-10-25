@@ -24,6 +24,20 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     const user = result.rows[0];
     if (!user) return res.status(401).json({ error: 'User account not found.' });
     if (!user.is_active) return res.status(403).json({ error: 'Account has been deactivated by administrator.' });
+    if (user.must_reset_password) {
+      const fullPath = (req.baseUrl || '') + (req.path || '');
+      const isAllowed = fullPath === '/api/auth/reset-first-login-password' ||
+                        fullPath === '/api/auth/me' ||
+                        req.path === '/reset-first-login-password' ||
+                        req.path === '/me';
+      if (!isAllowed) {
+        return res.status(403).json({
+          error: 'Password reset required before accessing institutional resources.',
+          code: 'MUST_RESET_PASSWORD',
+        });
+      }
+    }
+    decoded.must_reset_password = user.must_reset_password;
     if (user.role === 'student') {
       const student = (await query<{id:string;class_id:string|null}>('SELECT id,class_id FROM students WHERE user_id=$1', [user.id])).rows[0];
       decoded.student_id = student?.id;

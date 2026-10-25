@@ -30,8 +30,14 @@ export default function App() {
     if (token) {
       try {
         const res = await api.getCurrentUser();
-        setCurrentUser(res.user);
-        loadNotifications(res.user);
+        if (res.user.must_reset_password) {
+          // Enforce forced password reset; user cannot access workspace until reset
+          clearToken();
+          setCurrentUser(null);
+        } else {
+          setCurrentUser(res.user);
+          loadNotifications(res.user);
+        }
       } catch (err) {
         clearToken();
         setCurrentUser(null);
