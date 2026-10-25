@@ -852,6 +852,79 @@ router.delete('/linkedin/posts/:id', async (req: AuthRequest, res) => {
   res.json({ message: 'LinkedIn post removed' });
 });
 
+// ── HackerRank Student Evidence ──────────────────────────────────────────────
+
+router.get('/hackerrank/evidence', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s) return res.status(404).json({ error: 'Student record not found.' });
+  const rows = await query<any>(
+    `SELECT id, student_id, skill_name, badge_name, 
+            badge_name AS badge_or_certificate_name,
+            skill_name AS skill_domain,
+            'badge' AS evidence_type,
+            stars AS star_rating,
+            certificate_url,
+            evidence_url,
+            verification_status,
+            created_at
+     FROM student_hackerrank_evidence
+     WHERE student_id = $1
+     ORDER BY created_at DESC`,
+    [s.id]
+  );
+  res.json(rows.rows);
+});
+
+router.post('/hackerrank/evidence', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s) return res.status(404).json({ error: 'Student record not found.' });
+  const {
+    badge_or_certificate_name,
+    skill_domain = 'Problem Solving',
+    evidence_type = 'badge',
+    star_rating = 0,
+    certificate_url,
+  } = req.body;
+
+  if (!badge_or_certificate_name || !badge_or_certificate_name.trim()) {
+    return res.status(400).json({ error: 'Badge or certificate name is required.' });
+  }
+
+  const evidenceId = id('hre');
+  await query(
+    `INSERT INTO student_hackerrank_evidence (id, student_id, skill_name, badge_name, stars, certificate_url, evidence_url, verification_status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'Student Submitted')`,
+    [
+      evidenceId,
+      s.id,
+      String(skill_domain || 'Problem Solving').trim(),
+      String(badge_or_certificate_name).trim(),
+      Number(star_rating) || 0,
+      certificate_url ? String(certificate_url).trim() : null,
+      certificate_url ? String(certificate_url).trim() : null
+    ]
+  );
+
+  const created = (await query<any>('SELECT * FROM student_hackerrank_evidence WHERE id = $1', [evidenceId])).rows[0];
+  res.status(201).json({
+    message: 'HackerRank evidence submitted for faculty verification',
+    evidence: {
+      ...created,
+      badge_or_certificate_name: created.badge_name,
+      skill_domain: created.skill_name,
+      star_rating: created.stars,
+      evidence_type: evidence_type || 'badge'
+    }
+  });
+});
+
+router.delete('/hackerrank/evidence/:id', async (req: AuthRequest, res) => {
+  const s = await ownStudent(req.user!.id);
+  if (!s) return res.status(404).json({ error: 'Student record not found.' });
+  await query('DELETE FROM student_hackerrank_evidence WHERE id = $1 AND student_id = $2', [req.params.id, s.id]);
+  res.json({ message: 'HackerRank evidence removed' });
+});
+
 // ── 360° Comprehensive Evidence Profile ──────────────────────────────────────
 
 router.get('/intelligence-evidence', async (req: AuthRequest, res) => {

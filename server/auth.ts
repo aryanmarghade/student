@@ -70,7 +70,8 @@ const rateBuckets = new Map<string, RateBucket>();
 export function rateLimit(limit: number, windowMs: number, keyPrefix: string, keyGenerator?: (req: Request) => string) {
   return (req: Request, res: Response, next: NextFunction) => {
     const isProd = process.env.NODE_ENV === 'production';
-    if (!isProd && (process.env.NODE_ENV === 'test' || req.headers['x-bypass-ratelimit'] === 'qa-stress-suite')) {
+    const allowBypass = process.env.ALLOW_TEST_RATE_LIMIT_BYPASS === 'true';
+    if (!isProd && allowBypass && req.headers['x-bypass-ratelimit'] === 'qa-stress-suite') {
       return next();
     }
     const ip = req.ip || req.socket.remoteAddress || 'unknown';

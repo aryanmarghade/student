@@ -128,6 +128,7 @@ Purpose: Student REST API.
 Responsibilities:
 - Self profile management (portfolio, bio, links).
 - Project portfolio, certifications, achievements, and hackathons submission.
+- HackerRank profile evidence endpoints (GET, POST, DELETE /api/student/hackerrank/evidence).
 - Marks, semester transcripts, documents vault, and notification reads.
 Status: ACTIVE.
 
@@ -394,6 +395,14 @@ Core Tables:
   * Interaction Flows & Dialog Security Suite: tests/phase4b-interaction-flows.spec.ts (4/4 passed) verifying Sync All ConfirmDialog flow, Placement dashboard connection retry flow, ConfirmDialog focus trapping and focus restoration, and Teacher marks save double-submit prevention + unsaved changes guard.
   * Comprehensive WCAG Accessibility Suite Across All Tabs & Modals: tests/phase4b-axe-all-tabs-modals.spec.ts (4/4 passed) scanning all 10 Admin tabs & 4 modals, all 4 Teacher sub-tabs & modal, all 9 Student tabs & 3 modals, and all Placement tabs. 0 serious or critical violations across the entire application.
   * Rate-Limit Resilient Test Architecture: Hydrated access token via window.__INITIAL_TOKEN__ and x-bypass-ratelimit headers for stress runs without modifying production rate limits. All 115 Playwright tests passed in single worker mode.
+- 2026-10-25: A2 Hardening, Auth Rate Limit Defenses, Dependency & CSP Audit (118/118 passed):
+  * Test Hooks Complete Removal: Removed window.__INITIAL_TOKEN__ from src/lib/api.ts. Production build verified to contain 0 test hooks or window.__ references. All tests authenticate through standard login UI forms.
+  * Rate-Limit Protection & Production Guard: Rate limits verified against baseline commit 533db00 (login retained at 15/5min, refresh at 10/1min, change-password at 5/5min, reset-password at 5/5min). Added explicit ALLOW_TEST_RATE_LIMIT_BYPASS=true flag check required alongside x-bypass-ratelimit header; verified in tests/hardening.spec.ts that production environment strictly ignores the bypass header.
+  * Dependency Overrides Elimination & Zero Vulnerabilities: Removed overrides for body-parser, proxy-addr, and source-map-js; express@4.22.3 and cookie-parser@1.4.7 natively resolve secure versions (body-parser@1.20.9, cookie@0.7.2). npm audit confirms 0 vulnerabilities.
+  * Production CSP Strict Compliance: Built production bundle and audited live response headers: default-src 'self', script-src 'self' (zero unsafe-inline, zero unsafe-eval), connect-src 'self' (zero localhost/ws), frame-ancestors 'none', object-src 'none'.
+  * HackerRank Evidence Route Fix: Implemented GET, POST, DELETE /api/student/hackerrank/evidence to eliminate Vite SPA HTML fallback returning non-array objects. Frontend defensive Array.isArray guard retained.
+  * Test Database Isolation: Cloned vission_academy_test from template; form submissions and interaction tests run isolated without mutating developer database.
+  * Full Test Suite: All 118 Playwright tests passing cleanly across all 4 roles.
 =============================================================================
 
 

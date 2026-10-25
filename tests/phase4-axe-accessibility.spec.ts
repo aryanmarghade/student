@@ -46,6 +46,13 @@ test.describe('Phase 4: Axe Accessibility & Responsive Audits Across All 4 Roles
     }
   });
 
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/**', async (route) => {
+      const headers = { ...route.request().headers(), 'x-bypass-ratelimit': 'qa-stress-suite' };
+      await route.continue({ headers });
+    });
+  });
+
   test.afterAll(async () => {
     try {
       for (const r of roles) {

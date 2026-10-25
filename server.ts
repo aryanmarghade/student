@@ -20,7 +20,7 @@ dotenv.config();
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // 1. Configure Trust Proxy from environment (default: false / 0 hops to prevent IP spoofing)
   const trustProxyEnv = process.env.TRUST_PROXY;
@@ -106,7 +106,7 @@ async function startServer() {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Auth-Refresh'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Auth-Refresh', 'X-Bypass-Ratelimit'],
     })
   );
 

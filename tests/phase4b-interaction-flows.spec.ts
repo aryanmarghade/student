@@ -11,34 +11,12 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 const BASE_URL = 'http://127.0.0.1:3000';
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
-async function loginAs(page: any, userId: string, targetPath: string) {
-  const userRes = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
-  const user = userRes.rows[0];
-  let studentData = undefined;
-  if (user?.role === 'student') {
-    const sRes = await pool.query('SELECT id, class_id FROM students WHERE user_id = $1', [userId]);
-    studentData = sRes.rows[0];
-  }
-  const accessToken = user ? generateToken(user, studentData) : null;
-  const { rawToken } = await issueRefreshToken(userId);
-
-  await page.context().addCookies([{
-    name: 'va_refresh_token',
-    value: rawToken,
-    domain: '127.0.0.1',
-    path: '/api/auth',
-    httpOnly: true,
-    sameSite: 'Strict'
-  }]);
-
-  if (accessToken) {
-    await page.addInitScript((jwt: string) => {
-      (window as any).__INITIAL_TOKEN__ = jwt;
-    }, accessToken);
-  }
-
-  await page.goto(`${BASE_URL}${targetPath}`);
-  await page.waitForLoadState('networkidle');
+async function loginAs(page: any, user: { email: string; pass: string }, targetPath: string) {
+  await page.goto(`${BASE_URL}/login`);
+  await page.fill('input[type="email"]', user.email);
+  await page.fill('input[type="password"]', user.pass);
+  await page.click('button[type="submit"]');
+  await page.waitForURL(`**${targetPath}`, { timeout: 15000 });
 }
 
 test.describe('Phase 4B: Interaction Flows & Dialog Security', () => {
@@ -101,8 +79,14 @@ test.describe('Phase 4B: Interaction Flows & Dialog Security', () => {
     await pool.end();
   });
 
+  test.beforeEach(async ({ context }) => {
+    await context.setExtraHTTPHeaders({
+      'x-bypass-ratelimit': 'qa-stress-suite'
+    });
+  });
+
   test('1. Sync All Confirm Flow: modal confirms before triggering sync API and displays loading/toast', async ({ page }) => {
-    await loginAs(page, adminUser.id, '/admin');
+    await loginAs(page, adminUser, '/admin');
     await expect(page).toHaveURL(`${BASE_URL}/admin`, { timeout: 15000 });
 
     // Navigate to Analytics Settings Tab
@@ -145,7 +129,7 @@ test.describe('Phase 4B: Interaction Flows & Dialog Security', () => {
       }
     });
 
-    await loginAs(page, placementUser.id, '/placement');
+    await loginAs(page, placementUser, '/placement');
     await expect(page).toHaveURL(`${BASE_URL}/placement`, { timeout: 15000 });
 
     // Verify error banner is shown with retry button
@@ -160,7 +144,7 @@ test.describe('Phase 4B: Interaction Flows & Dialog Security', () => {
   });
 
   test('3. ConfirmDialog Focus Trap & Focus Return: traps keyboard Tab and restores trigger focus on close', async ({ page }) => {
-    await loginAs(page, adminUser.id, '/admin');
+    await loginAs(page, adminUser, '/admin');
     await expect(page).toHaveURL(`${BASE_URL}/admin`, { timeout: 15000 });
 
     const analyticsTab = page.locator('button', { hasText: 'Analytics Settings' });
@@ -187,7 +171,7 @@ test.describe('Phase 4B: Interaction Flows & Dialog Security', () => {
   });
 
   test('4. Teacher Marks Save & Unsaved Changes Guard: loading state, no double submit, warning when navigating away', async ({ page }) => {
-    await loginAs(page, teacherUser.id, '/teacher');
+    await loginAs(page, teacherUser, '/teacher');
     await expect(page).toHaveURL(`${BASE_URL}/teacher`, { timeout: 15000 });
 
     // Navigate to Marks Spreadsheet Grid

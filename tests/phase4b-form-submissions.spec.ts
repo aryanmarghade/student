@@ -3,24 +3,20 @@ import bcrypt from 'bcryptjs';
 import pg from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
-import { issueRefreshToken } from '../server/refresh-tokens.js';
-
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const BASE_URL = 'http://127.0.0.1:3000';
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
-async function loginAs(page: any, userId: string, targetPath: string) {
-  const { rawToken } = await issueRefreshToken(userId);
-  await page.context().addCookies([{
-    name: 'va_refresh_token',
-    value: rawToken,
-    domain: '127.0.0.1',
-    path: '/api/auth',
-    httpOnly: true,
-    sameSite: 'Strict'
-  }]);
-  await page.goto(`${BASE_URL}${targetPath}`);
+async function loginAs(page: any, user: { email: string; pass: string }, targetPath: string) {
+  await page.goto(`${BASE_URL}/login`);
+  await page.fill('input[type="email"]', user.email);
+  await page.fill('input[type="password"]', user.pass);
+  await page.click('button[type="submit"]');
+  await page.waitForURL((url: URL) => !url.pathname.includes('/login'), { timeout: 15000 });
+  if (targetPath && !page.url().endsWith(targetPath)) {
+    await page.goto(`${BASE_URL}${targetPath}`);
+  }
   await page.waitForLoadState('networkidle');
 }
 
@@ -158,7 +154,7 @@ test.describe('Phase 4B: Form Submissions Across All Roles', () => {
   });
 
   test('3. Form Submit: Admin Add User Form creates and persists a new faculty account', async ({ page }) => {
-    await loginAs(page, adminUser.id, '/admin');
+    await loginAs(page, adminUser, '/admin');
 
     // Click User Directory tab
     await page.locator('button', { hasText: 'User Directory' }).click();
@@ -191,7 +187,7 @@ test.describe('Phase 4B: Form Submissions Across All Roles', () => {
   });
 
   test('4. Form Submit: Admin Broadcast Notice Form publishes institutional announcement', async ({ page }) => {
-    await loginAs(page, adminUser.id, '/admin');
+    await loginAs(page, adminUser, '/admin');
 
     // Click Broadcast Notices tab
     await page.locator('button', { hasText: 'Broadcast Notices' }).click();
@@ -210,7 +206,7 @@ test.describe('Phase 4B: Form Submissions Across All Roles', () => {
   });
 
   test('5. Form Submit: Student Edit Profile Form updates bio and links', async ({ page }) => {
-    await loginAs(page, studentUser.id, '/student');
+    await loginAs(page, studentUser, '/student');
 
     // Bio textarea in Profile tab
     const bioTextarea = page.locator('textarea[placeholder="Brief overview of your academic specializations, career goals, and technical focus..."]');
@@ -226,7 +222,7 @@ test.describe('Phase 4B: Form Submissions Across All Roles', () => {
   });
 
   test('6. Form Submit: Student Create Post Form publishes a portfolio update', async ({ page }) => {
-    await loginAs(page, studentUser.id, '/student');
+    await loginAs(page, studentUser, '/student');
 
     // Switch to Activity & Posts tab
     await page.locator('button', { hasText: 'Activity & Posts' }).click();
@@ -253,7 +249,7 @@ test.describe('Phase 4B: Form Submissions Across All Roles', () => {
   });
 
   test('7. Form Submit: Teacher Add Assessment Form creates new assessment column', async ({ page }) => {
-    await loginAs(page, teacherUser.id, '/teacher');
+    await loginAs(page, teacherUser, '/teacher');
 
     // Go to Spreadsheet Marks Entry Grid
     await page.locator('button', { hasText: 'Spreadsheet Marks Entry Grid' }).click();
@@ -270,5 +266,52 @@ test.describe('Phase 4B: Form Submissions Across All Roles', () => {
 
     // Verify column added to grid header
     await expect(page.locator('thead').locator(`text=${assessmentTitle}`)).toBeVisible({ timeout: 10000 });
+  });
+
+  test('8. Form Submit: Student HackerRank Evidence endpoints return array and persist evidence', async ({ request }) => {
+    // Authenticate via real login endpoint
+    const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
+      data: { email: studentUser.email, password: studentUser.pass },
+      headers: { 'x-bypass-ratelimit': 'qa-stress-suite' }
+    });
+    expect(loginRes.status()).toBe(200);
+    const { token } = await loginRes.json();
+
+    // Verify GET /api/student/hackerrank/evidence returns 200 and an array
+    const getRes = await request.get(`${BASE_URL}/api/student/hackerrank/evidence`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(getRes.status()).toBe(200);
+    const getData = await getRes.json();
+    expect(Array.isArray(getData)).toBe(true);
+
+    // Now test submitting a new evidence item
+    const postRes = await request.post(`${BASE_URL}/api/student/hackerrank/evidence`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      data: {
+        badge_or_certificate_name: 'Python (5 Stars)',
+        skill_domain: 'Python',
+        evidence_type: 'badge',
+        star_rating: 5,
+        certificate_url: 'https://www.hackerrank.com/certificates/test-cert'
+      }
+    });
+
+    expect(postRes.status()).toBe(201);
+    const postData = await postRes.json();
+    expect(postData.evidence).toBeDefined();
+    expect(postData.evidence.badge_or_certificate_name).toBe('Python (5 Stars)');
+
+    // Cleanup the evidence
+    if (postData.evidence?.id) {
+      const delRes = await request.delete(`${BASE_URL}/api/student/hackerrank/evidence/${postData.evidence.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      expect(delRes.status()).toBe(200);
+    }
   });
 });

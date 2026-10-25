@@ -4,41 +4,21 @@ import bcrypt from 'bcryptjs';
 import pg from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
-import { issueRefreshToken } from '../server/refresh-tokens.js';
-import { generateToken } from '../server/auth.js';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const BASE_URL = 'http://127.0.0.1:3000';
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
-async function loginAs(page: any, userId: string, targetPath: string) {
-  const userRes = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
-  const user = userRes.rows[0];
-  let studentData = undefined;
-  if (user?.role === 'student') {
-    const sRes = await pool.query('SELECT id, class_id FROM students WHERE user_id = $1', [userId]);
-    studentData = sRes.rows[0];
+async function loginAs(page: any, email: string, targetPath: string) {
+  await page.goto(`${BASE_URL}/login`);
+  await page.fill('input[type="email"]', email);
+  await page.fill('input[type="password"]', 'RolePassword123!');
+  await page.click('button[type="submit"]');
+  await page.waitForURL((url: URL) => !url.pathname.includes('/login'), { timeout: 15000 });
+  if (targetPath && !page.url().endsWith(targetPath)) {
+    await page.goto(`${BASE_URL}${targetPath}`);
   }
-  const accessToken = user ? generateToken(user, studentData) : null;
-  const { rawToken } = await issueRefreshToken(userId);
-
-  await page.context().addCookies([{
-    name: 'va_refresh_token',
-    value: rawToken,
-    domain: '127.0.0.1',
-    path: '/api/auth',
-    httpOnly: true,
-    sameSite: 'Strict'
-  }]);
-
-  if (accessToken) {
-    await page.addInitScript((jwt: string) => {
-      (window as any).__INITIAL_TOKEN__ = jwt;
-    }, accessToken);
-  }
-
-  await page.goto(`${BASE_URL}${targetPath}`);
   await page.waitForLoadState('networkidle');
 }
 
@@ -66,10 +46,20 @@ async function runAxeScan(page: any, contextName: string) {
 
 test.describe('Phase 4B: Comprehensive Axe Accessibility Across All Tabs and Modals', () => {
   let adminId: string;
+  let adminEmail: string;
   let teacherId: string;
+  let teacherEmail: string;
   let studentUserId: string;
+  let studentEmail: string;
   let placementId: string;
+  let placementEmail: string;
   let studentId: string;
+
+  test.beforeEach(async ({ context }) => {
+    await context.setExtraHTTPHeaders({
+      'x-bypass-ratelimit': 'qa-stress-suite'
+    });
+  });
 
   test.beforeAll(async () => {
     const password = 'RolePassword123!';
@@ -78,18 +68,20 @@ test.describe('Phase 4B: Comprehensive Axe Accessibility Across All Tabs and Mod
 
     // Admin
     adminId = `usr_p4b_axe_adm_${ts}`;
+    adminEmail = `p4b.axe.admin.${ts}@vissionacademy.edu`;
     await pool.query(
       `INSERT INTO users (id, email, password_hash, role, full_name, is_active, must_reset_password)
        VALUES ($1, $2, $3, 'admin', 'Phase4B Axe Admin', true, false)`,
-      [adminId, `p4b.axe.admin.${ts}@vissionacademy.edu`, passwordHash]
+      [adminId, adminEmail, passwordHash]
     );
 
     // Teacher
     teacherId = `usr_p4b_axe_tch_${ts}`;
+    teacherEmail = `p4b.axe.teacher.${ts}@vissionacademy.edu`;
     await pool.query(
       `INSERT INTO users (id, email, password_hash, role, full_name, is_active, must_reset_password)
        VALUES ($1, $2, $3, 'teacher', 'Phase4B Axe Teacher', true, false)`,
-      [teacherId, `p4b.axe.teacher.${ts}@vissionacademy.edu`, passwordHash]
+      [teacherId, teacherEmail, passwordHash]
     );
     await pool.query(
       `INSERT INTO teacher_class_assignments (id, teacher_user_id, class_id, subject_id, semester_id, status)
@@ -99,19 +91,21 @@ test.describe('Phase 4B: Comprehensive Axe Accessibility Across All Tabs and Mod
 
     // Placement
     placementId = `usr_p4b_axe_plc_${ts}`;
+    placementEmail = `p4b.axe.placement.${ts}@vissionacademy.edu`;
     await pool.query(
       `INSERT INTO users (id, email, password_hash, role, full_name, is_active, must_reset_password)
        VALUES ($1, $2, $3, 'placement', 'Phase4B Axe Placement Officer', true, false)`,
-      [placementId, `p4b.axe.placement.${ts}@vissionacademy.edu`, passwordHash]
+      [placementId, placementEmail, passwordHash]
     );
 
     // Student
     studentUserId = `usr_p4b_axe_std_${ts}`;
+    studentEmail = `p4b.axe.student.${ts}@vissionacademy.edu`;
     studentId = `std_p4b_axe_${ts}`;
     await pool.query(
       `INSERT INTO users (id, email, password_hash, role, full_name, is_active, must_reset_password)
        VALUES ($1, $2, $3, 'student', 'Phase4B Axe Student', true, false)`,
-      [studentUserId, `p4b.axe.student.${ts}@vissionacademy.edu`, passwordHash]
+      [studentUserId, studentEmail, passwordHash]
     );
     await pool.query(
       `INSERT INTO students (id, user_id, roll_number, class_id)
@@ -146,7 +140,7 @@ test.describe('Phase 4B: Comprehensive Axe Accessibility Across All Tabs and Mod
 
   test('1. Admin: Scan all tabs and modals for WCAG serious/critical accessibility', async ({ page }) => {
     test.setTimeout(120000);
-    await loginAs(page, adminId, '/admin');
+    await loginAs(page, adminEmail, '/admin');
 
     const adminTabs = [
       'College Overview & Analytics',
@@ -201,7 +195,7 @@ test.describe('Phase 4B: Comprehensive Axe Accessibility Across All Tabs and Mod
 
   test('2. Teacher: Scan all tabs and modals for WCAG serious/critical accessibility', async ({ page }) => {
     test.setTimeout(120000);
-    await loginAs(page, teacherId, '/teacher');
+    await loginAs(page, teacherEmail, '/teacher');
 
     const teacherSubTabs = [
       'Class Student Roster',
@@ -227,7 +221,7 @@ test.describe('Phase 4B: Comprehensive Axe Accessibility Across All Tabs and Mod
   });
 
   test('3. Student: Scan all tabs and modals for WCAG serious/critical accessibility', async ({ page }) => {
-    await loginAs(page, studentUserId, '/student');
+    await loginAs(page, studentEmail, '/student');
 
     const studentTabs = [
       { id: 'profile', name: 'Bio & Resume' },
@@ -278,7 +272,7 @@ test.describe('Phase 4B: Comprehensive Axe Accessibility Across All Tabs and Mod
 
   test('4. Placement: Scan all tabs for WCAG serious/critical accessibility', async ({ page }) => {
     test.setTimeout(60000);
-    await loginAs(page, placementId, '/placement');
+    await loginAs(page, placementEmail, '/placement');
 
     const placementTabs = [
       'Overview',

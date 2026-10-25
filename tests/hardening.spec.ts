@@ -51,4 +51,66 @@ test.describe('Phase 3: Server Hardening Suite', () => {
     expect(json.stack).toBeUndefined();
     expect(JSON.stringify(json)).not.toMatch(/SELECT|INSERT|UPDATE|WHERE|node_modules/i);
   });
+
+  test('Rate limiting ignores x-bypass-ratelimit header when in production', async () => {
+    const { rateLimit } = await import('../server/auth.js');
+    const oldNodeEnv = process.env.NODE_ENV;
+    const oldFlag = process.env.ALLOW_TEST_RATE_LIMIT_BYPASS;
+    try {
+      process.env.NODE_ENV = 'production';
+      process.env.ALLOW_TEST_RATE_LIMIT_BYPASS = 'true';
+      const limiter = rateLimit(1, 60000, 'prod-test-bypass');
+      let statusCalled = 0;
+      let jsonCalled: any = null;
+      let nextCalled = 0;
+      const req: any = {
+        headers: { 'x-bypass-ratelimit': 'qa-stress-suite' },
+        ip: '127.0.0.10',
+        socket: { remoteAddress: '127.0.0.10' },
+      };
+      const res: any = {
+        status: (s: number) => { statusCalled = s; return res; },
+        json: (j: any) => { jsonCalled = j; return res; },
+      };
+      limiter(req, res, () => { nextCalled++; });
+      expect(nextCalled).toBe(1);
+
+      limiter(req, res, () => { nextCalled++; });
+      expect(statusCalled).toBe(429);
+      expect(jsonCalled).toEqual({ error: 'Too many requests. Please try again later.' });
+    } finally {
+      process.env.NODE_ENV = oldNodeEnv;
+      process.env.ALLOW_TEST_RATE_LIMIT_BYPASS = oldFlag;
+    }
+  });
+
+  test('Rate limiting requires explicit ALLOW_TEST_RATE_LIMIT_BYPASS=true to honor x-bypass-ratelimit', async () => {
+    const { rateLimit } = await import('../server/auth.js');
+    const oldNodeEnv = process.env.NODE_ENV;
+    const oldFlag = process.env.ALLOW_TEST_RATE_LIMIT_BYPASS;
+    try {
+      process.env.NODE_ENV = 'development';
+      delete process.env.ALLOW_TEST_RATE_LIMIT_BYPASS;
+      const limiter = rateLimit(1, 60000, 'dev-test-bypass-noflag');
+      let statusCalled = 0;
+      let nextCalled = 0;
+      const req: any = {
+        headers: { 'x-bypass-ratelimit': 'qa-stress-suite' },
+        ip: '127.0.0.11',
+        socket: { remoteAddress: '127.0.0.11' },
+      };
+      const res: any = {
+        status: (s: number) => { statusCalled = s; return res; },
+        json: () => res,
+      };
+      limiter(req, res, () => { nextCalled++; });
+      expect(nextCalled).toBe(1);
+
+      limiter(req, res, () => { nextCalled++; });
+      expect(statusCalled).toBe(429);
+    } finally {
+      process.env.NODE_ENV = oldNodeEnv;
+      process.env.ALLOW_TEST_RATE_LIMIT_BYPASS = oldFlag;
+    }
+  });
 });
