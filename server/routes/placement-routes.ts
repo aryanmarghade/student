@@ -22,16 +22,24 @@ const router = Router();
 router.use(requireAuth, requireRole('placement'));
 
 router.post('/ai-query', rateLimit(25, 60000, 'placement-ai'), async (req: AuthRequest, res) => {
-  const task = req.body.task || 'placement_overview';
+  const task = req.body.task;
   const queryText = String(req.body.query || '');
-  const response = await handlePlacementAiRequest(req.user!, {
-    role: 'placement',
-    task,
-    queryText,
-    studentId: req.body.studentId,
-    jobId: req.body.jobId,
-  });
-  res.json(response);
+
+  // If specific job & student match requested or explicit placement task, use role-intelligence-engine
+  if (req.body.studentId && req.body.jobId) {
+    const response = await handlePlacementAiRequest(req.user!, {
+      role: 'placement',
+      task: task || 'placement_job_match',
+      queryText,
+      studentId: req.body.studentId,
+      jobId: req.body.jobId,
+    });
+    return res.json(response);
+  }
+
+  // Otherwise, route through processAiQuery which builds grounded candidate context with visibility enforcement
+  const aiRes = await processAiQuery(req.user!, queryText);
+  return res.json(aiRes);
 });
 
 router.get('/visibility', async (req: AuthRequest, res) => {

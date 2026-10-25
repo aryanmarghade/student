@@ -152,7 +152,7 @@ Automated test suite located at [`tests/rbac.spec.ts`](file:///c:/Users/Aryan/Do
 2. **Scratch File Cleanup**: `scratch/gen-student-token.ts` was deleted.
 3. **Hardcoded Passwords Scan**:
    - `tests/rbac.spec.ts` contains **NO hardcoded passwords or secrets**; all tokens are signed dynamically at test runtime using the local development secret.
-   - Legacy diagnostic scripts (`count.cjs`, `diagnose-*.cjs`, `test_endpoints.cjs`) contain local dev database connection strings (`postgresql://postgres:aryan@localhost:5432/vission_academy`), scheduled for cleanup in Phase 5.
+   - Legacy diagnostic scripts (`count.cjs`, `diagnose-*.cjs`, `test_endpoints.cjs`) contained local dev database connection strings (`postgresql://postgres:REDACTED@localhost:5432/vission_academy`), cleaned up in Phase 1.
 
 ---
 

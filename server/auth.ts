@@ -67,12 +67,15 @@ export async function verifyTeacherClassScope(classId: string, subjectId: string
 
 interface RateBucket { count: number; resetAt: number; }
 const rateBuckets = new Map<string, RateBucket>();
-export function rateLimit(limit: number, windowMs: number, keyPrefix: string) {
+export function rateLimit(limit: number, windowMs: number, keyPrefix: string, keyGenerator?: (req: Request) => string) {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (process.env.NODE_ENV === 'test' || req.headers['x-bypass-ratelimit'] === 'qa-stress-suite') {
+    const isProd = process.env.NODE_ENV === 'production';
+    if (!isProd && (process.env.NODE_ENV === 'test' || req.headers['x-bypass-ratelimit'] === 'qa-stress-suite')) {
       return next();
     }
-    const key = `${keyPrefix}:${req.ip || req.socket.remoteAddress || 'unknown'}`;
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const subKey = keyGenerator ? keyGenerator(req) : ((req as any).user?.id ? `${(req as any).user.id}:${ip}` : ip);
+    const key = `${keyPrefix}:${subKey}`;
     const now = Date.now(); let bucket = rateBuckets.get(key);
     if (!bucket || now > bucket.resetAt) { bucket = { count: 0, resetAt: now + windowMs }; rateBuckets.set(key, bucket); }
     bucket.count++;

@@ -2,6 +2,7 @@ import React from 'react';
 import { PostItem, StudentProfile } from '../types';
 import { formatDistanceToNow } from 'date-fns';
 import { Download, ExternalLink, Image as ImageIcon, FileText, PlayCircle } from 'lucide-react';
+import { sanitizeUrl } from '../lib/api';
 
 interface PostCardProps {
   post: PostItem;
@@ -89,7 +90,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, student, onDelete, vie
 
         {post.external_link && (
           <a
-            href={post.external_link}
+            href={sanitizeUrl(post.external_link)}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 underline"

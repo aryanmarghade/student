@@ -18,6 +18,20 @@ export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+export function sanitizeUrl(url?: string | null): string {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+  // Allow safe http, https, and safe internal relative paths
+  if (/^https?:\/\/[^\s]+/i.test(trimmed)) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.includes('\\')) {
+    return trimmed;
+  }
+  return '#';
+}
+
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -290,6 +304,16 @@ export const api = {
     }),
 
   getTeacherNotifications: () => request<NotificationItem[]>('/api/teacher/notifications'),
+
+  getTeacherVisibilitySettings: () => request<{ settings: {
+    github_enabled: boolean;
+    linkedin_enabled: boolean;
+    hackerrank_enabled: boolean;
+    leetcode_enabled: boolean;
+    hackathon_enabled: boolean;
+    academic_enabled: boolean;
+    sports_enabled?: boolean;
+  } }>('/api/teacher/visibility-settings'),
 
   markTeacherNotificationRead: (id: string) =>
     request<{ message: string }>(`/api/teacher/notifications/${id}/read`, {

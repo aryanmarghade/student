@@ -94,8 +94,34 @@ router.put('/profile', async (req: AuthRequest, res) => {
   const s = await ownStudent(req.user!.id);
   if (!s) return res.status(404).json({ error: 'Student record not found.' });
   const { bio, linkedin_url, github_url, hackerrank_url, leetcode_url, portfolio_url } = req.body;
-  if (linkedin_url && !/^https?:\/\/(www\.)?linkedin\.com\/.+/i.test(linkedin_url)) return res.status(400).json({ error: 'Please enter a valid LinkedIn profile URL.' });
-  if (github_url && !/^https?:\/\/(www\.)?github\.com\/.+/i.test(github_url)) return res.status(400).json({ error: 'Please enter a valid GitHub profile URL.' });
+
+  if (bio && typeof bio === 'string' && bio.length > 1000) {
+    return res.status(400).json({ error: 'Bio cannot exceed 1000 characters.' });
+  }
+
+  const urlFields = [
+    { name: 'LinkedIn', val: linkedin_url, regex: /^https?:\/\/(www\.)?linkedin\.com\/.+/i },
+    { name: 'GitHub', val: github_url, regex: /^https?:\/\/(www\.)?github\.com\/.+/i },
+    { name: 'HackerRank', val: hackerrank_url, regex: /^https?:\/\/(www\.)?hackerrank\.com\/.+/i },
+    { name: 'LeetCode', val: leetcode_url, regex: /^https?:\/\/(www\.)?leetcode\.com\/.+/i },
+    { name: 'Portfolio', val: portfolio_url, regex: /^https?:\/\/[^\s]+$/i },
+  ];
+
+  for (const field of urlFields) {
+    if (field.val !== undefined && field.val !== null && String(field.val).trim() !== '') {
+      const trimmed = String(field.val).trim();
+      if (trimmed.length > 500) {
+        return res.status(400).json({ error: `${field.name} URL cannot exceed 500 characters.` });
+      }
+      if (!/^https?:\/\//i.test(trimmed)) {
+        return res.status(400).json({ error: `${field.name} URL must use HTTP or HTTPS protocol.` });
+      }
+      if (!field.regex.test(trimmed)) {
+        return res.status(400).json({ error: `Please enter a valid ${field.name} profile URL.` });
+      }
+    }
+  }
+
   await query('UPDATE students SET bio=COALESCE($1,bio),linkedin_url=COALESCE($2,linkedin_url),github_url=COALESCE($3,github_url),hackerrank_url=COALESCE($4,hackerrank_url),leetcode_url=COALESCE($5,leetcode_url),portfolio_url=COALESCE($6,portfolio_url) WHERE id=$7', [typeof bio === 'string' ? bio.trim() : null, linkedin_url === undefined ? null : String(linkedin_url).trim(), github_url === undefined ? null : String(github_url).trim(), hackerrank_url === undefined ? null : String(hackerrank_url).trim(), leetcode_url === undefined ? null : String(leetcode_url).trim(), portfolio_url === undefined ? null : String(portfolio_url).trim(), s.id]);
   const updated = await ownStudent(req.user!.id), profile_strength = await strength(updated);
   await query('UPDATE students SET profile_strength=$1 WHERE id=$2', [profile_strength, s.id]);
@@ -262,7 +288,33 @@ function portfolio(table: string, fields: string[]) {
   });
   router.post(`/${table}`, async (req: AuthRequest, res) => {
     const s = await ownStudent(req.user!.id);
-    const values = fields.map(f => req.body[f] ?? (f === 'technologies' || f === 'team_members' ? '[]' : ''));
+
+    // Validate URL fields against stored XSS
+    for (const f of fields) {
+      if (f.endsWith('_url') || f === 'link') {
+        const val = req.body[f];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          const trimmed = String(val).trim();
+          if (trimmed.length > 500) {
+            return res.status(400).json({ error: `${f} cannot exceed 500 characters.` });
+          }
+          if (!/^https?:\/\/[^\s]+$/i.test(trimmed)) {
+            return res.status(400).json({ error: `${f} must be a valid HTTP or HTTPS URL.` });
+          }
+        }
+      }
+    }
+
+    const values = fields.map(f => {
+      const val = req.body[f];
+      if (f === 'technologies' || f === 'team_members') {
+        return val ?? '[]';
+      }
+      if ((f === 'date' || f === 'issue_date') && (!val || String(val).trim() === '')) {
+        return null;
+      }
+      return val ?? '';
+    });
     const record = { id: id(table.slice(0, -1)), student_id: s.id, ...Object.fromEntries(fields.map((f, i) => [f, values[i]])) };
     await query(`INSERT INTO ${table} (id,student_id,${fields.join(',')}) VALUES ($1,$2,${fields.map((_, i) => `$${i + 3}`).join(',')})`, [record.id, record.student_id, ...values.map(v => Array.isArray(v) ? JSON.stringify(v) : v)]);
     res.status(201).json({ message: `${table} record created successfully`, [table.slice(0, -1)]: record });
@@ -302,6 +354,16 @@ router.post('/posts', docUpload.array('attachments', 10), async (req: AuthReques
   const { title, description, category, tags, external_link } = req.body;
   if (!title || !description || !category) {
     return res.status(400).json({ error: 'Title, description, and category are required.' });
+  }
+
+  if (external_link && typeof external_link === 'string' && external_link.trim() !== '') {
+    const trimmed = external_link.trim();
+    if (trimmed.length > 500) {
+      return res.status(400).json({ error: 'External link cannot exceed 500 characters.' });
+    }
+    if (!/^https?:\/\/[^\s]+$/i.test(trimmed)) {
+      return res.status(400).json({ error: 'External link must be a valid HTTP or HTTPS URL.' });
+    }
   }
 
   const postId = id('post');
@@ -405,51 +467,58 @@ router.post('/ai/grade-explanation', rateLimit(25, 60000, 'student-ai-grade'), a
 // ── Student Submissions ───────────────────────────────────────────────────────
 
 router.get('/submissions', async (req: AuthRequest, res) => {
-  const s = await ownStudent(req.user!.id);
-  if (!s) return res.status(404).json({ error: 'Student record not found.' });
-  const rows = await query(`
-    SELECT sub.*, ad.title AS assessment_title, ad.exam_type, ad.max_marks,
-           s.name AS subject_name, s.code AS subject_code,
-           m.marks_obtained, m.status AS mark_status,
-           CASE WHEN m.feedback_published THEN m.teacher_feedback ELSE NULL END AS teacher_feedback
-    FROM student_submissions sub
-    JOIN assessment_definitions ad ON ad.id = sub.assessment_id
-    JOIN subjects s ON s.id = ad.subject_id
-    LEFT JOIN marks m ON m.assessment_definition_id = ad.id AND m.student_id = sub.student_id
-    WHERE sub.student_id = $1
-    ORDER BY sub.submitted_at DESC
-  `, [s.id]);
-  res.json(rows.rows);
+  try {
+    const s = await ownStudent(req.user!.id);
+    if (!s) return res.status(404).json({ error: 'Student record not found.' });
+    const rows = await query(`
+      SELECT sub.*, ad.title AS assessment_title, ad.assessment_type, ad.max_marks,
+             s.name AS subject_name, s.code AS subject_code,
+             m.marks_obtained, m.status AS mark_status,
+             CASE WHEN m.feedback_published THEN m.teacher_feedback ELSE NULL END AS teacher_feedback
+      FROM student_submissions sub
+      JOIN assessment_definitions ad ON ad.id = sub.assessment_definition_id
+      JOIN subjects s ON s.id = ad.subject_id
+      LEFT JOIN marks m ON m.assessment_definition_id = ad.id AND m.student_id = sub.student_id
+      WHERE sub.student_id = $1
+      ORDER BY sub.submitted_at DESC
+    `, [s.id]);
+    res.json(rows.rows);
+  } catch (err: any) {
+    console.error('[Student Submissions] GET error:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve assignment submissions.' });
+  }
 });
 
 router.post('/submissions', async (req: AuthRequest, res) => {
-  const s = await ownStudent(req.user!.id);
-  if (!s) return res.status(404).json({ error: 'Student record not found.' });
-  const { assessmentId, submissionText, submissionCode, repoUrl, commitSha } = req.body;
-  if (!assessmentId) return res.status(400).json({ error: 'Assessment ID is required.' });
+  try {
+    const s = await ownStudent(req.user!.id);
+    if (!s) return res.status(404).json({ error: 'Student record not found.' });
+    const { assessmentId, submissionText, submissionCode, fileUrl } = req.body;
+    if (!assessmentId) return res.status(400).json({ error: 'Assessment ID is required.' });
 
-  const ad = (await query<any>(`SELECT id, class_id FROM assessment_definitions WHERE id = $1`, [assessmentId])).rows[0];
-  if (!ad) return res.status(404).json({ error: 'Assessment not found.' });
-  if (ad.class_id !== s.class_id) return res.status(403).json({ error: 'Assessment is not assigned to your class.' });
+    const ad = (await query<any>(`SELECT id, class_id FROM assessment_definitions WHERE id = $1`, [assessmentId])).rows[0];
+    if (!ad) return res.status(404).json({ error: 'Assessment not found.' });
+    if (ad.class_id !== s.class_id) return res.status(403).json({ error: 'Assessment is not assigned to your class.' });
 
-  const subId = id('sub');
-  const now = new Date();
-  const result = await query(`
-    INSERT INTO student_submissions (
-      id, assessment_id, student_id, submission_text, submission_code, repo_url, commit_sha, status, submitted_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'submitted', $8, $8)
-    ON CONFLICT (assessment_id, student_id) DO UPDATE SET
-      submission_text = EXCLUDED.submission_text,
-      submission_code = EXCLUDED.submission_code,
-      repo_url = EXCLUDED.repo_url,
-      commit_sha = EXCLUDED.commit_sha,
-      status = 'submitted',
-      submitted_at = EXCLUDED.submitted_at,
-      updated_at = EXCLUDED.updated_at
-    RETURNING *
-  `, [subId, assessmentId, s.id, submissionText || null, submissionCode || null, repoUrl || null, commitSha || null, now]);
+    const subId = id('sub');
+    const result = await query(`
+      INSERT INTO student_submissions (
+        id, assessment_definition_id, student_id, submission_text, code_content, file_url, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, 'submitted')
+      ON CONFLICT (assessment_definition_id, student_id) DO UPDATE SET
+        submission_text = EXCLUDED.submission_text,
+        code_content = EXCLUDED.code_content,
+        file_url = EXCLUDED.file_url,
+        status = 'submitted',
+        submitted_at = CURRENT_TIMESTAMP
+      RETURNING *
+    `, [subId, assessmentId, s.id, submissionText || null, submissionCode || null, fileUrl || null]);
 
-  res.status(201).json({ message: 'Submission uploaded successfully', submission: result.rows[0] });
+    res.status(201).json({ message: 'Submission uploaded successfully', submission: result.rows[0] });
+  } catch (err: any) {
+    console.error('[Student Submissions] POST error:', err.message);
+    res.status(500).json({ error: 'Failed to upload assignment submission.' });
+  }
 });
 
 router.post('/github/sync', async (req: AuthRequest, res) => {

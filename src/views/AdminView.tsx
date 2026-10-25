@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { api } from '../lib/api';
+import { api, sanitizeUrl } from '../lib/api';
 import { AcademicClass, Subject, Department, TeacherAssignment, User, CollegeEvent } from '../types';
 import {
   Users,
@@ -1618,7 +1618,7 @@ export const AdminView: React.FC = () => {
                   {ev.registration_link && (
                     <div className="pt-3 mt-3 border-t border-slate-100">
                       <a
-                        href={ev.registration_link}
+                        href={sanitizeUrl(ev.registration_link)}
                         target="_blank"
                         rel="noreferrer"
                         className="text-xs text-sky-700 hover:underline flex items-center gap-1 font-medium"
@@ -2645,7 +2645,7 @@ export const AdminView: React.FC = () => {
                             {getProfileLinks(selectedStudentProfile).map((link) => (
                               <a
                                 key={link.label}
-                                href={link.url}
+                                href={sanitizeUrl(link.url)}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-sky-700 hover:bg-sky-50"
@@ -2868,7 +2868,7 @@ export const AdminView: React.FC = () => {
                             </div>
                             <p className="text-xs text-slate-700 leading-relaxed">{achievement.description || 'No description provided.'}</p>
                             {achievement.link && (
-                              <a href={achievement.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline">
+                              <a href={sanitizeUrl(achievement.link)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline">
                                 Open Link <ExternalLink className="w-3 h-3" />
                               </a>
                             )}
@@ -2912,12 +2912,12 @@ export const AdminView: React.FC = () => {
                               </div>
                               <div className="flex flex-wrap gap-2">
                                 {project.github_url && (
-                                  <a href={project.github_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
+                                  <a href={sanitizeUrl(project.github_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
                                     GitHub <ExternalLink className="w-3 h-3" />
                                   </a>
                                 )}
                                 {project.live_url && (
-                                  <a href={project.live_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
+                                  <a href={sanitizeUrl(project.live_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
                                     Live Demo <ExternalLink className="w-3 h-3" />
                                   </a>
                                 )}
@@ -2985,12 +2985,12 @@ export const AdminView: React.FC = () => {
                             {(certification.credential_url || certification.certificate_url) && (
                               <div className="flex flex-wrap gap-2">
                                 {certification.credential_url && (
-                                  <a href={certification.credential_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline">
+                                  <a href={sanitizeUrl(certification.credential_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline">
                                     View Credential <ExternalLink className="w-3 h-3" />
                                   </a>
                                 )}
                                 {certification.certificate_url && (
-                                  <a href={certification.certificate_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 hover:underline">
+                                  <a href={sanitizeUrl(certification.certificate_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 hover:underline">
                                     Certificate <ExternalLink className="w-3 h-3" />
                                   </a>
                                 )}

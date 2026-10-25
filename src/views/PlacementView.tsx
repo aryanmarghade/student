@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { api } from '../lib/api';
+import { api, sanitizeUrl } from '../lib/api';
 import { User } from '../types';
 import {
   Users,
@@ -275,10 +275,10 @@ export const PlacementView: React.FC = () => {
                         </td>
                         <td className="p-4">
                           <div className="flex gap-2">
-                            {s.github_url && <a href={s.github_url} target="_blank" rel="noreferrer" className="px-2 py-0.5 bg-slate-100 text-slate-800 rounded font-semibold text-xs hover:bg-slate-200">GitHub</a>}
-                            {s.leetcode_url && <a href={s.leetcode_url} target="_blank" rel="noreferrer" className="px-2 py-0.5 bg-amber-50 text-amber-800 rounded font-semibold text-xs hover:bg-amber-100 border border-amber-200">LeetCode</a>}
-                            {s.hackerrank_url && <a href={s.hackerrank_url} target="_blank" rel="noreferrer" className="px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded font-semibold text-xs hover:bg-emerald-100 border border-emerald-200">HackerRank</a>}
-                            {s.linkedin_url && <a href={s.linkedin_url} target="_blank" rel="noreferrer" className="px-2 py-0.5 bg-blue-50 text-blue-800 rounded font-semibold text-xs hover:bg-blue-100 border border-blue-200">LinkedIn</a>}
+                            {s.github_url && <a href={sanitizeUrl(s.github_url)} target="_blank" rel="noreferrer" className="px-2 py-0.5 bg-slate-100 text-slate-800 rounded font-semibold text-xs hover:bg-slate-200">GitHub</a>}
+                            {s.leetcode_url && <a href={sanitizeUrl(s.leetcode_url)} target="_blank" rel="noreferrer" className="px-2 py-0.5 bg-amber-50 text-amber-800 rounded font-semibold text-xs hover:bg-amber-100 border border-amber-200">LeetCode</a>}
+                            {s.hackerrank_url && <a href={sanitizeUrl(s.hackerrank_url)} target="_blank" rel="noreferrer" className="px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded font-semibold text-xs hover:bg-emerald-100 border border-emerald-200">HackerRank</a>}
+                            {s.linkedin_url && <a href={sanitizeUrl(s.linkedin_url)} target="_blank" rel="noreferrer" className="px-2 py-0.5 bg-blue-50 text-blue-800 rounded font-semibold text-xs hover:bg-blue-100 border border-blue-200">LinkedIn</a>}
                           </div>
                         </td>
                         <td className="p-4 text-slate-700">{s.projects_count || 0}</td>
@@ -286,7 +286,7 @@ export const PlacementView: React.FC = () => {
                         <td className="p-4 text-slate-700 font-semibold">{s.ai_score || 0}%</td>
                         <td className="p-4">
                           {s.resume_url ? (
-                            <a href={s.resume_url} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline text-sm font-medium">View Resume</a>
+                            <a href={sanitizeUrl(s.resume_url)} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline text-sm font-medium">View Resume</a>
                           ) : (
                             <span className="text-slate-400 text-sm">No Resume</span>
                           )}
@@ -355,7 +355,7 @@ export const PlacementView: React.FC = () => {
                         {selectedStudent.github_data?.public_repos !== undefined ? `${selectedStudent.github_data.public_repos} Repos (${selectedStudent.github_data.stars ?? 0}★)` : (selectedStudent.github_url ? 'Linked' : 'Not linked')}
                       </p>
                       {selectedStudent.github_url && (
-                        <a href={selectedStudent.github_url} target="_blank" rel="noreferrer" className="text-[11px] text-blue-600 hover:underline font-medium block mt-1">
+                        <a href={sanitizeUrl(selectedStudent.github_url)} target="_blank" rel="noreferrer" className="text-[11px] text-blue-600 hover:underline font-medium block mt-1">
                           View GitHub →
                         </a>
                       )}
@@ -379,7 +379,7 @@ export const PlacementView: React.FC = () => {
                         </p>
                       )}
                       {selectedStudent.leetcode_url && (
-                        <a href={selectedStudent.leetcode_url} target="_blank" rel="noreferrer" className="text-[11px] text-amber-700 hover:underline font-medium block mt-1">
+                        <a href={sanitizeUrl(selectedStudent.leetcode_url)} target="_blank" rel="noreferrer" className="text-[11px] text-amber-700 hover:underline font-medium block mt-1">
                           View LeetCode →
                         </a>
                       )}
@@ -398,7 +398,7 @@ export const PlacementView: React.FC = () => {
                         {selectedStudent.hackerrank_data?.verified_skills?.length > 0 ? `${selectedStudent.hackerrank_data.verified_skills.length} Skills Verified` : (selectedStudent.hackerrank_url ? 'Profile Linked' : 'Not linked')}
                       </p>
                       {selectedStudent.hackerrank_url && (
-                        <a href={selectedStudent.hackerrank_url} target="_blank" rel="noreferrer" className="text-[11px] text-emerald-700 hover:underline font-medium block mt-1">
+                        <a href={sanitizeUrl(selectedStudent.hackerrank_url)} target="_blank" rel="noreferrer" className="text-[11px] text-emerald-700 hover:underline font-medium block mt-1">
                           View HackerRank →
                         </a>
                       )}
@@ -412,7 +412,7 @@ export const PlacementView: React.FC = () => {
                         {selectedStudent.linkedin_url ? 'Profile Linked' : 'Not linked'}
                       </p>
                       {selectedStudent.linkedin_url && (
-                        <a href={selectedStudent.linkedin_url} target="_blank" rel="noreferrer" className="text-[11px] text-blue-700 hover:underline font-medium block mt-1">
+                        <a href={sanitizeUrl(selectedStudent.linkedin_url)} target="_blank" rel="noreferrer" className="text-[11px] text-blue-700 hover:underline font-medium block mt-1">
                           View LinkedIn →
                         </a>
                       )}
@@ -475,7 +475,7 @@ export const PlacementView: React.FC = () => {
                         <div className="flex items-center justify-between">
                           <h4 className="font-semibold text-slate-900 text-xs">{proj.title}</h4>
                           {proj.github_url && (
-                            <a href={proj.github_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-[11px] flex items-center gap-1 font-medium">
+                            <a href={sanitizeUrl(proj.github_url)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-[11px] flex items-center gap-1 font-medium">
                               Code <ExternalLink className="w-3 h-3" />
                             </a>
                           )}
@@ -520,7 +520,7 @@ export const PlacementView: React.FC = () => {
                           <p className="text-xs font-medium text-slate-900 truncate">{doc.title || doc.file_name || 'Document'}</p>
                           <p className="text-[10px] text-slate-500">{doc.category || doc.doc_type}</p>
                         </div>
-                        <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-xs font-semibold text-emerald-600 hover:underline shrink-0">
+                        <a href={sanitizeUrl(doc.file_url)} target="_blank" rel="noreferrer" className="text-xs font-semibold text-emerald-600 hover:underline shrink-0">
                           View
                         </a>
                       </div>

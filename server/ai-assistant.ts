@@ -26,7 +26,7 @@ export type AiResponse = {
   resolvedIntent: string;
 };
 
-async function buildScopedContext(user: AuthenticatedUser, queryText = ''): Promise<string> {
+export async function buildScopedContext(user: AuthenticatedUser, queryText = ''): Promise<string> {
   if (user.role === 'admin') {
     const [users, classes, marks] = await Promise.all([
       query(`SELECT role, count(*)::int cnt FROM users GROUP BY role ORDER BY role`),
@@ -41,6 +41,17 @@ async function buildScopedContext(user: AuthenticatedUser, queryText = ''): Prom
   }
 
   if (user.role === 'teacher') {
+    const visRes = await query<any>(`SELECT * FROM teacher_analytics_visibility WHERE teacher_user_id = $1`, [user.id]);
+    const visibility = visRes.rows[0] || {
+      github_enabled: true,
+      linkedin_enabled: true,
+      hackerrank_enabled: true,
+      leetcode_enabled: true,
+      hackathon_enabled: true,
+      academic_enabled: true,
+      sports_enabled: true,
+    };
+
     const assignments = (await query(
       `SELECT c.id AS class_id, c.name AS class_name, s.id AS subject_id, s.name AS subject_name, sem.id AS semester_id, sem.name AS semester_name,
               count(DISTINCT st.id)::int AS student_count,
@@ -59,10 +70,13 @@ async function buildScopedContext(user: AuthenticatedUser, queryText = ''): Prom
 
     if (!assignments.length) return `You currently have no active class assignments.`;
 
-    let baseContext = `Your active assignments:\n` + assignments.map((a: any) =>
-      `• ${a.class_name} — ${a.subject_name} (${a.semester_name}): ` +
-      `${a.student_count} students, ${a.marks_count} marks recorded, avg ${a.avg_pct ?? 'N/A'}%`,
-    ).join('\n');
+    let baseContext = `Your active assignments:\n` + assignments.map((a: any) => {
+      if (!visibility.academic_enabled) {
+        return `• ${a.class_name} — ${a.subject_name} (${a.semester_name}): ${a.student_count} students (Academic marks disabled by institutional policy)`;
+      }
+      return `• ${a.class_name} — ${a.subject_name} (${a.semester_name}): ` +
+        `${a.student_count} students, ${a.marks_count} marks recorded, avg ${a.avg_pct ?? 'N/A'}%`;
+    }).join('\n');
 
     // Check if query contains @mention, student name, or roll number in teacher's authorized classes
     const matchMention = queryText.match(/@([^\s,?!]+)/i);
@@ -88,17 +102,31 @@ async function buildScopedContext(user: AuthenticatedUser, queryText = ''): Prom
     )).rows as any[];
 
     if (studentMatches.length > 0) {
-      baseContext += `\n\nDetailed Student Records Scoped to Query:\n` + studentMatches.map((st: any) =>
-        `• Student: ${st.full_name} (${st.roll_number}) in ${st.class_name}\n` +
-        `  Total Assessments: ${st.total_assessments}, Average Score: ${st.avg_percentage ?? 'N/A'}%\n` +
-        `  Assessments Breakdown: ${JSON.stringify(st.assessment_details || [])}`,
-      ).join('\n');
+      baseContext += `\n\nDetailed Student Records Scoped to Query:\n` + studentMatches.map((st: any) => {
+        if (!visibility.academic_enabled) {
+          return `• Student: ${st.full_name} (${st.roll_number}) in ${st.class_name} (Academic assessment details restricted by institutional policy)`;
+        }
+        return `• Student: ${st.full_name} (${st.roll_number}) in ${st.class_name}\n` +
+          `  Total Assessments: ${st.total_assessments}, Average Score: ${st.avg_percentage ?? 'N/A'}%\n` +
+          `  Assessments Breakdown: ${JSON.stringify(st.assessment_details || [])}`;
+      }).join('\n');
     }
 
     return baseContext;
   }
 
   if (user.role === 'placement') {
+    const visRes = await query<any>(`SELECT * FROM placement_analytics_visibility WHERE placement_user_id = $1`, [user.id]);
+    const visibility = visRes.rows[0] || {
+      github_enabled: true,
+      linkedin_enabled: true,
+      hackerrank_enabled: true,
+      leetcode_enabled: true,
+      hackathon_enabled: true,
+      academic_enabled: true,
+      sports_enabled: true,
+    };
+
     const [students, projects, hackathons] = await Promise.all([
       query(`SELECT count(*)::int total, count(portfolio_url)::int portfolio_cnt, count(resume_url)::int resume_cnt, round(avg(profile_strength)::numeric,1) avg_profile_score FROM students`),
       query(`SELECT count(*)::int cnt FROM projects`),
@@ -107,9 +135,12 @@ async function buildScopedContext(user: AuthenticatedUser, queryText = ''): Prom
     const s = students.rows[0] as any;
     const p = projects.rows[0] as any;
     const h = hackathons.rows[0] as any;
+
     let baseContext = `Placement & Career records: ${s?.total ?? 0} total students tracked. ` +
-      `Resumes uploaded: ${s?.resume_cnt ?? 0}, Portfolios active: ${s?.portfolio_cnt ?? 0}, Average profile strength: ${s?.avg_profile_score ?? 'N/A'}. ` +
-      `Total student projects: ${p?.cnt ?? 0}, Hackathons participated: ${h?.cnt ?? 0}.`;
+      `Resumes uploaded: ${s?.resume_cnt ?? 0}, Portfolios active: ${s?.portfolio_cnt ?? 0}. ` +
+      (visibility.academic_enabled ? `Average profile strength: ${s?.avg_profile_score ?? 'N/A'}. ` : '') +
+      `Total student projects: ${p?.cnt ?? 0}` +
+      (visibility.hackathon_enabled ? `, Hackathons participated: ${h?.cnt ?? 0}.` : '.');
 
     const matchMention = queryText.match(/@([^\s,?!]+)/i);
     const mentionTerm = matchMention ? matchMention[1].trim() : null;
@@ -131,13 +162,24 @@ async function buildScopedContext(user: AuthenticatedUser, queryText = ''): Prom
         try {
           const evidence = await getStudentComprehensiveEvidence(sm.id);
           if (evidence) {
-            baseContext += `\n\nCandidate Profile: ${evidence.fullName} (${evidence.rollNumber}) in ${evidence.className || 'N/A'}\n` +
-              `• Backlogs: ${evidence.academics.currentBacklogsCount} active\n` +
-              `• Projects: ${evidence.projects.map(pr => `${pr.title} (${pr.verificationStatus})`).join(', ') || 'None'}\n` +
-              `• LeetCode: ${evidence.leetcode.status === 'SYNCED' ? `${evidence.leetcode.totalSolved} solved (${evidence.leetcode.easySolved}E, ${evidence.leetcode.mediumSolved}M, ${evidence.leetcode.hardSolved}H)` : 'Not synced'}\n` +
-              `• GitHub: ${evidence.github.status === 'SYNCED' ? `${evidence.github.publicRepos} repos (${evidence.github.languages.join(', ')})` : 'Not synced'}\n` +
-              `• Hackathons: ${evidence.hackathons.map(hk => `${hk.name} (${hk.positionResult || 'Participant'}, ${hk.verificationStatus})`).join(', ') || 'None'}\n` +
-              `• Sports: ${evidence.sports.map(sp => `${sp.sportName} (${sp.competitionLevel}, ${sp.verificationStatus})`).join(', ') || 'None'}`;
+            let candidateContext = `\n\nCandidate Profile: ${evidence.fullName} (${evidence.rollNumber}) in ${evidence.className || 'N/A'}\n`;
+            if (visibility.academic_enabled) {
+              candidateContext += `• Backlogs: ${evidence.academics.currentBacklogsCount} active\n`;
+            }
+            candidateContext += `• Projects: ${evidence.projects.map(pr => `${pr.title} (${pr.verificationStatus})`).join(', ') || 'None'}\n`;
+            if (visibility.leetcode_enabled) {
+              candidateContext += `• LeetCode: ${evidence.leetcode.status === 'SYNCED' ? `${evidence.leetcode.totalSolved} solved (${evidence.leetcode.easySolved}E, ${evidence.leetcode.mediumSolved}M, ${evidence.leetcode.hardSolved}H)` : 'Not synced'}\n`;
+            }
+            if (visibility.github_enabled) {
+              candidateContext += `• GitHub: ${evidence.github.status === 'SYNCED' ? `${evidence.github.publicRepos} repos (${evidence.github.languages.join(', ')})` : 'Not synced'}\n`;
+            }
+            if (visibility.hackathon_enabled) {
+              candidateContext += `• Hackathons: ${evidence.hackathons.map(hk => `${hk.name} (${hk.positionResult || 'Participant'}, ${hk.verificationStatus})`).join(', ') || 'None'}\n`;
+            }
+            if (visibility.sports_enabled) {
+              candidateContext += `• Sports: ${evidence.sports.map(sp => `${sp.sportName} (${sp.competitionLevel}, ${sp.verificationStatus})`).join(', ') || 'None'}`;
+            }
+            baseContext += candidateContext;
           }
         } catch (_err) {}
       }

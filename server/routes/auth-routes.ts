@@ -33,7 +33,7 @@ router.post('/login', rateLimit(15, 5 * 60 * 1000, 'login'), async (req, res) =>
   res.json({ message: 'Login successful', token: generateToken(user, student), must_reset_password: user.must_reset_password, user: { ...publicUser(user), ...(student ? { student } : {}) } });
 });
 
-router.post('/reset-first-login-password', requireAuth, async (req: AuthRequest, res) => {
+router.post('/reset-first-login-password', requireAuth, rateLimit(5, 5 * 60 * 1000, 'reset-first-password'), async (req: AuthRequest, res) => {
   const password = String(req.body.newPassword || '');
   if (password.length < 8) return res.status(400).json({ error: 'Permanent password must be at least 8 characters long.' });
   const user = (await query<UserRecord>('SELECT id,email,password_hash,role,full_name,is_active,must_reset_password,created_at FROM users WHERE id=$1',[req.user!.id])).rows[0];
@@ -52,7 +52,7 @@ router.get('/me', requireAuth, async (req: AuthRequest, res) => {
   res.json({ user: { ...publicUser(user), ...extra } });
 });
 
-router.post('/change-password', requireAuth, async (req: AuthRequest, res) => {
+router.post('/change-password', requireAuth, rateLimit(5, 5 * 60 * 1000, 'change-password'), async (req: AuthRequest, res) => {
   const currentPassword = String(req.body.currentPassword || ''); const newPassword = String(req.body.newPassword || '');
   if (newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters.' });
   const user = (await query<UserRecord>('SELECT * FROM users WHERE id=$1',[req.user!.id])).rows[0];

@@ -13,7 +13,7 @@ if (!JWT_SECRET) {
 }
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:aryan@localhost:5432/vission_academy',
+  connectionString: process.env.DATABASE_URL,
 });
 
 let adminToken: string;
@@ -247,29 +247,14 @@ test.describe('Vission Academy RBAC Master Endpoint Matrix Suite', () => {
 
   // ── 7. CRITICAL VULNERABILITY FINDING TESTS (EXPECTED TO FAIL CURRENTLY) ────
 
-  /**
-   * CRITICAL FINDING 1:
-   * A user flagged with must_reset_password = true MUST be blocked from accessing
-   * protected endpoints (returning 403 Forbidden) until they complete their password reset.
-   * CURRENT BEHAVIOR: server/auth.ts does not check must_reset_password in requireAuth,
-   * so this request succeeds (status 200). THIS TEST SHOULD FAIL UNTIL FIXED IN PHASE 1.
-   */
-  test('[FAILING CRITICAL 1] Server blocks API access when must_reset_password is true', async ({ request }) => {
+  test('Server blocks API access when must_reset_password is true', async ({ request }) => {
     const res = await request.get(`${BASE_URL}/api/student/profile`, {
       headers: { Authorization: `Bearer ${mustResetUserToken}` },
     });
-    // Expected to be 403 Forbidden when enforced
     expect(res.status()).toBe(403);
   });
 
-  /**
-   * CRITICAL FINDING 2:
-   * A placement officer MUST NOT be able to overwrite their own visibility permissions
-   * via PUT /api/placement/visibility. Only administrators can alter visibility settings.
-   * CURRENT BEHAVIOR: PUT /api/placement/visibility allows placement officers to self-update (status 200).
-   * THIS TEST SHOULD FAIL UNTIL FIXED IN PHASE 1.
-   */
-  test('[FAILING CRITICAL 2] Placement officer cannot self-override admin visibility permissions', async ({ request }) => {
+  test('Placement officer cannot self-override admin visibility permissions', async ({ request }) => {
     const res = await request.put(`${BASE_URL}/api/placement/visibility`, {
       headers: { Authorization: `Bearer ${placementToken}` },
       data: {
@@ -278,7 +263,6 @@ test.describe('Vission Academy RBAC Master Endpoint Matrix Suite', () => {
         academic_enabled: true,
       },
     });
-    // Expected to be 403 Forbidden (or 405 Method Not Allowed) when restricted
     expect(res.status()).toBe(403);
   });
 

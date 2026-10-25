@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { api } from '../lib/api';
+import { api, sanitizeUrl } from '../lib/api';
 import {
   StudentProfile, Marksheet, ProjectItem, CertificationItem, DocumentItem, CollegeEvent, PostItem,
   SportItem, StudentLinkedInPostItem, StudentHackerRankEvidenceItem
@@ -1384,7 +1384,7 @@ export const StudentView: React.FC = () => {
                     <div className="flex items-center gap-3 pt-3 mt-3 border-t border-slate-100 text-xs">
                       {p.project_url && (
                         <a
-                          href={p.project_url}
+                          href={sanitizeUrl(p.project_url)}
                           target="_blank"
                           rel="noreferrer"
                           className="text-sky-700 hover:underline flex items-center gap-1 font-medium"
@@ -1394,7 +1394,7 @@ export const StudentView: React.FC = () => {
                       )}
                       {p.repo_url && (
                         <a
-                          href={p.repo_url}
+                          href={sanitizeUrl(p.repo_url)}
                           target="_blank"
                           rel="noreferrer"
                           className="text-slate-700 hover:underline flex items-center gap-1 font-medium"
@@ -1472,7 +1472,7 @@ export const StudentView: React.FC = () => {
                     {c.credential_url && (
                       <div className="pt-2 mt-2 border-t border-slate-100">
                         <a
-                          href={c.credential_url}
+                          href={sanitizeUrl(c.credential_url)}
                           target="_blank"
                           rel="noreferrer"
                           className="text-xs text-sky-700 hover:underline flex items-center gap-1 font-medium"
@@ -1537,7 +1537,7 @@ export const StudentView: React.FC = () => {
                       {hr.date_earned && <span>Earned: {new Date(hr.date_earned).toLocaleDateString()}</span>}
                     </div>
                     {hr.certificate_url && (
-                      <a href={hr.certificate_url} target="_blank" rel="noreferrer" className="text-[11px] text-sky-700 hover:underline flex items-center gap-1 font-medium">
+                      <a href={sanitizeUrl(hr.certificate_url)} target="_blank" rel="noreferrer" className="text-[11px] text-sky-700 hover:underline flex items-center gap-1 font-medium">
                         <ExternalLink className="w-3 h-3" /> Public Proof Link
                       </a>
                     )}
@@ -1602,7 +1602,7 @@ export const StudentView: React.FC = () => {
                       <span>Likes: {lp.engagement_likes || 0} • Comments: {lp.engagement_comments || 0}</span>
                     </div>
                     {lp.post_url && (
-                      <a href={lp.post_url} target="_blank" rel="noreferrer" className="text-[11px] text-blue-700 hover:underline flex items-center gap-1 font-medium">
+                      <a href={sanitizeUrl(lp.post_url)} target="_blank" rel="noreferrer" className="text-[11px] text-blue-700 hover:underline flex items-center gap-1 font-medium">
                         <ExternalLink className="w-3 h-3" /> View on LinkedIn
                       </a>
                     )}
@@ -1728,7 +1728,7 @@ export const StudentView: React.FC = () => {
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
                     <span>{sp.match_event_date ? new Date(sp.match_event_date).toLocaleDateString() : sp.season_or_year || 'Recent'}</span>
                     {sp.proof_url && (
-                      <a href={sp.proof_url} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline flex items-center gap-1 font-semibold">
+                      <a href={sanitizeUrl(sp.proof_url)} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline flex items-center gap-1 font-semibold">
                         <ExternalLink className="w-3 h-3" /> Proof Document
                       </a>
                     )}
@@ -1883,7 +1883,7 @@ export const StudentView: React.FC = () => {
                   {ev.registration_link && (
                     <div className="pt-3 mt-3 border-t border-slate-100">
                       <a
-                        href={ev.registration_link}
+                        href={sanitizeUrl(ev.registration_link)}
                         target="_blank"
                         rel="noreferrer"
                         className="text-xs text-sky-700 hover:underline flex items-center gap-1 font-semibold"

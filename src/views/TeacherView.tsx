@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { api } from '../lib/api';
+import { api, sanitizeUrl } from '../lib/api';
 import { TeacherAssignment, AnalyticsResponse } from '../types';
 import {
   Users,
@@ -2097,7 +2097,7 @@ export const TeacherView: React.FC = () => {
                             {getProfileLinks(selectedStudentProfile).map((link) => (
                               <a
                                 key={link.label}
-                                href={link.url}
+                                href={sanitizeUrl(link.url)}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-sky-700 hover:bg-sky-50"
@@ -2321,7 +2321,7 @@ export const TeacherView: React.FC = () => {
                             </div>
                             <p className="text-xs text-slate-700 leading-relaxed">{achievement.description || 'No description provided.'}</p>
                             {achievement.link && (
-                              <a href={achievement.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline">
+                              <a href={sanitizeUrl(achievement.link)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline">
                                 Open Link <ExternalLink className="w-3 h-3" />
                               </a>
                             )}
@@ -2365,12 +2365,12 @@ export const TeacherView: React.FC = () => {
                               </div>
                               <div className="flex flex-wrap gap-2">
                                 {project.github_url && (
-                                  <a href={project.github_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
+                                  <a href={sanitizeUrl(project.github_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
                                     GitHub <ExternalLink className="w-3 h-3" />
                                   </a>
                                 )}
                                 {project.live_url && (
-                                  <a href={project.live_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
+                                  <a href={sanitizeUrl(project.live_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
                                     Live Demo <ExternalLink className="w-3 h-3" />
                                   </a>
                                 )}
@@ -2438,12 +2438,12 @@ export const TeacherView: React.FC = () => {
                             {(certification.credential_url || certification.certificate_url) && (
                               <div className="flex flex-wrap gap-2">
                                 {certification.credential_url && (
-                                  <a href={certification.credential_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline">
+                                  <a href={sanitizeUrl(certification.credential_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline">
                                     View Credential <ExternalLink className="w-3 h-3" />
                                   </a>
                                 )}
                                 {certification.certificate_url && (
-                                  <a href={certification.certificate_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 hover:underline">
+                                  <a href={sanitizeUrl(certification.certificate_url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 hover:underline">
                                     Certificate <ExternalLink className="w-3 h-3" />
                                   </a>
                                 )}
@@ -2551,7 +2551,7 @@ export const TeacherView: React.FC = () => {
                               )}
                               {sport.evidence_url && (
                                 <a
-                                  href={sport.evidence_url}
+                                  href={sanitizeUrl(sport.evidence_url)}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="inline-flex items-center gap-1 text-[11px] text-sky-600 hover:underline"
@@ -2893,7 +2893,7 @@ export const TeacherView: React.FC = () => {
                       </div>
                       {(studentAnalyticsData.githubData?.github_url || studentAnalyticsData.student?.github_url) && (
                         <a
-                          href={studentAnalyticsData.githubData?.github_url || studentAnalyticsData.student?.github_url}
+                          href={sanitizeUrl(studentAnalyticsData.githubData?.github_url || studentAnalyticsData.student?.github_url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-blue-600 hover:underline flex items-center gap-1 font-semibold"
@@ -2979,7 +2979,7 @@ export const TeacherView: React.FC = () => {
                         </p>
                         {(studentAnalyticsData.student?.github_url || studentAnalyticsData.github_url) && (
                           <a
-                            href={studentAnalyticsData.student?.github_url || studentAnalyticsData.github_url}
+                            href={sanitizeUrl(studentAnalyticsData.student?.github_url || studentAnalyticsData.github_url)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline pt-1"
@@ -3030,7 +3030,7 @@ export const TeacherView: React.FC = () => {
                           </div>
                         </div>
                         <div className="flex justify-end pt-2">
-                          <a href={studentAnalyticsData.hackerrankData.url} target="_blank" rel="noopener noreferrer" className="text-xs text-emerald-700 hover:underline font-semibold flex items-center gap-1">
+                          <a href={sanitizeUrl(studentAnalyticsData.hackerrankData.url)} target="_blank" rel="noopener noreferrer" className="text-xs text-emerald-700 hover:underline font-semibold flex items-center gap-1">
                             View Profile on HackerRank <ExternalLink className="w-3 h-3" />
                           </a>
                         </div>
@@ -3051,7 +3051,7 @@ export const TeacherView: React.FC = () => {
                             </div>
                           </div>
                           <a
-                            href={studentAnalyticsData.hackerrankUrl || studentAnalyticsData.student?.hackerrank_url}
+                            href={sanitizeUrl(studentAnalyticsData.hackerrankUrl || studentAnalyticsData.student?.hackerrank_url)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] text-xs font-semibold rounded-lg flex items-center gap-1 shadow-2xs shrink-0"
@@ -3082,7 +3082,7 @@ export const TeacherView: React.FC = () => {
                       </div>
                       {(studentAnalyticsData.linkedinUrl || studentAnalyticsData.student?.linkedin_url) && (
                         <a
-                          href={studentAnalyticsData.linkedinUrl || studentAnalyticsData.student?.linkedin_url}
+                          href={sanitizeUrl(studentAnalyticsData.linkedinUrl || studentAnalyticsData.student?.linkedin_url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-blue-600 hover:underline flex items-center gap-1 font-semibold"

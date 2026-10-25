@@ -1,6 +1,7 @@
 import React from 'react';
 import { NotificationItem } from '../types';
 import { Bell, Check, Download, FileText, X } from 'lucide-react';
+import { sanitizeUrl } from '../lib/api';
 
 interface NotificationModalProps {
   isOpen: boolean;
@@ -96,7 +97,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
                     )}
                     {item.file_url && (
                       <a
-                        href={item.file_url}
+                        href={sanitizeUrl(item.file_url)}
                         target="_blank"
                         rel="noreferrer"
                         className="p-1.5 text-xs text-[#0f2744] hover:bg-sky-50 rounded border border-sky-200 transition-colors flex items-center gap-1"

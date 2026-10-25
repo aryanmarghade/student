@@ -522,6 +522,21 @@ export async function handlePlacementAiRequest(
 ): Promise<RoleIntelligenceResponse> {
   const queryLower = (req.queryText || '').toLowerCase();
 
+  // Fetch placement officer visibility configuration
+  const visRes = await query<any>(
+    `SELECT * FROM placement_analytics_visibility WHERE placement_user_id = $1`,
+    [user.id]
+  );
+  const visibility = visRes.rows[0] || {
+    github_enabled: true,
+    linkedin_enabled: true,
+    hackerrank_enabled: true,
+    leetcode_enabled: true,
+    hackathon_enabled: true,
+    academic_enabled: true,
+    sports_enabled: true,
+  };
+
   // If a specific student and job are requested, match candidate to job
   if (req.studentId && req.jobId) {
     const jd = await getJobDescriptionById(req.jobId);
@@ -540,18 +555,39 @@ export async function handlePlacementAiRequest(
 
     const match = await matchCandidateToJob(req.studentId, jd);
 
+    // Apply visibility scoping to requirement citations and data sources
+    let filteredMatrix = match.requirementsMatrix;
+    if (!visibility.github_enabled) {
+      filteredMatrix = filteredMatrix.map(m => ({
+        ...m,
+        citations: m.citations.filter(c => !c.toLowerCase().includes('github')),
+        rationale: m.rationale.replace(/public github repository[^;.]*[;.]?/gi, ''),
+      }));
+    }
+    if (!visibility.leetcode_enabled) {
+      filteredMatrix = filteredMatrix.map(m => ({
+        ...m,
+        citations: m.citations.filter(c => !c.toLowerCase().includes('leetcode')),
+        rationale: m.rationale.replace(/verified leetcode[^;.]*[;.]?/gi, ''),
+      }));
+    }
+
+    const dataSources: string[] = ['PostgreSQL Academic Ledger', 'Campus Projects'];
+    if (visibility.github_enabled) dataSources.push('GitHub Snapshots');
+    if (visibility.leetcode_enabled) dataSources.push('LeetCode Snapshots');
+
     const narrative = `### Executive Finding
 Candidate **${match.fullName}** (${match.rollNumber}) demonstrates a **${match.readinessTier.replace(/_/g, ' ')}** with an explainable alignment index of **${match.alignmentIndex}%** against the "${match.jobTitle}" position at ${match.company}.
 
 ### Academic Eligibility
 • Overall Status: ${match.academicEligibility.isEligible ? 'ELIGIBLE' : 'INELIGIBLE'}
-• CGPA: ${match.academicEligibility.candidateCgpa ?? 'N/A'} (Required: ${match.academicEligibility.requiredCgpa})
-• Active Backlogs: ${match.academicEligibility.candidateBacklogs} (Max Permitted: ${match.academicEligibility.maxAllowedBacklogs})
+• CGPA: ${visibility.academic_enabled ? (match.academicEligibility.candidateCgpa ?? 'N/A') : 'Protected'} (Required: ${match.academicEligibility.requiredCgpa})
+• Active Backlogs: ${visibility.academic_enabled ? match.academicEligibility.candidateBacklogs : 'Protected'} (Max Permitted: ${match.academicEligibility.maxAllowedBacklogs})
 • Branch: ${match.academicEligibility.branch} (${match.academicEligibility.branchEligible ? 'Eligible' : 'Ineligible'})
 ${match.academicEligibility.reasons.length ? `• Reasons: ${match.academicEligibility.reasons.join('; ')}` : ''}
 
 ### Requirements Evidence Matrix
-${match.requirementsMatrix.map(m =>
+${filteredMatrix.map(m =>
   `• **${m.requirement}** [${m.status}]: ${m.rationale}`
 ).join('\n')}
 
@@ -566,7 +602,7 @@ ${match.actionablePreparationPlan.map(p => `• ${p}`).join('\n')}
 
 ### Ethical AI Notice & Limitations
 • ${match.ethicalNotice}
-• Data Sources: Verified institutional marks, public GitHub repositories, and LeetCode problem counts. (LinkedIn is excluded).`;
+• Data Sources: ${dataSources.join(', ')}. (LinkedIn is excluded).`;
 
     return {
       available: true,
@@ -575,9 +611,9 @@ ${match.actionablePreparationPlan.map(p => `• ${p}`).join('\n')}
       provider: 'deterministic_engine',
       isGroundingVerified: true,
       answer: narrative,
-      structuredData: { match },
+      structuredData: { match: { ...match, requirementsMatrix: filteredMatrix } },
       dataCoverage: {
-        availableSources: ['PostgreSQL Academic Ledger', 'GitHub Snapshots', 'LeetCode Snapshots', 'Campus Projects'],
+        availableSources: dataSources,
         missingSources: [],
       },
       validationDecision: 'PASSED',
