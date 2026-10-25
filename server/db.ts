@@ -10,10 +10,51 @@ const { Pool } = pg;
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required; PostgreSQL is the application source of truth.');
 
-const requiresSsl = process.env.DB_SSL === 'true' || databaseUrl.includes('sslmode=require') || databaseUrl.includes('sslmode=verify-full');
+export interface DbSslConfig {
+  rejectUnauthorized: boolean;
+  ca?: string;
+}
+
+export function parseDbSslConfig(env: NodeJS.ProcessEnv = process.env): DbSslConfig | undefined {
+  const dbUrl = env.DATABASE_URL || '';
+  const dbSsl = (env.DB_SSL || '').toLowerCase();
+  const dbSslInsecure = env.DB_SSL_INSECURE === 'true' || env.DB_REJECT_UNAUTHORIZED === 'false';
+  const caCert = env.DB_SSL_CA;
+
+  const isSslRequested =
+    dbSsl === 'true' ||
+    dbSsl === 'require' ||
+    dbSsl === 'verify-full' ||
+    dbSsl === 'verify-ca' ||
+    dbUrl.includes('sslmode=require') ||
+    dbUrl.includes('sslmode=verify-full') ||
+    dbUrl.includes('sslmode=verify-ca');
+
+  if (!isSslRequested) {
+    return undefined;
+  }
+
+  // If DB_SSL_INSECURE is explicitly set, allow rejectUnauthorized: false with warning
+  if (dbSslInsecure) {
+    if (env.NODE_ENV === 'production') {
+      console.warn('[SECURITY WARNING] Database SSL configured with rejectUnauthorized: false in production via DB_SSL_INSECURE flag.');
+    }
+    return {
+      rejectUnauthorized: false,
+      ...(caCert ? { ca: caCert } : {})
+    };
+  }
+
+  // Secure default: rejectUnauthorized is strictly true
+  return {
+    rejectUnauthorized: true,
+    ...(caCert ? { ca: caCert } : {})
+  };
+}
+
 export const pool = new Pool({
   connectionString: databaseUrl,
-  ssl: requiresSsl ? { rejectUnauthorized: process.env.DB_REJECT_UNAUTHORIZED !== 'false' } : undefined,
+  ssl: parseDbSslConfig(process.env),
 });
 
 export type UserRole = 'admin' | 'teacher' | 'student';

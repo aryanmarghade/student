@@ -6,6 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+!.env.test.example
 scratch/
 db/cleanup-legacy.sql
 db/seed-qa.sql
@@ -15,3 +16,5 @@ test-results/
 count.cjs
 diagnose-*.cjs
 test_endpoints.cjs
+reports/visual-diff/**/*.png
+

@@ -127,5 +127,68 @@ test.describe('Phase 3: Server Hardening Suite', () => {
     const { api } = await import('../src/lib/api.js');
     await expect(api.get('/login')).rejects.toThrow(/Expected JSON response/);
   });
+
+  test('Frontend API client supports 204 No Content without throwing', async () => {
+    const { api } = await import('../src/lib/api.js');
+    const origFetch = global.fetch;
+    try {
+      global.fetch = async () => new Response(null, { status: 204, statusText: 'No Content' });
+      const result = await api.request('/api/test-204');
+      expect(result).toBeUndefined();
+    } finally {
+      global.fetch = origFetch;
+    }
+  });
+
+  test('Frontend API client supports blob/file download without throwing on non-JSON', async () => {
+    const { api } = await import('../src/lib/api.js');
+    const origFetch = global.fetch;
+    try {
+      const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]); // %PDF-
+      global.fetch = async () => new Response(pdfBytes, {
+        status: 200,
+        headers: { 'Content-Type': 'application/pdf', 'Content-Length': '5' }
+      });
+      const blob = await api.request<Blob>('/api/student/marksheets/mks_test/file');
+      expect(blob).toBeDefined();
+      expect(typeof blob.size === 'number' || typeof blob.arrayBuffer === 'function').toBe(true);
+    } finally {
+      global.fetch = origFetch;
+    }
+  });
+
+  test('Database SSL config parser enforces rejectUnauthorized: true by default in production and supports DB_SSL_INSECURE', async () => {
+    const { parseDbSslConfig } = await import('../server/db.js');
+    
+    // 1. No SSL requested -> undefined
+    expect(parseDbSslConfig({ DATABASE_URL: 'postgres://localhost/test' })).toBeUndefined();
+
+    // 2. SSL requested via DB_SSL=true -> rejectUnauthorized: true
+    expect(parseDbSslConfig({ DATABASE_URL: 'postgres://localhost/test', DB_SSL: 'true' })).toEqual({
+      rejectUnauthorized: true,
+    });
+
+    // 3. SSL requested via sslmode=verify-full in URL -> rejectUnauthorized: true
+    expect(parseDbSslConfig({ DATABASE_URL: 'postgres://localhost/test?sslmode=verify-full' })).toEqual({
+      rejectUnauthorized: true,
+    });
+
+    // 4. Custom CA certificate provided -> included in config
+    expect(parseDbSslConfig({ DATABASE_URL: 'postgres://localhost/test?sslmode=require', DB_SSL_CA: 'MOCK_CA_CERT' })).toEqual({
+      rejectUnauthorized: true,
+      ca: 'MOCK_CA_CERT'
+    });
+
+    // 5. Insecure flag DB_SSL_INSECURE=true explicitly allows rejectUnauthorized: false
+    expect(parseDbSslConfig({ DATABASE_URL: 'postgres://localhost/test?sslmode=require', DB_SSL_INSECURE: 'true' })).toEqual({
+      rejectUnauthorized: false,
+    });
+
+    // 6. In production mode without DB_SSL_INSECURE, rejectUnauthorized is strictly true
+    expect(parseDbSslConfig({ NODE_ENV: 'production', DATABASE_URL: 'postgres://localhost/test?sslmode=require' })).toEqual({
+      rejectUnauthorized: true,
+    });
+  });
 });
+
 

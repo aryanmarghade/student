@@ -412,7 +412,15 @@ Core Tables:
   * HackerRank Evidence Route Hardening & RBAC: Applied rate limiting (30 req/min), student-only RBAC, input length restrictions, http/https URL validation (rejecting javascript: URLs), duplicate submission guards (409 Conflict), and ownership checks on deletion (404 on unowned records). Added comprehensive RBAC tests in tests/rbac.spec.ts.
   * Visual Regression Audit (96793af vs HEAD): Built commit 96793af in isolated worktree, served on port 3006, and captured screenshots across all tabs and modals for all 4 roles at 1440px and 375px viewports against HEAD on port 3000. Executed pixel-diff analysis via pixelmatch; saved all screenshots, diffs, and summary report to reports/visual-diff/.
   * Full Test Suite: All 126/126 Playwright tests passing on fresh isolated test database.
+- 2026-10-25: A4 Hardening, Reproducible Test DB, DB SSL Config, API Client 204/Blob Fixes, & Multi-Baseline Visual Comparison (129/129 passed):
+  * Secret Scan Comprehensive Re-Audit: Scanned all 69 commits on origin/main across all tree blobs. Identified and verified 1,757 total occurrences via `git show <commit>:<file>`. Categorized hashes/placeholders vs real legacy secrets across PROJECT_MAP.txt, README.md, server/db.ts, server/auth.ts, .env.example, and legacy diagnostic scripts. Verified all 8 committed SQL files contain only synthetic mock data; 0 real student data.
+  * Multi-Baseline Visual Comparison (HEAD vs 22d23d5 & 96793af): Built worktrees for both historical commits using native environment and served sequentially on port 3000. Captured deterministic full-page screenshots with universal 0s CSS animations and network idle at 1440px and 375px viewports. Generated reports/visual-diff/REPORT.md with exact git diff code evidence and contact-sheet.html for the 15 worst screens. Added reports/visual-diff/**/*.png to .gitignore.
+  * Reproducible Test Database Architecture: Implemented scripts/setup-test-db.ts with `--drop` support and synthetic seed data. Added `npm run test:db:setup` and `test` scripts in package.json, tests/global-setup.ts in playwright.config.ts, and committed .env.test.example (names only). Verified tests create dynamic users and pass after complete DB drop.
+  * API Client 204 & Binary Blob Support: Fixed src/lib/api.ts to properly handle HTTP 204 No Content / empty responses without attempting JSON parsing, and return raw Blobs on PDF/octet-stream/ZIP/image responses. Added failing tests first in tests/hardening.spec.ts.
+  * DB SSL Production Security: Enforced strict SSL verification (`rejectUnauthorized: true`) in server/db.ts for production and SSL connections. Implemented `parseDbSslConfig` supporting `DB_SSL=verify-full`, `DB_SSL_CA`, and explicit opt-in `DB_SSL_INSECURE=true`. Tested parser thoroughly in tests/hardening.spec.ts and updated DEPLOYMENT.md.
+  * Brain/Scratch Folder Cleanup: Audited all external scripts in antigravity-ide/brain/scratch. Removed scripts containing credentials or connection strings, leaving only environment-driven utilities.
 =============================================================================
+
 
 
 

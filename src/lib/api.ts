@@ -143,7 +143,21 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
         headers,
         credentials: 'include',
       });
+      if (retryRes.status === 204 || retryRes.headers.get('content-length') === '0') {
+        return undefined as unknown as T;
+      }
       const retryContentType = retryRes.headers.get('content-type') || '';
+      if (
+        retryContentType.includes('application/pdf') ||
+        retryContentType.includes('application/octet-stream') ||
+        retryContentType.includes('application/zip') ||
+        retryContentType.startsWith('image/')
+      ) {
+        if (!retryRes.ok) {
+          throw new Error(`File download failed with status ${retryRes.status}`);
+        }
+        return (await retryRes.blob()) as unknown as T;
+      }
       if (!retryContentType.includes('application/json')) {
         throw new Error(`Expected JSON response from API but received content-type "${retryContentType}" (status ${retryRes.status})`);
       }
@@ -155,7 +169,25 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     }
   }
 
+  // Handle 204 No Content or empty body
+  if (res.status === 204 || res.headers.get('content-length') === '0') {
+    return undefined as unknown as T;
+  }
+
   const contentType = res.headers.get('content-type') || '';
+  // Handle binary / file / blob downloads
+  if (
+    contentType.includes('application/pdf') ||
+    contentType.includes('application/octet-stream') ||
+    contentType.includes('application/zip') ||
+    contentType.startsWith('image/')
+  ) {
+    if (!res.ok) {
+      throw new Error(`File download failed with status ${res.status}`);
+    }
+    return (await res.blob()) as unknown as T;
+  }
+
   if (!contentType.includes('application/json')) {
     throw new Error(`Expected JSON response from API but received content-type "${contentType}" (status ${res.status})`);
   }

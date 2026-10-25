@@ -14,10 +14,14 @@ All configuration is supplied via environment variables or a secured `.env` file
 | `PORT` | Optional | `3000` | Local port the Express server binds to. |
 | `JWT_SECRET` | **Yes** | 64+ char random string | Secret key for signing 15-minute access JWTs. Generate via `openssl rand -base64 32`. Never commit to version control. |
 | `DATABASE_URL` | **Yes** | `postgresql://user:pass@host:5432/dbname?sslmode=require` | Connection string to PostgreSQL 15+. In production, `sslmode=require` or `sslmode=verify-full` is mandatory. |
+| `DB_SSL` | Optional | `verify-full` / `require` / `true` | Explicit toggle to enable database TLS connection. Automatically detected if `sslmode=require` or `sslmode=verify-full` is in `DATABASE_URL`. |
+| `DB_SSL_CA` | Optional | PEM certificate / CA path | Root Certificate Authority bundle used to verify the PostgreSQL server certificate. |
+| `DB_SSL_INSECURE` | Optional | `false` | Explicit opt-out of certificate validation (`rejectUnauthorized: false`). **Strictly forbidden in production** unless connecting to internal dev instances with self-signed certificates. Default is `false` (which forces `rejectUnauthorized: true`). |
 | `ALLOWED_ORIGINS` | **Yes** | `https://vissionacademy.edu,https://portal.vissionacademy.edu` | Comma-delimited list of trusted client origins for CORS. Any origin not explicitly listed is rejected with `403/CORS error`. |
 | `TRUST_PROXY` | **Yes** | `1` (or `true`) | Controls Express reverse-proxy IP trust. Set to `1` when behind a single reverse proxy (e.g., NGINX, AWS ALB, Cloudflare). Ensures rate-limiting and audit logs use the true client IP (`X-Forwarded-For`). |
 | `REFRESH_TOKEN_IDLE_TIMEOUT_SEC` | Optional | `7200` (2 hours) | Idle timeout before a refresh token expires due to inactivity. |
 | `REFRESH_TOKEN_ABSOLUTE_TIMEOUT_SEC` | Optional | `43200` (12 hours) | Hard maximum lifetime of a login session from initial authentication. |
+
 
 ### Generating Secrets
 ```bash

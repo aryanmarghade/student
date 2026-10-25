@@ -6,6 +6,7 @@ import path from 'path';
 dotenv.config({ path: path.resolve(process.cwd(), '.env.test'), override: true });
 
 export default defineConfig({
+  globalSetup: './tests/global-setup.ts',
   testDir: './tests',
   fullyParallel: false,
   workers: 1,
