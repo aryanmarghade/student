@@ -699,6 +699,39 @@ export async function processTeacherAiProgress(
     throw err;
   }
 
+  // Teacher Faculty Visibility Controls
+  let facultyVisibility = {
+    academic_enabled: true,
+    github_enabled: true,
+    linkedin_enabled: true,
+    hackerrank_enabled: true,
+    leetcode_enabled: true,
+    hackathon_enabled: true,
+  };
+  if (user.role === 'teacher') {
+    const visRes = await query<any>(
+      `SELECT github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled
+       FROM teacher_analytics_visibility
+       WHERE teacher_user_id = $1`,
+      [user.id]
+    );
+    if (visRes.rows.length > 0) {
+      facultyVisibility = {
+        academic_enabled: visRes.rows[0].academic_enabled ?? true,
+        github_enabled: visRes.rows[0].github_enabled ?? true,
+        linkedin_enabled: visRes.rows[0].linkedin_enabled ?? true,
+        hackerrank_enabled: visRes.rows[0].hackerrank_enabled ?? true,
+        leetcode_enabled: visRes.rows[0].leetcode_enabled ?? true,
+        hackathon_enabled: visRes.rows[0].hackathon_enabled ?? true,
+      };
+    }
+    if (!facultyVisibility.academic_enabled) {
+      const err: any = new Error('Access Denied: Academic Analytics visibility is disabled for your faculty account.');
+      err.status = 403;
+      throw err;
+    }
+  }
+
   // Fetch Class, Subject, and Semester metadata
   const [clsRes, subRes, semRes] = await Promise.all([
     query<any>('SELECT id, name, year, section FROM classes WHERE id = $1', [classId]),
@@ -982,24 +1015,28 @@ export async function processTeacherAiProgress(
         status: c.verification_status,
       }));
 
-    const sHacks = hackRes.rows
-      .filter((h: any) => h.student_id === st.id)
-      .map((h: any) => ({
-        title: h.name,
-        role: h.position_result || 'Participant',
-        status: h.verification_status,
-        eventName: h.name || undefined,
-        competitionLevel: undefined,
-        positionResult: h.position_result || undefined,
-      }));
+    const sHacks = facultyVisibility.hackathon_enabled
+      ? hackRes.rows
+          .filter((h: any) => h.student_id === st.id)
+          .map((h: any) => ({
+            title: h.name,
+            role: h.position_result || 'Participant',
+            status: h.verification_status,
+            eventName: h.name || undefined,
+            competitionLevel: undefined,
+            positionResult: h.position_result || undefined,
+          }))
+      : [];
 
-    const sPosts = postRes.rows
-      .filter((p: any) => p.student_id === st.id)
-      .map((p: any) => ({
-        title: p.title,
-        category: p.category || undefined,
-        status: p.verification_status || 'unverified',
-      }));
+    const sPosts = facultyVisibility.linkedin_enabled
+      ? postRes.rows
+          .filter((p: any) => p.student_id === st.id)
+          .map((p: any) => ({
+            title: p.title,
+            category: p.category || undefined,
+            status: p.verification_status || 'unverified',
+          }))
+      : [];
     const postsCount = sPosts.length;
 
     const sSports = sportsRes.rows
@@ -1022,44 +1059,52 @@ export async function processTeacherAiProgress(
     const hrEvs = hrEvidenceRes.rows.filter((e: any) => e.student_id === st.id);
 
     const externalProfiles: StudentDeterministicAnalytics['externalProfiles'] = {
-      github: gh && gh.sync_status === 'synced'
-        ? {
-            status: 'SYNCED',
-            repos: gh.public_repos ?? undefined,
-            stars: gh.total_stars ?? undefined,
-            contributions: gh.total_contributions ?? undefined,
-            note: 'Public GitHub activity snapshot; repository count is not direct proof of curriculum coding proficiency.',
-          }
-        : { status: st.github_url ? 'NOT_SYNCED' : 'NOT_AVAILABLE' },
-      linkedin: li && li.sync_status === 'synced'
-        ? {
-            status: 'SYNCED',
-            connections: li.connections ?? undefined,
-            followers: li.followers ?? undefined,
-          }
-        : { status: st.linkedin_url ? 'NOT_SYNCED' : 'NOT_AVAILABLE' },
-      hackerrank: hr && hr.sync_status === 'synced'
-        ? {
-            status: 'SYNCED',
-            badgesCount: hr.badges_count ?? undefined,
-            certificates: hrEvs.map((e: any) => e.badge_name || e.skill_name),
-          }
-        : {
-            status: hrEvs.length > 0 ? 'SYNCED' : (st.hackerrank_url ? 'NOT_SYNCED' : 'NOT_AVAILABLE'),
-            badgesCount: hrEvs.length,
-            certificates: hrEvs.map((e: any) => e.badge_name || e.skill_name),
-          },
-      leetcode: lcSnap && lcSnap.sync_status === 'synced'
-        ? {
-            status: 'SYNCED',
-            url: st.leetcode_url || undefined,
-            totalSolved: lcSnap.total_solved ?? undefined,
-            easy: lcSnap.easy_solved ?? undefined,
-            medium: lcSnap.medium_solved ?? undefined,
-            hard: lcSnap.hard_solved ?? undefined,
-            ranking: lcSnap.global_ranking ?? undefined,
-          }
-        : (st.leetcode_url ? { status: 'LINKED', url: st.leetcode_url } : { status: 'NOT_AVAILABLE' }),
+      github: facultyVisibility.github_enabled
+        ? (gh && gh.sync_status === 'synced'
+            ? {
+                status: 'SYNCED',
+                repos: gh.public_repos ?? undefined,
+                stars: gh.total_stars ?? undefined,
+                contributions: gh.total_contributions ?? undefined,
+                note: 'Public GitHub activity snapshot; repository count is not direct proof of curriculum coding proficiency.',
+              }
+            : { status: st.github_url ? 'NOT_SYNCED' : 'NOT_AVAILABLE' })
+        : { status: 'NOT_AVAILABLE' },
+      linkedin: facultyVisibility.linkedin_enabled
+        ? (li && li.sync_status === 'synced'
+            ? {
+                status: 'SYNCED',
+                connections: li.connections ?? undefined,
+                followers: li.followers ?? undefined,
+              }
+            : { status: st.linkedin_url ? 'NOT_SYNCED' : 'NOT_AVAILABLE' })
+        : { status: 'NOT_AVAILABLE' },
+      hackerrank: facultyVisibility.hackerrank_enabled
+        ? (hr && hr.sync_status === 'synced'
+            ? {
+                status: 'SYNCED',
+                badgesCount: hr.badges_count ?? undefined,
+                certificates: hrEvs.map((e: any) => e.badge_name || e.skill_name),
+              }
+            : {
+                status: hrEvs.length > 0 ? 'SYNCED' : (st.hackerrank_url ? 'NOT_SYNCED' : 'NOT_AVAILABLE'),
+                badgesCount: hrEvs.length,
+                certificates: hrEvs.map((e: any) => e.badge_name || e.skill_name),
+              })
+        : { status: 'NOT_AVAILABLE', badgesCount: 0, certificates: [] },
+      leetcode: facultyVisibility.leetcode_enabled
+        ? (lcSnap && lcSnap.sync_status === 'synced'
+            ? {
+                status: 'SYNCED',
+                url: st.leetcode_url || undefined,
+                totalSolved: lcSnap.total_solved ?? undefined,
+                easy: lcSnap.easy_solved ?? undefined,
+                medium: lcSnap.medium_solved ?? undefined,
+                hard: lcSnap.hard_solved ?? undefined,
+                ranking: lcSnap.global_ranking ?? undefined,
+              }
+            : (st.leetcode_url ? { status: 'LINKED', url: st.leetcode_url } : { status: 'NOT_AVAILABLE' }))
+        : { status: 'NOT_AVAILABLE' },
     };
 
     if (externalProfiles.github.status !== 'SYNCED') {

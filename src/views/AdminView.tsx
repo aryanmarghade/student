@@ -42,6 +42,7 @@ export const AdminView: React.FC = () => {
   const [analytics, setAnalytics] = useState<any>(null);
   const [analyticsVisibility, setAnalyticsVisibility] = useState<Record<string, any>>({});
   const [placementVisibility, setPlacementVisibility] = useState<Record<string, any>>({});
+  const [savingVisibilityKey, setSavingVisibilityKey] = useState<string | null>(null);
   const [settingsSubTab, setSettingsSubTab] = useState<'teachers' | 'placement' | 'sync'>('teachers');
 
   // Entities Data
@@ -299,20 +300,33 @@ export const AdminView: React.FC = () => {
   };
 
   const handleToggleVisibility = async (teacherId: string, key: string) => {
-    const currentSettings = analyticsVisibility[teacherId] || { github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, leetcode_enabled: true, academic_enabled: true };
-    const newValue = !currentSettings[key];
+    const toggleId = `${teacherId}:${key}`;
+    if (savingVisibilityKey === toggleId) return;
+    setSavingVisibilityKey(toggleId);
+
+    const currentSettings = analyticsVisibility[teacherId] || {
+      academic_enabled: true,
+      github_enabled: true,
+      hackathon_enabled: true,
+      linkedin_enabled: true,
+      hackerrank_enabled: true,
+      leetcode_enabled: true,
+    };
+    const newValue = currentSettings[key] === false ? true : false;
     const newSettings = { ...currentSettings, [key]: newValue };
     
     // Optimistic update
     setAnalyticsVisibility(prev => ({ ...prev, [teacherId]: newSettings }));
     try {
-      const res = await api.updateAdminAnalyticsVisibility(teacherId, newSettings);
+      const res = await api.updateAdminAnalyticsVisibility(teacherId, { [key]: newValue });
       setAnalyticsVisibility(prev => ({ ...prev, [teacherId]: res.settings }));
-      showToast(res.message || 'Settings updated successfully');
+      showToast(res.message || 'Visibility setting updated successfully');
     } catch (err: any) {
       // Revert on failure
       setAnalyticsVisibility(prev => ({ ...prev, [teacherId]: currentSettings }));
-      showToast(err.message || 'Failed to update settings', true);
+      showToast(err.message || 'Failed to update visibility setting', true);
+    } finally {
+      setSavingVisibilityKey(null);
     }
   };
 
@@ -1789,17 +1803,31 @@ export const AdminView: React.FC = () => {
                           { key: 'hackathon_enabled', label: 'Hackathons & Events', desc: 'College and external hackathon participations.' }
                         ].map(setting => {
                           const isEnabled = settings[setting.key] !== false;
+                          const toggleId = `${teacher.id}:${setting.key}`;
+                          const isSaving = savingVisibilityKey === toggleId;
                           return (
                             <div key={setting.key} className="bg-white p-3.5 rounded-lg border border-slate-200/80 shadow-2xs flex items-start justify-between gap-3">
                               <div className="space-y-0.5 flex-1 pr-1">
-                                <h4 className="text-xs font-bold text-slate-900">{setting.label}</h4>
+                                <div className="flex items-center gap-2">
+                                  <h4 className="text-xs font-bold text-slate-900">{setting.label}</h4>
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded transition-colors ${
+                                    isSaving
+                                      ? 'bg-amber-100 text-amber-800 animate-pulse'
+                                      : isEnabled
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : 'bg-slate-200 text-slate-700'
+                                  }`}>
+                                    {isSaving ? 'Saving...' : (isEnabled ? 'ON' : 'OFF')}
+                                  </span>
+                                </div>
                                 <p className="text-[11px] text-slate-500 leading-tight">{setting.desc}</p>
                               </div>
-                              <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">
+                              <label className={`relative inline-flex items-center cursor-pointer shrink-0 mt-0.5 ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                 <input 
                                   type="checkbox" 
                                   className="sr-only peer" 
                                   checked={isEnabled} 
+                                  disabled={isSaving}
                                   onChange={() => handleToggleVisibility(teacher.id, setting.key)} 
                                 />
                                 <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>

@@ -488,12 +488,47 @@ router.get('/github/snapshots', async (req: AuthRequest, res) => {
   res.json({ month, count: rows.length, snapshots: rows });
 });
 
+const VALID_FACULTY_CATEGORY_KEYS = [
+  'academic_enabled',
+  'github_enabled',
+  'hackerrank_enabled',
+  'linkedin_enabled',
+  'leetcode_enabled',
+  'hackathon_enabled',
+  'sports_enabled'
+] as const;
+
+const FACULTY_CATEGORY_ALIASES: Record<string, string> = {
+  academic: 'academic_enabled',
+  github: 'github_enabled',
+  hackerrank: 'hackerrank_enabled',
+  linkedin: 'linkedin_enabled',
+  leetcode: 'leetcode_enabled',
+  hackathon: 'hackathon_enabled',
+  sports: 'sports_enabled',
+};
+
 // GET /api/admin/teachers/:teacherId/analytics-visibility
 router.get('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest, res) => {
-  const result = await query<any>(`SELECT * FROM teacher_analytics_visibility WHERE teacher_user_id = $1`, [req.params.teacherId]);
+  const teacherId = req.params.teacherId;
+  const user = await query<{id: string, role: string}>('SELECT id, role FROM users WHERE id = $1 AND role = $2', [teacherId, 'teacher']);
+  if (user.rows.length === 0) {
+    return res.status(404).json({ error: 'Teacher not found' });
+  }
+
+  const result = await query<any>(`SELECT * FROM teacher_analytics_visibility WHERE teacher_user_id = $1`, [teacherId]);
   if (result.rows.length === 0) {
     // Return defaults if not initialized yet
-    return res.json({ github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, leetcode_enabled: true, hackathon_enabled: true, academic_enabled: true, sports_enabled: true });
+    return res.json({
+      teacher_user_id: teacherId,
+      academic_enabled: true,
+      github_enabled: true,
+      hackerrank_enabled: true,
+      linkedin_enabled: true,
+      leetcode_enabled: true,
+      hackathon_enabled: true,
+      sports_enabled: true
+    });
   }
   res.json(result.rows[0]);
 });
@@ -510,41 +545,114 @@ router.get('/analytics-visibility/all', async (req: AuthRequest, res) => {
 
 // PUT /api/admin/teachers/:teacherId/analytics-visibility
 router.put('/teachers/:teacherId/analytics-visibility', async (req: AuthRequest, res) => {
-  const { github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled, sports_enabled } = req.body;
-  
-  // Verify teacher exists and is a teacher
-  const user = await query<{id: string, role: string}>('SELECT id, role FROM users WHERE id = $1 AND role = $2', [req.params.teacherId, 'teacher']);
+  const teacherId = req.params.teacherId;
+
+  // Verify teacher exists and has teacher role
+  const user = await query<{id: string, role: string}>('SELECT id, role FROM users WHERE id = $1 AND role = $2', [teacherId, 'teacher']);
   if (user.rows.length === 0) {
     return res.status(404).json({ error: 'Teacher not found' });
   }
 
+  const body = req.body;
+  if (!body || typeof body !== 'object') {
+    return res.status(400).json({ error: 'Payload must be a valid JSON object' });
+  }
+
+  // Parse updates from single toggle format or full object format
+  const incomingUpdates: Record<string, boolean> = {};
+
+  if (body.category !== undefined || body.key !== undefined) {
+    const rawKey = String(body.category || body.key).trim();
+    const resolvedKey = FACULTY_CATEGORY_ALIASES[rawKey] || rawKey;
+    if (!VALID_FACULTY_CATEGORY_KEYS.includes(resolvedKey as any)) {
+      return res.status(400).json({ error: `Invalid category key: "${rawKey}". Valid categories are: ${VALID_FACULTY_CATEGORY_KEYS.join(', ')}` });
+    }
+    const rawVal = body.enabled !== undefined ? body.enabled : body.value;
+    if (typeof rawVal !== 'boolean') {
+      return res.status(400).json({ error: 'Category setting value must be a boolean (true or false).' });
+    }
+    incomingUpdates[resolvedKey] = rawVal;
+  } else {
+    // Multi-key or full-object update
+    const allowedMetaKeys = ['teacher_user_id', 'updated_at', 'updated_by', 'id'];
+    for (const [key, val] of Object.entries(body)) {
+      if (allowedMetaKeys.includes(key)) continue;
+      const resolvedKey = FACULTY_CATEGORY_ALIASES[key] || key;
+      if (!VALID_FACULTY_CATEGORY_KEYS.includes(resolvedKey as any)) {
+        return res.status(400).json({ error: `Invalid category key: "${key}". Valid categories are: ${VALID_FACULTY_CATEGORY_KEYS.join(', ')}` });
+      }
+      if (typeof val !== 'boolean') {
+        return res.status(400).json({ error: `Value for "${key}" must be a boolean (true or false).` });
+      }
+      incomingUpdates[resolvedKey] = val;
+    }
+  }
+
+  if (Object.keys(incomingUpdates).length === 0) {
+    return res.status(400).json({ error: 'No valid category settings provided to update.' });
+  }
+
+  // Retrieve current settings for this teacher
+  const currentRes = await query<any>('SELECT * FROM teacher_analytics_visibility WHERE teacher_user_id = $1', [teacherId]);
+  const current = currentRes.rows[0] || {
+    academic_enabled: true,
+    github_enabled: true,
+    hackerrank_enabled: true,
+    linkedin_enabled: true,
+    leetcode_enabled: true,
+    hackathon_enabled: true,
+    sports_enabled: true,
+  };
+
+  const finalSettings = {
+    academic_enabled: incomingUpdates.academic_enabled !== undefined ? incomingUpdates.academic_enabled : (current.academic_enabled ?? true),
+    github_enabled: incomingUpdates.github_enabled !== undefined ? incomingUpdates.github_enabled : (current.github_enabled ?? true),
+    hackerrank_enabled: incomingUpdates.hackerrank_enabled !== undefined ? incomingUpdates.hackerrank_enabled : (current.hackerrank_enabled ?? true),
+    linkedin_enabled: incomingUpdates.linkedin_enabled !== undefined ? incomingUpdates.linkedin_enabled : (current.linkedin_enabled ?? true),
+    leetcode_enabled: incomingUpdates.leetcode_enabled !== undefined ? incomingUpdates.leetcode_enabled : (current.leetcode_enabled ?? true),
+    hackathon_enabled: incomingUpdates.hackathon_enabled !== undefined ? incomingUpdates.hackathon_enabled : (current.hackathon_enabled ?? true),
+    sports_enabled: incomingUpdates.sports_enabled !== undefined ? incomingUpdates.sports_enabled : (current.sports_enabled ?? true),
+  };
+
   const result = await query<any>(
-    `INSERT INTO teacher_analytics_visibility (teacher_user_id, github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled, sports_enabled, updated_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO teacher_analytics_visibility (
+       teacher_user_id, academic_enabled, github_enabled, hackerrank_enabled,
+       linkedin_enabled, leetcode_enabled, hackathon_enabled, sports_enabled,
+       updated_at, updated_by
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, $9)
      ON CONFLICT (teacher_user_id) DO UPDATE SET
+       academic_enabled = EXCLUDED.academic_enabled,
        github_enabled = EXCLUDED.github_enabled,
-       linkedin_enabled = EXCLUDED.linkedin_enabled,
        hackerrank_enabled = EXCLUDED.hackerrank_enabled,
+       linkedin_enabled = EXCLUDED.linkedin_enabled,
        leetcode_enabled = EXCLUDED.leetcode_enabled,
        hackathon_enabled = EXCLUDED.hackathon_enabled,
-       academic_enabled = EXCLUDED.academic_enabled,
        sports_enabled = EXCLUDED.sports_enabled,
        updated_at = CURRENT_TIMESTAMP,
        updated_by = EXCLUDED.updated_by
      RETURNING *`,
     [
-      req.params.teacherId,
-      github_enabled ?? true,
-      linkedin_enabled ?? true,
-      hackerrank_enabled ?? true,
-      leetcode_enabled ?? true,
-      hackathon_enabled ?? true,
-      academic_enabled ?? true,
-      sports_enabled ?? true,
+      teacherId,
+      finalSettings.academic_enabled,
+      finalSettings.github_enabled,
+      finalSettings.hackerrank_enabled,
+      finalSettings.linkedin_enabled,
+      finalSettings.leetcode_enabled,
+      finalSettings.hackathon_enabled,
+      finalSettings.sports_enabled,
       req.user!.id
     ]
   );
-  await logActivity(req.user!.id, 'ANALYTICS_VISIBILITY_UPDATED', 'SYSTEM_SETTINGS', req.params.teacherId, `Updated analytics visibility settings for teacher ${req.params.teacherId}.`);
+
+  await logActivity(
+    req.user!.id,
+    'ANALYTICS_VISIBILITY_UPDATED',
+    'SYSTEM_SETTINGS',
+    teacherId,
+    `Updated analytics visibility settings for teacher ${teacherId}: ${JSON.stringify(incomingUpdates)}`
+  );
+
   res.json({ message: 'Settings updated successfully.', settings: result.rows[0] });
 });
 

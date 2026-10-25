@@ -24,6 +24,41 @@ import { handleTeacherAiRequest } from '../role-intelligence-engine.js';
 const router = Router();
 router.use(requireAuth, requireRole('teacher'));
 
+export async function getTeacherVisibility(teacherUserId: string) {
+  const res = await query<any>(
+    'SELECT * FROM teacher_analytics_visibility WHERE teacher_user_id = $1',
+    [teacherUserId]
+  );
+  if (res.rows.length > 0) {
+    const r = res.rows[0];
+    return {
+      teacher_user_id: teacherUserId,
+      academic_enabled: r.academic_enabled !== false,
+      github_enabled: r.github_enabled !== false,
+      hackerrank_enabled: r.hackerrank_enabled !== false,
+      linkedin_enabled: r.linkedin_enabled !== false,
+      leetcode_enabled: r.leetcode_enabled !== false,
+      hackathon_enabled: r.hackathon_enabled !== false,
+      sports_enabled: r.sports_enabled !== false,
+    };
+  }
+  return {
+    teacher_user_id: teacherUserId,
+    academic_enabled: true,
+    github_enabled: true,
+    hackerrank_enabled: true,
+    linkedin_enabled: true,
+    leetcode_enabled: true,
+    hackathon_enabled: true,
+    sports_enabled: true,
+  };
+}
+
+router.get('/visibility-settings', async (req: AuthRequest, res) => {
+  const settings = await getTeacherVisibility(req.user!.id);
+  res.json({ settings });
+});
+
 const defaultExams = [
   { type: 'Internal 1', max: 25 },
   { type: 'Internal 2', max: 25 },
@@ -119,34 +154,39 @@ router.get('/classes/:classId/subjects/:subjectId/marks', async (req: AuthReques
 
 router.post('/classes/:classId/subjects/:subjectId/assessments', async (req: AuthRequest, res) => {
   const { classId, subjectId } = req.params;
-  const { semester_id, title, max_marks, weight = 1.0, assessment_type = 'Other', assessment_date, answer_key, rubric_criteria = [] } = req.body;
+  const safeSemesterId = req.body.semester_id || req.body.semesterId;
+  const safeTitle = String(req.body.title || req.body.assessmentTitle || '').trim();
+  const safeMaxMarks = Number(req.body.max_marks !== undefined ? req.body.max_marks : req.body.maxMarks);
+  const safeWeight = Number(req.body.weight !== undefined ? req.body.weight : 1.0) || 1.0;
+  const safeAssessmentType = (req.body.assessment_type && req.body.assessment_type !== 'Other') ? req.body.assessment_type : (req.body.assessmentType || 'Other');
+  const safeAssessmentDate = req.body.assessment_date || req.body.assessmentDate;
+  const safeAnswerKey = req.body.answer_key || req.body.answerKey;
+  const safeRubricCriteria = Array.isArray(req.body.rubric_criteria) && req.body.rubric_criteria.length ? req.body.rubric_criteria : (req.body.rubricCriteria || []);
 
-  if (!await verifyTeacherClassScope(classId, subjectId, semester_id, req.user!.id))
+  if (!await verifyTeacherClassScope(classId, subjectId, safeSemesterId, req.user!.id))
     return res.status(403).json({ error: 'Access Denied: You are not assigned to this class and subject.' });
 
-  const safeTitle = String(title || '').trim();
-  const safeMaxMarks = Number(max_marks);
   if (!safeTitle) return res.status(400).json({ error: 'Assessment title is required.' });
   if (!Number.isFinite(safeMaxMarks) || safeMaxMarks <= 0) return res.status(400).json({ error: 'Assessment max marks must be a positive number.' });
 
   const existing = await query<any>(
     `SELECT id FROM assessment_definitions WHERE class_id=$1 AND subject_id=$2 AND semester_id=$3 AND title=$4 AND status='active'`,
-    [classId, subjectId, semester_id, safeTitle],
+    [classId, subjectId, safeSemesterId, safeTitle],
   );
   if (existing.rowCount) return res.status(409).json({ error: 'An active assessment with this title already exists for this class and subject.' });
 
   const asmt = await createAssessmentWithRubric({
     classId,
     subjectId,
-    semesterId: semester_id,
+    semesterId: safeSemesterId,
     teacherUserId: req.user!.id,
     title: safeTitle,
     maxMarks: safeMaxMarks,
-    weight: Number(weight) || 1.0,
-    assessmentType: assessment_type,
-    assessmentDate: assessment_date,
-    answerKey: answer_key,
-    rubricCriteria: rubric_criteria,
+    weight: safeWeight,
+    assessmentType: safeAssessmentType,
+    assessmentDate: safeAssessmentDate,
+    answerKey: safeAnswerKey,
+    rubricCriteria: safeRubricCriteria,
   });
 
   res.status(201).json({ message: 'Assessment definition created successfully with rubrics.', assessment: asmt });
@@ -187,29 +227,30 @@ router.post('/classes/:classId/subjects/:subjectId/assessments/:assessmentId/ai-
 
 router.post('/classes/:classId/subjects/:subjectId/marks', async (req: AuthRequest, res) => {
   const { classId, subjectId } = req.params;
-  const { semester_id, updates } = req.body;
+  const semester_id = req.body.semester_id || req.body.semesterId;
+  const rawUpdates = req.body.updates || req.body.marksData;
   if (!await verifyTeacherClassScope(classId, subjectId, semester_id, req.user!.id))
     return res.status(403).json({ error: 'Access Denied: You are not authorized to update marks for this class/subject.' });
-  if (!Array.isArray(updates) || !updates.length) return res.status(400).json({ error: 'Updates array is required.' });
+  if (!Array.isArray(rawUpdates) || !rawUpdates.length) return res.status(400).json({ error: 'Updates array is required.' });
 
   const result = await saveOrUpdateMarks({
     classId,
     subjectId,
     semesterId: semester_id || 'sem_1',
     teacherUserId: req.user!.id,
-    updates: updates.map(u => ({
-      studentId: u.student_id,
-      examType: u.exam_type,
-      marksObtained: u.marks_obtained,
-      maxMarks: u.max_marks || 100,
+    updates: rawUpdates.map((u: any) => ({
+      studentId: u.student_id || u.studentId,
+      examType: u.exam_type || u.examType || req.body.exam_type || req.body.examType || 'Internal 1',
+      marksObtained: u.marks_obtained !== undefined ? u.marks_obtained : u.marksObtained,
+      maxMarks: Number(u.max_marks || u.maxMarks || req.body.max_marks || req.body.maxMarks || 100),
       status: u.status || 'entered',
-      suggestedMarks: u.suggested_marks,
-      suggestedByAi: u.suggested_by_ai,
-      aiJustification: u.ai_justification,
-      aiCriterionScores: u.ai_criterion_scores,
-      teacherOverrideReason: u.teacher_override_reason,
-      teacherFeedback: u.teacher_feedback,
-      feedbackPublished: u.feedback_published,
+      suggestedMarks: u.suggested_marks !== undefined ? u.suggested_marks : u.suggestedMarks,
+      suggestedByAi: u.suggested_by_ai !== undefined ? u.suggested_by_ai : u.suggestedByAi,
+      aiJustification: u.ai_justification || u.aiJustification,
+      aiCriterionScores: u.ai_criterion_scores || u.aiCriterionScores,
+      teacherOverrideReason: u.teacher_override_reason || u.teacherOverrideReason,
+      teacherFeedback: u.teacher_feedback || u.teacherFeedback,
+      feedbackPublished: u.feedback_published !== undefined ? u.feedback_published : u.feedbackPublished,
       reviewedBy: req.user!.id,
     })),
   });
@@ -274,6 +315,11 @@ router.get('/classes/:classId/subjects/:subjectId/export-marks', async (req: Aut
   if (!await verifyTeacherClassScope(classId, subjectId, semester, req.user!.id))
     return res.status(403).json({ error: 'Access Denied.' });
 
+  const visibility = await getTeacherVisibility(req.user!.id);
+  if (!visibility.academic_enabled) {
+    return res.status(403).json({ error: 'Academic analytics visibility is disabled for this faculty account by administrator.' });
+  }
+
   const [students, marks, asmtDefs] = await Promise.all([
     query<any>(`SELECT s.id, s.roll_number, u.full_name FROM students s JOIN users u ON u.id=s.user_id WHERE s.class_id=$1 ORDER BY s.roll_number`, [classId]),
     query<any>(`SELECT * FROM marks WHERE class_id=$1 AND subject_id=$2 AND semester_id=$3`, [classId, subjectId, semester]),
@@ -301,6 +347,11 @@ router.get('/classes/:classId/subjects/:subjectId/class-analytics', async (req: 
   const semester = String(req.query.semester_id || 'sem_1');
   if (!await verifyTeacherClassScope(classId, subjectId, semester, req.user!.id))
     return res.status(403).json({ error: 'Access Denied.' });
+
+  const visibility = await getTeacherVisibility(req.user!.id);
+  if (!visibility.academic_enabled) {
+    return res.status(403).json({ error: 'Academic analytics visibility is disabled for this faculty account by administrator.' });
+  }
 
   const analytics = await calculateClassSubjectAnalytics(classId, subjectId, semester);
   res.json(analytics);
@@ -436,8 +487,7 @@ router.post('/analytics', async (req: AuthRequest, res) => {
     }
   }
 
-  const visibilityRes = await query<any>(`SELECT * FROM teacher_analytics_visibility WHERE teacher_user_id = $1`, [req.user!.id]);
-  const visibility = visibilityRes.rows[0] || { github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, leetcode_enabled: true, hackathon_enabled: true, academic_enabled: true, sports_enabled: true };
+  const visibility = await getTeacherVisibility(req.user!.id);
 
   // Aggregate external student activity (LinkedIn posts & GitHub stats) for students in scope
   const studentIdsInScope = Array.from(new Set(rows.map(x => x.student_id)));
@@ -585,7 +635,7 @@ router.post('/analytics', async (req: AuthRequest, res) => {
         githubDataSource,
       } : {}),
     },
-    rawExportData: rows.map(x => ({
+    rawExportData: visibility.academic_enabled ? rows.map(x => ({
       StudentName: x.full_name,
       RollNumber: x.roll_number,
       ExamType: x.exam_type,
@@ -595,7 +645,7 @@ router.post('/analytics', async (req: AuthRequest, res) => {
       Percentage: (x.marks_obtained / x.max_marks * 100).toFixed(1),
       Grade: (x.marks_obtained / x.max_marks * 100) >= 85 ? 'A' : (x.marks_obtained / x.max_marks * 100) >= 70 ? 'B' : (x.marks_obtained / x.max_marks * 100) >= 55 ? 'C' : (x.marks_obtained / x.max_marks * 100) >= 40 ? 'D' : 'F',
       PassFail: (x.marks_obtained / x.max_marks * 100) >= 40 ? 'Pass' : 'Fail',
-    })),
+    })) : [],
   });
 });
 
@@ -634,9 +684,7 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
     return res.status(404).json({ error: 'Student not found or not enrolled in this class.' });
   }
 
-  // Internal Marks: fetch assessment_definitions for this scope, then matching marks
-  const visibilityRes = await query<any>(`SELECT * FROM teacher_analytics_visibility WHERE teacher_user_id = $1`, [req.user!.id]);
-  const visibility = visibilityRes.rows[0] || { github_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, hackathon_enabled: true, academic_enabled: true };
+  const visibility = await getTeacherVisibility(req.user!.id);
 
   const [assessmentDefs, marksRows, postsRows] = await Promise.all([
     query<any>(
@@ -794,7 +842,7 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
   }
 
   if (!visibility.github_enabled) {
-    githubData = { synced: false, dataSource: 'hidden', reason: 'Visibility disabled by Admin' };
+    githubData = null;
   }
 
 // LinkedIn Data
@@ -843,7 +891,7 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
   }
 
   if (!visibility.linkedin_enabled) {
-    linkedinData = { synced: false, dataSource: 'hidden', reason: 'Visibility disabled by Admin' };
+    linkedinData = null;
   }
 
   // HackerRank Data
@@ -891,7 +939,7 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
   }
 
   if (!visibility.hackerrank_enabled) {
-    hackerrankData = { url: student.hackerrank_url, synced: false, reason: 'Visibility disabled by Admin' } as any;
+    hackerrankData = null;
   }
 
   // Posts grouped by month (YYYY-MM)
@@ -920,24 +968,26 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
 
   const academicHistory = visibility.academic_enabled ? await calculateAcademicHistory(studentId) : null;
 
+  const studentObj: any = {
+    id: student.id,
+    full_name: student.full_name,
+    roll_number: student.roll_number,
+    email: student.email,
+    className: student.className,
+    classYear: student.classYear,
+    classSection: student.classSection,
+    departmentName: student.departmentName,
+    semesterName: student.semesterName,
+    profile_photo_url: student.profile_photo_url,
+    profile_strength: student.profile_strength,
+  };
+  if (visibility.github_enabled) studentObj.github_url = student.github_url;
+  if (visibility.linkedin_enabled) studentObj.linkedin_url = student.linkedin_url;
+  if (visibility.hackerrank_enabled) studentObj.hackerrank_url = student.hackerrank_url;
+  if (visibility.leetcode_enabled) studentObj.leetcode_url = student.leetcode_url;
+
   res.json({
-    student: {
-      id: student.id,
-      full_name: student.full_name,
-      roll_number: student.roll_number,
-      email: student.email,
-      className: student.className,
-      classYear: student.classYear,
-      classSection: student.classSection,
-      departmentName: student.departmentName,
-      semesterName: student.semesterName,
-      profile_photo_url: student.profile_photo_url,
-      github_url: student.github_url,
-      linkedin_url: student.linkedin_url,
-      hackerrank_url: student.hackerrank_url,
-      leetcode_url: student.leetcode_url,
-      profile_strength: student.profile_strength,
-    },
+    student: studentObj,
     context: {
       classId,
       subjectId,
@@ -952,18 +1002,18 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
       internalSummary,
       academicHistory,
     } : {}),
-    ...(visibility.github_enabled ? {
+    ...(visibility.github_enabled && githubData ? {
       githubData,
     } : {}),
-    ...(visibility.hackerrank_enabled ? {
+    ...(visibility.hackerrank_enabled && hackerrankData ? {
       hackerrankData,
       hackerrankUrl: student.hackerrank_url,
     } : {}),
-    ...((visibility.leetcode_enabled ?? true) ? {
+    ...(visibility.leetcode_enabled && student.leetcode_data ? {
       leetcodeData: student.leetcode_data,
       leetcodeUrl: student.leetcode_url,
     } : {}),
-    ...(visibility.linkedin_enabled ? {
+    ...(visibility.linkedin_enabled && (linkedinData || postsRows.rows.length > 0) ? {
       linkedinData,
       linkedinUrl: student.linkedin_url,
       linkedinPosts: postsRows.rows,
@@ -986,28 +1036,63 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
   if (!s) return res.status(404).json({ error: 'Student record not found.' });
   if (!await verifyTeacherClassScope(s.class_id, undefined, undefined, req.user!.id))
     return res.status(403).json({ error: 'Access Denied: This student is not enrolled in your assigned classes.' });
+
+  const visibility = await getTeacherVisibility(req.user!.id);
+
   const [projects, achievements, certifications, hackathons, documents, marks, sports, hrEvidence, liPosts, posts] = await Promise.all([
     query(`SELECT * FROM projects WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
     query(`SELECT * FROM achievements WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
     query(`SELECT * FROM certifications WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
-    query(`SELECT * FROM hackathons WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    visibility.hackathon_enabled ? query(`SELECT * FROM hackathons WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]) : Promise.resolve({ rows: [] }),
     query(`SELECT * FROM student_documents WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
-    query(`SELECT * FROM marks WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
+    visibility.academic_enabled ? query(`SELECT * FROM marks WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]) : Promise.resolve({ rows: [] }),
     query(`SELECT * FROM sports WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
-    query(`SELECT * FROM student_hackerrank_evidence WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
-    query(`SELECT * FROM student_linkedin_posts WHERE student_id=$1 ORDER BY post_date DESC, created_at DESC`, [s.id]),
-    query(`
+    visibility.hackerrank_enabled ? query(`SELECT * FROM student_hackerrank_evidence WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]) : Promise.resolve({ rows: [] }),
+    visibility.linkedin_enabled ? query(`SELECT * FROM student_linkedin_posts WHERE student_id=$1 ORDER BY post_date DESC, created_at DESC`, [s.id]) : Promise.resolve({ rows: [] }),
+    visibility.linkedin_enabled ? query(`
       SELECT p.*,
              (SELECT json_agg(a.*) FROM post_attachments a WHERE a.post_id = p.id) as attachments
       FROM posts p
       WHERE p.student_id = $1
       ORDER BY p.created_at DESC
-    `, [s.id]),
+    `, [s.id]) : Promise.resolve({ rows: [] }),
   ]);
-  const academicHistory = await calculateAcademicHistory(s.id);
+
+  const academicHistory = visibility.academic_enabled ? await calculateAcademicHistory(s.id) : null;
+
+  const profile_links: Record<string, string | null | undefined> = {
+    portfolio: s.portfolio_url,
+    resume: s.resume_url,
+  };
+  if (visibility.github_enabled) profile_links.github = s.github_url;
+  if (visibility.linkedin_enabled) profile_links.linkedin = s.linkedin_url;
+  if (visibility.hackerrank_enabled) profile_links.hackerrank = s.hackerrank_url;
+  if (visibility.leetcode_enabled) profile_links.leetcode = s.leetcode_url;
+
+  const sanitizedStudent = { ...s };
+  if (!visibility.github_enabled) {
+    delete sanitizedStudent.github_url;
+    delete sanitizedStudent.github_data;
+  }
+  if (!visibility.linkedin_enabled) {
+    delete sanitizedStudent.linkedin_url;
+  }
+  if (!visibility.hackerrank_enabled) {
+    delete sanitizedStudent.hackerrank_url;
+    delete sanitizedStudent.hackerrank_data;
+  }
+  if (!visibility.leetcode_enabled) {
+    delete sanitizedStudent.leetcode_url;
+    delete sanitizedStudent.leetcode_data;
+  }
+  if (!visibility.academic_enabled) {
+    delete sanitizedStudent.cgpa;
+    delete sanitizedStudent.sgpa;
+    delete sanitizedStudent.total_backlogs;
+  }
 
   res.json({
-    ...s,
+    ...sanitizedStudent,
     projects: projects.rows,
     achievements: achievements.rows,
     certifications: certifications.rows,
@@ -1018,14 +1103,7 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
     documents: documents.rows,
     marks: marks.rows,
     marksheets: [],
-    profile_links: {
-      github: s.github_url,
-      linkedin: s.linkedin_url,
-      hackerrank: s.hackerrank_url,
-      leetcode: s.leetcode_url,
-      portfolio: s.portfolio_url,
-      resume: s.resume_url,
-    },
+    profile_links,
     posts: posts.rows,
     academicHistory,
   });
@@ -1151,7 +1229,34 @@ router.get('/students/:studentId/intelligence-evidence', async (req: AuthRequest
   if (!await verifyTeacherClassScope(student.class_id, undefined, undefined, req.user!.id)) {
     return res.status(403).json({ error: 'Access Denied: This student is not enrolled in your assigned classes.' });
   }
+
+  const visibility = await getTeacherVisibility(req.user!.id);
   const evidence = await getStudentComprehensiveEvidence(student.id);
+
+  if (evidence) {
+    if (!visibility.academic_enabled) {
+      delete (evidence as any).academic;
+      delete (evidence as any).academicHistory;
+      delete (evidence as any).marks;
+    }
+    if (!visibility.github_enabled) {
+      delete (evidence as any).github;
+    }
+    if (!visibility.hackerrank_enabled) {
+      delete (evidence as any).hackerrank;
+    }
+    if (!visibility.linkedin_enabled) {
+      delete (evidence as any).linkedin;
+      delete (evidence as any).posts;
+    }
+    if (!visibility.leetcode_enabled) {
+      delete (evidence as any).leetcode;
+    }
+    if (!visibility.hackathon_enabled) {
+      (evidence as any).hackathons = [];
+    }
+  }
+
   res.json(evidence);
 });
 

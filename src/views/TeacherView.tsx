@@ -58,6 +58,21 @@ export const TeacherView: React.FC = () => {
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [studentAnalyticsData, setStudentAnalyticsData] = useState<any | null>(null);
   const [isAnalyticsModalLoading, setIsAnalyticsModalLoading] = useState(false);
+  const [teacherVisibility, setTeacherVisibility] = useState<{
+    academic_enabled: boolean;
+    github_enabled: boolean;
+    linkedin_enabled: boolean;
+    hackerrank_enabled: boolean;
+    leetcode_enabled: boolean;
+    hackathon_enabled: boolean;
+  }>({
+    academic_enabled: true,
+    github_enabled: true,
+    linkedin_enabled: true,
+    hackerrank_enabled: true,
+    leetcode_enabled: true,
+    hackathon_enabled: true,
+  });
 
   const handleOpenStudentAnalytics = async (studentId: string) => {
     if (!selectedAssignment) return;
@@ -133,6 +148,7 @@ export const TeacherView: React.FC = () => {
   useEffect(() => {
     loadAssignments();
     loadNotifications();
+    loadVisibility();
 
     const syncSubTab = () => {
       const path = window.location.pathname.toLowerCase();
@@ -148,6 +164,24 @@ export const TeacherView: React.FC = () => {
     window.addEventListener('popstate', syncSubTab);
     return () => window.removeEventListener('popstate', syncSubTab);
   }, []);
+
+  const loadVisibility = async () => {
+    try {
+      const res = await api.getTeacherVisibilitySettings();
+      if (res && res.settings) {
+        setTeacherVisibility({
+          academic_enabled: res.settings.academic_enabled ?? true,
+          github_enabled: res.settings.github_enabled ?? true,
+          linkedin_enabled: res.settings.linkedin_enabled ?? true,
+          hackerrank_enabled: res.settings.hackerrank_enabled ?? true,
+          leetcode_enabled: res.settings.leetcode_enabled ?? true,
+          hackathon_enabled: res.settings.hackathon_enabled ?? true,
+        });
+      }
+    } catch {
+      // safe fallback
+    }
+  };
 
   const loadNotifications = async () => {
     try {
@@ -174,10 +208,10 @@ export const TeacherView: React.FC = () => {
 
   const getProfileLinks = (profile: any) => {
     const links = [
-      { label: 'GitHub', url: profile?.github_url || profile?.profile_links?.github },
-      { label: 'LinkedIn', url: profile?.linkedin_url || profile?.profile_links?.linkedin },
-      { label: 'LeetCode', url: profile?.leetcode_url || profile?.profile_links?.leetcode },
-      { label: 'HackerRank', url: profile?.hackerrank_url || profile?.profile_links?.hackerrank },
+      ...(teacherVisibility.github_enabled !== false ? [{ label: 'GitHub', url: profile?.github_url || profile?.profile_links?.github }] : []),
+      ...(teacherVisibility.linkedin_enabled !== false ? [{ label: 'LinkedIn', url: profile?.linkedin_url || profile?.profile_links?.linkedin }] : []),
+      ...(teacherVisibility.leetcode_enabled !== false ? [{ label: 'LeetCode', url: profile?.leetcode_url || profile?.profile_links?.leetcode }] : []),
+      ...(teacherVisibility.hackerrank_enabled !== false ? [{ label: 'HackerRank', url: profile?.hackerrank_url || profile?.profile_links?.hackerrank }] : []),
       { label: 'Portfolio', url: profile?.portfolio_url || profile?.profile_links?.portfolio },
       { label: 'Resume', url: profile?.resume_url || profile?.profile_links?.resume },
     ];
@@ -1242,20 +1276,22 @@ export const TeacherView: React.FC = () => {
                   )}
 
                   {/* Export Options */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleExportCsv}
-                      className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer"
-                    >
-                      <Download className="w-3.5 h-3.5 text-emerald-600" /> Export CSV Data
-                    </button>
-                    <button
-                      onClick={handleExportChartPng}
-                      className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer"
-                    >
-                      <Download className="w-3.5 h-3.5 text-[#0f2744]" /> Export Trend PNG
-                    </button>
-                  </div>
+                  {teacherVisibility.academic_enabled !== false && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleExportCsv}
+                        className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5 text-emerald-600" /> Export CSV Data
+                      </button>
+                      <button
+                        onClick={handleExportChartPng}
+                        className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5 text-[#0f2744]" /> Export Trend PNG
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Filter Checklists: Semesters & Exam Types */}
@@ -1303,7 +1339,15 @@ export const TeacherView: React.FC = () => {
               </div>
 
               {/* Statistical Summary Cards */}
-              {analyticsData?.statistics && (
+              {teacherVisibility.academic_enabled === false ? (
+                <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-2xs text-center space-y-2">
+                  <BarChart2 className="w-8 h-8 text-slate-400 mx-auto mb-1" />
+                  <h3 className="text-sm font-bold text-slate-800">Academic Analytics Restricted</h3>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Access to internal scores, grade distributions, and predictive academic regression is restricted for your faculty account by the institutional administrator.
+                  </p>
+                </div>
+              ) : analyticsData?.statistics && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
                     <p className="text-[10px] font-semibold text-slate-500 uppercase">Evaluations</p>
@@ -1331,20 +1375,22 @@ export const TeacherView: React.FC = () => {
                     <p className="text-[10px] text-slate-400">Min to Max</p>
                   </div>
                   {/* Linear Regression Next Projection Card */}
-                  <div className="bg-amber-50/80 p-3.5 rounded-xl border border-amber-300 shadow-2xs">
-                    <p className="text-[10px] font-bold text-amber-900 uppercase flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-amber-700" /> Forecast
-                    </p>
-                    <p className="text-xl font-serif font-bold text-amber-900 mt-1">
-                      {analyticsData.linearRegression.predictedNextScore}%
-                    </p>
-                    <p className="text-[10px] text-amber-800 font-medium">Estimated next score</p>
-                  </div>
+                  {analyticsData?.linearRegression && (
+                    <div className="bg-amber-50/80 p-3.5 rounded-xl border border-amber-300 shadow-2xs">
+                      <p className="text-[10px] font-bold text-amber-900 uppercase flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-amber-700" /> Forecast
+                      </p>
+                      <p className="text-xl font-serif font-bold text-amber-900 mt-1">
+                        {analyticsData.linearRegression.predictedNextScore}%
+                      </p>
+                      <p className="text-[10px] text-amber-800 font-medium">Estimated next score</p>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Charts Section */}
-              {analyticsData?.charts && (
+              {teacherVisibility.academic_enabled !== false && analyticsData?.charts && analyticsData?.linearRegression && (
                 <>
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* 1. Linear Regression Trend Line with Overlaid Projection */}
@@ -1355,7 +1401,7 @@ export const TeacherView: React.FC = () => {
                         <TrendingUp className="w-4 h-4 text-[#0f2744]" /> Linear Regression Trend & Forecast
                       </h3>
                       <p className="text-xs text-slate-500">
-                        Trend slope: <strong>{analyticsData?.linearRegression.slope}</strong> • Dashed line indicates statistical projection
+                        Trend slope: <strong>{analyticsData?.linearRegression?.slope ?? 0}</strong> • Dashed line indicates statistical projection
                       </p>
                     </div>
                   </div>
@@ -2068,8 +2114,8 @@ export const TeacherView: React.FC = () => {
                   <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
                     {[
                       { id: 'overview', label: 'Overview' },
-                      { id: 'academic-history', label: 'Academic History' },
-                      { id: 'posts', label: 'Posts' },
+                      ...(teacherVisibility.academic_enabled !== false ? [{ id: 'academic-history', label: 'Academic History' }] : []),
+                      ...(teacherVisibility.linkedin_enabled !== false ? [{ id: 'posts', label: 'Posts' }] : []),
                       { id: 'achievements', label: 'Achievements' },
                       { id: 'projects', label: 'Projects' },
                       { id: 'certifications', label: 'Certifications' },
@@ -2668,56 +2714,74 @@ export const TeacherView: React.FC = () => {
                   {/* SECTION 0: STUDENT OVERVIEW SUMMARY CARDS */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {/* Card 1: Internal % */}
-                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Internal Marks</p>
-                      <p className="text-xl font-bold font-mono text-[#0f2744] mt-1">
-                        {studentAnalyticsData.internalSummary ? `${studentAnalyticsData.internalSummary.percentage}%` : 'No records'}
-                      </p>
-                      <p className="text-[10px] text-slate-500 mt-0.5 truncate">
-                        {studentAnalyticsData.internalSummary
-                          ? `${studentAnalyticsData.internalSummary.totalObtained} / ${studentAnalyticsData.internalSummary.totalMax} pts`
-                          : 'No assessments'}
-                      </p>
-                    </div>
+                    {teacherVisibility.academic_enabled !== false && studentAnalyticsData.internalMarks !== undefined && (
+                      <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Internal Marks</p>
+                        <p className="text-xl font-bold font-mono text-[#0f2744] mt-1">
+                          {studentAnalyticsData.internalSummary ? `${studentAnalyticsData.internalSummary.percentage}%` : 'No records'}
+                        </p>
+                        <p className="text-[10px] text-slate-500 mt-0.5 truncate">
+                          {studentAnalyticsData.internalSummary
+                            ? `${studentAnalyticsData.internalSummary.totalObtained} / ${studentAnalyticsData.internalSummary.totalMax} pts`
+                            : 'No assessments'}
+                        </p>
+                      </div>
+                    )}
 
                     {/* Card 2: GitHub Contributions */}
-                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">GitHub</p>
-                      <p className="text-xl font-bold font-mono text-slate-900 mt-1">
-                        {studentAnalyticsData.githubData?.synced
-                          ? (studentAnalyticsData.githubData.totalContributions ?? studentAnalyticsData.githubData.publicRepos ?? 'Synced')
-                          : 'Not synced'}
-                      </p>
-                      <p className="text-[10px] text-slate-500 mt-0.5 truncate">
-                        {studentAnalyticsData.githubData?.synced
-                          ? `${studentAnalyticsData.githubData.publicRepos ?? 0} Repositories`
-                          : (studentAnalyticsData.github_url || studentAnalyticsData.student?.github_url ? 'Profile linked' : 'No profile linked')}
-                      </p>
-                    </div>
+                    {teacherVisibility.github_enabled !== false && studentAnalyticsData.githubData !== undefined && (
+                      <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">GitHub</p>
+                        <p className="text-xl font-bold font-mono text-slate-900 mt-1">
+                          {studentAnalyticsData.githubData?.synced
+                            ? (studentAnalyticsData.githubData.totalContributions ?? studentAnalyticsData.githubData.publicRepos ?? 'Synced')
+                            : 'Not synced'}
+                        </p>
+                        <p className="text-[10px] text-slate-500 mt-0.5 truncate">
+                          {studentAnalyticsData.githubData?.synced
+                            ? `${studentAnalyticsData.githubData.publicRepos ?? 0} Repositories`
+                            : (studentAnalyticsData.github_url || studentAnalyticsData.student?.github_url ? 'Profile linked' : 'No profile linked')}
+                        </p>
+                      </div>
+                    )}
 
                     {/* Card 3: HackerRank Questions */}
-                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">HackerRank</p>
-                      <p className="text-xl font-bold font-mono text-emerald-800 mt-1">
-                        {studentAnalyticsData.hackerrankData?.synced ? 'Synced' : 'Not synced'}
-                      </p>
-                      <p className="text-[10px] text-slate-500 mt-0.5 truncate">
-                        {studentAnalyticsData.hackerrankUrl || studentAnalyticsData.student?.hackerrank_url ? 'Profile linked' : 'No profile linked'}
-                      </p>
-                    </div>
+                    {teacherVisibility.hackerrank_enabled !== false && studentAnalyticsData.hackerrankData !== undefined && (
+                      <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">HackerRank</p>
+                        <p className="text-xl font-bold font-mono text-emerald-800 mt-1">
+                          {studentAnalyticsData.hackerrankData?.synced ? 'Synced' : 'Not synced'}
+                        </p>
+                        <p className="text-[10px] text-slate-500 mt-0.5 truncate">
+                          {studentAnalyticsData.hackerrankUrl || studentAnalyticsData.student?.hackerrank_url ? 'Profile linked' : 'No profile linked'}
+                        </p>
+                      </div>
+                    )}
 
                     {/* Card 4: Professional Posts */}
-                    <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Professional Posts</p>
-                      <p className="text-xl font-bold font-mono text-blue-800 mt-1">
-                        {studentAnalyticsData.totalPosts ?? 0}
-                      </p>
-                      <p className="text-[10px] text-slate-500 mt-0.5 truncate">LinkedIn / Activity</p>
-                    </div>
+                    {teacherVisibility.linkedin_enabled !== false && studentAnalyticsData.linkedinData !== undefined && (
+                      <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Professional Posts</p>
+                        <p className="text-xl font-bold font-mono text-blue-800 mt-1">
+                          {studentAnalyticsData.totalPosts ?? 0}
+                        </p>
+                        <p className="text-[10px] text-slate-500 mt-0.5 truncate">LinkedIn / Activity</p>
+                      </div>
+                    )}
+
+                    {/* Fallback if all cards disabled */}
+                    {!(teacherVisibility.academic_enabled !== false && studentAnalyticsData.internalMarks !== undefined) &&
+                     !(teacherVisibility.github_enabled !== false && studentAnalyticsData.githubData !== undefined) &&
+                     !(teacherVisibility.hackerrank_enabled !== false && studentAnalyticsData.hackerrankData !== undefined) &&
+                     !(teacherVisibility.linkedin_enabled !== false && studentAnalyticsData.linkedinData !== undefined) && (
+                      <div className="col-span-full p-4 bg-white rounded-xl border border-slate-200 text-center text-xs text-slate-500">
+                        Overview metrics for this student are restricted by faculty visibility controls.
+                      </div>
+                    )}
                   </div>
 
                   {/* SECTION 1: INTERNAL MARKS */}
-                  {studentAnalyticsData.internalMarks !== undefined && (
+                  {teacherVisibility.academic_enabled !== false && studentAnalyticsData.internalMarks !== undefined && (
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-2">
                       <div>
@@ -2818,7 +2882,7 @@ export const TeacherView: React.FC = () => {
                   )}
 
                   {/* SECTION 2: GITHUB CONTRIBUTIONS */}
-                  {studentAnalyticsData.githubData !== undefined && (
+                  {teacherVisibility.github_enabled !== false && studentAnalyticsData.githubData !== undefined && (
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                       <div>
@@ -2929,7 +2993,7 @@ export const TeacherView: React.FC = () => {
                   )}
 
                   {/* SECTION 3: HACKERRANK */}
-                  {studentAnalyticsData.hackerrankData !== undefined && (
+                  {teacherVisibility.hackerrank_enabled !== false && studentAnalyticsData.hackerrankData !== undefined && (
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                       <div>
@@ -3007,7 +3071,7 @@ export const TeacherView: React.FC = () => {
                   )}
 
                   {/* SECTION 4: LINKEDIN / PROFESSIONAL ACTIVITY */}
-                  {studentAnalyticsData.linkedinData !== undefined && (
+                  {teacherVisibility.linkedin_enabled !== false && studentAnalyticsData.linkedinData !== undefined && (
                     <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                       <div>
