@@ -217,21 +217,38 @@ test.describe('Phase 2A: AI Assistant Visibility Enforcement', () => {
   });
 
   test('POST /api/placement/ai-query strips GitHub and LeetCode when disabled in visibility', async ({ request }) => {
-    // 1. Disable github and leetcode for placement officer
-    await pool.query(
-      `INSERT INTO placement_analytics_visibility (placement_user_id, github_enabled, leetcode_enabled, updated_by)
-       VALUES ($1, false, false, $1)
-       ON CONFLICT (placement_user_id) DO UPDATE SET github_enabled = false, leetcode_enabled = false`,
-      [placementUser.id]
-    );
-
-    // Ensure student has github and leetcode data populated
+    // 1. Ensure student has github and leetcode data populated
     await pool.query(
       `UPDATE students
        SET github_data = '{"status":"SYNCED","publicRepos":15,"languages":["TypeScript","Python"]}',
            leetcode_data = '{"status":"SYNCED","totalSolved":120,"easySolved":50,"mediumSolved":60,"hardSolved":10}'
-       WHERE id = $1`,
+       WHERE user_id = $1`,
       [studentUser.id]
+    );
+
+    // 2. Enable github and leetcode
+    await pool.query(
+      `INSERT INTO placement_analytics_visibility (placement_user_id, github_enabled, leetcode_enabled, updated_by)
+       VALUES ($1, true, true, $1)
+       ON CONFLICT (placement_user_id) DO UPDATE SET github_enabled = true, leetcode_enabled = true`,
+      [placementUser.id]
+    );
+
+    // Query when enabled
+    const resEnabled = await request.post(`${BASE_URL}/api/placement/ai-query`, {
+      headers: { Authorization: `Bearer ${placementToken}` },
+      data: { query: `@${studentUser.full_name}` },
+    });
+    expect(resEnabled.status()).toBe(200);
+    const jsonEnabled = await resEnabled.json();
+    const answerEnabled = jsonEnabled.answer || '';
+    expect(answerEnabled).toContain('LeetCode:');
+    expect(answerEnabled).toContain('GitHub:');
+
+    // 3. Disable github and leetcode for placement officer
+    await pool.query(
+      `UPDATE placement_analytics_visibility SET github_enabled = false, leetcode_enabled = false WHERE placement_user_id = $1`,
+      [placementUser.id]
     );
 
     const res = await request.post(`${BASE_URL}/api/placement/ai-query`, {

@@ -296,33 +296,33 @@ router.post('/marksheets/bulk-zip', (req: AuthRequest, res, next) => {
     });
   }
 
-  // Guard 2: Pre-check uncompressed size if header metadata is available
-  const MAX_TOTAL_UNCOMPRESSED_BYTES = 200 * 1024 * 1024; // 200 MB
-  let reportedUncompressed = 0;
-  for (const [_, entry] of entries) {
-    const uncompressed = (entry as any)._data?.uncompressedSize || 0;
-    reportedUncompressed += uncompressed;
-    if (reportedUncompressed > MAX_TOTAL_UNCOMPRESSED_BYTES) {
+  // Guard 2: Enforce strict path security on entry names (reject backslashes, drive letters, null bytes, absolute paths)
+  for (const [filename] of entries) {
+    if (
+      filename.includes('\\') ||
+      /^[a-zA-Z]:/.test(filename) ||
+      filename.includes('\0') ||
+      path.isAbsolute(filename) ||
+      filename.startsWith('/') ||
+      filename.includes('..') ||
+      path.normalize(filename).replace(/^(\.\.(\/|\\|$))+/, '') !== path.normalize(filename)
+    ) {
       return res.status(400).json({
-        error: 'ZIP uncompressed size limit exceeded: total expanded size exceeds 200 MB threshold.',
+        error: `Security violation: illegal ZIP entry name "${filename.replace(/[\0\r\n]/g, '')}". Backslashes, drive letters, null bytes, absolute paths, and path traversals are strictly rejected.`,
       });
     }
   }
+
+  // Guard 3: Running actual decompressed bytes check (do NOT trust declared uncompressed sizes)
+  const MAX_TOTAL_UNCOMPRESSED_BYTES = 200 * 1024 * 1024; // 200 MB
+  let cumulativeBytesExtracted = 0;
 
   const allStudents = (await query<any>('SELECT s.id, s.roll_number, u.full_name FROM students s JOIN users u ON u.id=s.user_id')).rows;
   const studentByRoll = new Map(allStudents.map((s: any) => [s.roll_number.toUpperCase(), s]));
   const results: { file: string; status: 'saved' | 'skipped' | 'error'; reason?: string }[] = [];
   let savedCount = 0;
-  let cumulativeBytesExtracted = 0;
 
   for (const [filename, zipEntry] of entries) {
-    // Guard 3: Zip-slip path traversal check
-    const normalizedPath = path.normalize(filename).replace(/^(\.\.(\/|\\|$))+/, '');
-    if (filename.includes('..') || path.isAbsolute(filename) || normalizedPath !== path.normalize(filename)) {
-      results.push({ file: filename, status: 'error', reason: 'Security violation: illegal path traversal in ZIP entry filename' });
-      continue;
-    }
-
     const basename = path.basename(filename);
     if (!basename.toLowerCase().endsWith('.pdf')) {
       results.push({ file: basename, status: 'skipped', reason: 'Not a PDF file' });
@@ -334,22 +334,32 @@ router.post('/marksheets/bulk-zip', (req: AuthRequest, res, next) => {
       results.push({ file: basename, status: 'skipped', reason: `No student found with roll number "${rollNumber}"` });
       continue;
     }
+
     let pdfBuffer: Buffer;
     try {
       pdfBuffer = Buffer.from(await zipEntry.async('arraybuffer'));
       cumulativeBytesExtracted += pdfBuffer.length;
       if (cumulativeBytesExtracted > MAX_TOTAL_UNCOMPRESSED_BYTES) {
         return res.status(400).json({
-          error: 'ZIP uncompressed size limit exceeded during extraction: expansion exceeds 200 MB threshold.',
+          error: 'ZIP uncompressed size limit exceeded: actual decompressed size exceeds 200 MB threshold.',
         });
       }
+    } catch (extractErr: any) {
+      results.push({
+        file: basename,
+        status: 'error',
+        reason: `Extraction failed: ${extractErr?.message || 'corrupted or lying zip entry'}`,
+      });
+      continue;
     }
-    catch { results.push({ file: basename, status: 'error', reason: 'Failed to read file from ZIP' }); continue; }
+
     if (!pdfBuffer.subarray(0, 5).toString('ascii').startsWith('%PDF-')) {
       results.push({ file: basename, status: 'error', reason: 'File is not a valid PDF' });
       continue;
     }
-    const serverFilename = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${basename}`;
+
+    // Server-generated random filename: no zip entry name is ever used directly as filesystem path
+    const serverFilename = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}.pdf`;
     const filePath = path.join(uploadDir, serverFilename);
     const duplicate = (await query(
       'SELECT 1 FROM marksheets WHERE student_id=$1 AND semester_id=$2 AND file_name=$3 LIMIT 1',

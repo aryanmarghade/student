@@ -620,6 +620,60 @@ ${match.actionablePreparationPlan.map(p => `• ${p}`).join('\n')}
     };
   }
 
+  // Candidate inquiry via @mention or studentId
+  const matchMention = (req.queryText || '').match(/@([^\s,?!]+)/i);
+  const mentionTerm = matchMention ? matchMention[1].trim() : null;
+  const targetStudentId = req.studentId || null;
+
+  if (targetStudentId || mentionTerm || req.queryText) {
+    const studentMatches = (await query<any>(
+      `SELECT s.id, s.roll_number, u.full_name, c.name AS class_name
+       FROM students s
+       JOIN users u ON u.id = s.user_id
+       LEFT JOIN classes c ON c.id = s.class_id
+       WHERE ($1::text IS NOT NULL AND (s.id = $1 OR s.user_id = $1))
+          OR ($2::text IS NOT NULL AND (u.full_name ILIKE $2 OR s.roll_number ILIKE $2))
+          OR ($3::text IS NOT NULL AND length(trim($3)) > 2 AND ($3 ILIKE '%' || u.full_name || '%' OR $3 ILIKE '%' || s.roll_number || '%'))
+       LIMIT 1`,
+      [targetStudentId, mentionTerm ? `%${mentionTerm}%` : null, req.queryText ? req.queryText.trim() : null]
+    )).rows;
+
+    if (studentMatches.length > 0) {
+      const sm = studentMatches[0];
+      const evidence = await getStudentComprehensiveEvidence(sm.id);
+      if (evidence) {
+        let answer = `### Candidate Profile: ${evidence.fullName} (${evidence.rollNumber}) in ${evidence.className || 'N/A'}\n`;
+        if (visibility.academic_enabled) {
+          answer += `• Backlogs: ${evidence.academics.currentBacklogsCount} active\n`;
+        }
+        answer += `• Projects: ${evidence.projects.map(pr => `${pr.title} (${pr.verificationStatus})`).join(', ') || 'None'}\n`;
+        if (visibility.leetcode_enabled) {
+          answer += `• LeetCode: ${evidence.leetcode.status === 'SYNCED' ? `${evidence.leetcode.totalSolved} solved (${evidence.leetcode.easySolved}E, ${evidence.leetcode.mediumSolved}M, ${evidence.leetcode.hardSolved}H)` : 'Not synced'}\n`;
+        }
+        if (visibility.github_enabled) {
+          answer += `• GitHub: ${evidence.github.status === 'SYNCED' ? `${evidence.github.publicRepos} repos (${evidence.github.languages.join(', ')})` : 'Not synced'}\n`;
+        }
+        if (visibility.hackathon_enabled) {
+          answer += `• Hackathons: ${evidence.hackathons.map(hk => `${hk.name} (${hk.positionResult || 'Participant'}, ${hk.verificationStatus})`).join(', ') || 'None'}\n`;
+        }
+        if (visibility.sports_enabled) {
+          answer += `• Sports: ${evidence.sports.map(sp => `${sp.sportName} (${sp.competitionLevel}, ${sp.verificationStatus})`).join(', ') || 'None'}`;
+        }
+        return {
+          available: true,
+          role: 'placement',
+          task: 'placement_candidate_profile',
+          provider: 'deterministic_engine',
+          isGroundingVerified: true,
+          answer,
+          structuredData: { evidence },
+          dataCoverage: { availableSources: ['PostgreSQL Academic Ledger'], missingSources: [] },
+          validationDecision: 'PASSED',
+        };
+      }
+    }
+  }
+
   // General placement intelligence
   const narrative = `### Executive Finding
 Placement AI Candidate Intelligence System active. You can ingest employer job descriptions, execute requirement matrices, and filter candidate cohorts against verified academic eligibility.

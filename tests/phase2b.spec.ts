@@ -264,4 +264,84 @@ test.describe('Phase 2B: Bulk ZIP Archive Protection (Zip-Slip & Zip-Bomb Defens
     const json = await res.json();
     expect(json.error).toMatch(/uncompressed.*size|exceeds.*limit|size.*limit/i);
   });
+
+  test('Bulk ZIP upload rejects entries containing backslashes, drive letters, null bytes, or absolute paths', async ({ request }) => {
+    // 1. Backslash entry
+    const zipBackslash = new JSZip();
+    zipBackslash.file('sub\\folder.pdf', Buffer.from('%PDF-1.4 test'));
+    const bufBackslash = await zipBackslash.generateAsync({ type: 'nodebuffer' });
+
+    const resBackslash = await request.post(`${BASE_URL}/api/admin/marksheets/bulk-zip`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      multipart: {
+        semester_id: activeSemester.id,
+        file: { name: 'backslash.zip', mimeType: 'application/zip', buffer: bufBackslash },
+      },
+    });
+    expect(resBackslash.status()).toBe(400);
+    const jsonBs = await resBackslash.json();
+    expect(jsonBs.error).toMatch(/illegal.*name|security violation|backslash|rejected/i);
+
+    // 2. Drive letter entry (e.g. C:test.pdf)
+    const zipDrive = new JSZip();
+    zipDrive.file('C:test.pdf', Buffer.from('%PDF-1.4 test'));
+    const bufDrive = await zipDrive.generateAsync({ type: 'nodebuffer' });
+
+    const resDrive = await request.post(`${BASE_URL}/api/admin/marksheets/bulk-zip`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      multipart: {
+        semester_id: activeSemester.id,
+        file: { name: 'drive.zip', mimeType: 'application/zip', buffer: bufDrive },
+      },
+    });
+    expect(resDrive.status()).toBe(400);
+    const jsonDrive = await resDrive.json();
+    expect(jsonDrive.error).toMatch(/illegal.*name|security violation|drive letter|rejected/i);
+
+    // 3. Absolute path entry (e.g. /etc/test.pdf)
+    const zipAbs = new JSZip();
+    zipAbs.file('/root/test.pdf', Buffer.from('%PDF-1.4 test'));
+    const bufAbs = await zipAbs.generateAsync({ type: 'nodebuffer' });
+
+    const resAbs = await request.post(`${BASE_URL}/api/admin/marksheets/bulk-zip`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      multipart: {
+        semester_id: activeSemester.id,
+        file: { name: 'abs.zip', mimeType: 'application/zip', buffer: bufAbs },
+      },
+    });
+    expect(resAbs.status()).toBe(400);
+    const jsonAbs = await resAbs.json();
+    expect(jsonAbs.error).toMatch(/illegal.*name|security violation|absolute|rejected/i);
+  });
+
+  test('Bulk ZIP upload rejects zip fixture whose central directory header lies about uncompressed size', async ({ request }) => {
+    const zip = new JSZip();
+    const pdfData = Buffer.from('%PDF-1.4 ' + 'A'.repeat(5000));
+    zip.file(`${studentUser.roll_number}.pdf`, pdfData, { compression: 'STORE' });
+    const zipBuf = await zip.generateAsync({ type: 'nodebuffer' });
+
+    // Tamper with Central Directory header to lie about uncompressed size: set to 10 bytes instead of >5000
+    const cdIdx = zipBuf.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+    expect(cdIdx).toBeGreaterThan(0);
+    // Offset 24 in Central Directory header is uncompressed size (uint32 LE)
+    zipBuf.writeUInt32LE(10, cdIdx + 24);
+
+    const res = await request.post(`${BASE_URL}/api/admin/marksheets/bulk-zip`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      multipart: {
+        semester_id: activeSemester.id,
+        file: { name: 'lying_cd_header.zip', mimeType: 'application/zip', buffer: zipBuf },
+      },
+    });
+
+    // Server must reject or report failure on extraction, never blindly trusting declared size
+    const json = await res.json();
+    if (res.status() === 200) {
+      const saved = json.details?.some((d: any) => d.status === 'saved');
+      expect(saved).toBeFalsy();
+    } else {
+      expect([400, 422]).toContain(res.status());
+    }
+  });
 });

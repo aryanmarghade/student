@@ -33,14 +33,115 @@ const ALLOWED_MIME_TYPES = [
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 ];
 
+const ALLOWED_EXTENSIONS = new Set([
+  'pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp',
+  'doc', 'docx', 'ppt', 'pptx', 'txt', 'mp4', 'webm', 'ogg'
+]);
+
+export function validateMagicBytes(filePath: string, ext: string, mimetype: string): { valid: boolean; reason?: string } {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(32);
+    const bytesRead = fs.readSync(fd, buf, 0, 32, 0);
+    fs.closeSync(fd);
+
+    if (bytesRead < 4) return { valid: false, reason: 'File is empty or too small.' };
+
+    const lowerExt = ext.toLowerCase();
+
+    // PDF check: %PDF-
+    if (lowerExt === 'pdf' || mimetype === 'application/pdf') {
+      if (!buf.subarray(0, 5).toString('ascii').startsWith('%PDF-')) {
+        return { valid: false, reason: 'File does not contain valid PDF magic bytes (%PDF-).' };
+      }
+      return { valid: true };
+    }
+
+    // PNG check: \x89PNG\r\n\x1a\n
+    if (lowerExt === 'png' || mimetype === 'image/png') {
+      if (buf[0] !== 0x89 || buf[1] !== 0x50 || buf[2] !== 0x4e || buf[3] !== 0x47) {
+        return { valid: false, reason: 'File does not contain valid PNG magic bytes.' };
+      }
+      return { valid: true };
+    }
+
+    // JPEG check: \xFF\xD8\xFF
+    if (['jpg', 'jpeg'].includes(lowerExt) || ['image/jpeg', 'image/jpg'].includes(mimetype)) {
+      if (buf[0] !== 0xff || buf[1] !== 0xd8 || buf[2] !== 0xff) {
+        return { valid: false, reason: 'File does not contain valid JPEG magic bytes.' };
+      }
+      return { valid: true };
+    }
+
+    // WEBP check: RIFF....WEBP
+    if (lowerExt === 'webp' || mimetype === 'image/webp') {
+      if (buf.subarray(0, 4).toString('ascii') !== 'RIFF' || buf.subarray(8, 12).toString('ascii') !== 'WEBP') {
+        return { valid: false, reason: 'File does not contain valid WEBP magic bytes.' };
+      }
+      return { valid: true };
+    }
+
+    // GIF check: GIF87a or GIF89a
+    if (lowerExt === 'gif' || mimetype === 'image/gif') {
+      const sig = buf.subarray(0, 6).toString('ascii');
+      if (sig !== 'GIF87a' && sig !== 'GIF89a') {
+        return { valid: false, reason: 'File does not contain valid GIF magic bytes.' };
+      }
+      return { valid: true };
+    }
+
+    // DOCX / PPTX check: PK\x03\x04
+    if (['docx', 'pptx'].includes(lowerExt) || mimetype.includes('openxmlformats')) {
+      if (buf[0] !== 0x50 || buf[1] !== 0x4b || buf[2] !== 0x03 || buf[3] !== 0x04) {
+        return { valid: false, reason: 'File does not contain valid Office OpenXML magic bytes.' };
+      }
+      return { valid: true };
+    }
+
+    // DOC / PPT check: \xD0\xCF\x11\xE0
+    if (['doc', 'ppt'].includes(lowerExt) || mimetype === 'application/msword' || mimetype.includes('powerpoint')) {
+      if (buf[0] !== 0xd0 || buf[1] !== 0xcf || buf[2] !== 0x11 || buf[3] !== 0xe0) {
+        return { valid: false, reason: 'File does not contain valid Office Compound Document magic bytes.' };
+      }
+      return { valid: true };
+    }
+
+    // MP4 check: ftyp at offset 4
+    if (['mp4'].includes(lowerExt) || mimetype === 'video/mp4') {
+      if (buf.subarray(4, 8).toString('ascii') !== 'ftyp') {
+        return { valid: false, reason: 'File does not contain valid MP4 magic bytes.' };
+      }
+      return { valid: true };
+    }
+
+    // Plain text: UTF-8 / printable ASCII without null bytes
+    if (lowerExt === 'txt' || mimetype === 'text/plain') {
+      for (let i = 0; i < bytesRead; i++) {
+        if (buf[i] === 0) return { valid: false, reason: 'Text file contains null bytes.' };
+      }
+      return { valid: true };
+    }
+
+    return { valid: true };
+  } catch (err: any) {
+    return { valid: false, reason: err?.message || 'Failed to inspect file magic bytes.' };
+  }
+}
+
 const docUpload = multer({
   storage: multer.diskStorage({
     destination: studentDocDir,
-    filename: (_req, file, cb) =>
-      cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${path.extname(file.originalname)}`),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).slice(1).toLowerCase();
+      cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}.${ext || 'bin'}`);
+    },
   }),
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
   fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).slice(1).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
+      return cb(new Error(`Disallowed file extension: .${ext}. Allowed extensions: ${Array.from(ALLOWED_EXTENSIONS).join(', ')}`));
+    }
     if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -131,18 +232,75 @@ router.put('/profile', async (req: AuthRequest, res) => {
 router.post('/upload-photo', async (req: AuthRequest, res) => {
   const s = await ownStudent(req.user!.id);
   if (!s) return res.status(404).json({ error: 'Student record not found.' });
-  if (!req.body.photo_data_url) return res.status(400).json({ error: 'Photo data is required.' });
-  await query('UPDATE students SET profile_photo_url=$1 WHERE id=$2', [req.body.photo_data_url, s.id]);
+  const photoDataUrl = String(req.body.photo_data_url || '').trim();
+  if (!photoDataUrl) return res.status(400).json({ error: 'Photo data is required.' });
+
+  const match = photoDataUrl.match(/^data:(image\/(png|jpeg|jpg|webp));base64,(.+)$/i);
+  if (!match) {
+    return res.status(400).json({ error: 'Invalid image format. Allowed MIME types: image/jpeg, image/png, image/webp.' });
+  }
+
+  const mime = match[1].toLowerCase();
+  const base64Data = match[3];
+  const buffer = Buffer.from(base64Data, 'base64');
+
+  // Enforce 5 MB limit
+  if (buffer.length > 5 * 1024 * 1024) {
+    return res.status(400).json({ error: 'Profile photo size exceeds maximum limit of 5 MB.' });
+  }
+
+  // Magic byte inspection
+  if (mime === 'image/png') {
+    if (buffer.length < 8 || buffer[0] !== 0x89 || buffer[1] !== 0x50 || buffer[2] !== 0x4e || buffer[3] !== 0x47) {
+      return res.status(400).json({ error: 'Corrupted image: file does not match PNG magic bytes.' });
+    }
+  } else if (mime === 'image/jpeg' || mime === 'image/jpg') {
+    if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8 || buffer[2] !== 0xff) {
+      return res.status(400).json({ error: 'Corrupted image: file does not match JPEG magic bytes.' });
+    }
+  } else if (mime === 'image/webp') {
+    if (buffer.length < 12 || buffer.subarray(0, 4).toString('ascii') !== 'RIFF' || buffer.subarray(8, 12).toString('ascii') !== 'WEBP') {
+      return res.status(400).json({ error: 'Corrupted image: file does not match WEBP magic bytes.' });
+    }
+  }
+
+  await query('UPDATE students SET profile_photo_url=$1 WHERE id=$2', [photoDataUrl, s.id]);
   const updated = await ownStudent(req.user!.id), profile_strength = await strength(updated);
   await query('UPDATE students SET profile_strength=$1 WHERE id=$2', [profile_strength, s.id]);
-  res.json({ message: 'Profile photo updated successfully', profile_photo_url: req.body.photo_data_url, profile_strength });
+  res.json({ message: 'Profile photo updated successfully', profile_photo_url: photoDataUrl, profile_strength });
 });
 
 router.post('/upload-resume', async (req: AuthRequest, res) => {
   const s = await ownStudent(req.user!.id);
   if (!s) return res.status(404).json({ error: 'Student record not found.' });
-  const filename = req.body.file_name || 'Resume.pdf';
-  const doc = { id: id('doc'), student_id: s.id, title: filename, description: '', category: 'Resume', doc_type: 'resume', file_url: req.body.file_url || `/uploads/resumes/${s.roll_number}_${Date.now()}.pdf`, file_name: filename, parsed_headings: parseResumeContent(req.body.file_text || '', filename), status: 'processed' };
+
+  const fileText = typeof req.body.file_text === 'string' ? req.body.file_text : '';
+  if (fileText.length > 1024 * 1024) {
+    return res.status(400).json({ error: 'Resume text exceeds maximum permitted limit of 1 MB.' });
+  }
+
+  let fileUrl = String(req.body.file_url || '').trim();
+  if (fileUrl && !fileUrl.startsWith('/uploads/') && !/^https?:\/\/[^\s]+$/i.test(fileUrl)) {
+    return res.status(400).json({ error: 'Invalid resume file URL. Must be an uploaded path or valid HTTP(S) URL.' });
+  }
+  if (!fileUrl) {
+    fileUrl = `/uploads/resumes/${s.roll_number}_${Date.now()}.pdf`;
+  }
+
+  const filename = String(req.body.file_name || 'Resume.pdf').replace(/[\/\\:\0]/g, '_');
+  const doc = {
+    id: id('doc'),
+    student_id: s.id,
+    title: filename,
+    description: '',
+    category: 'Resume',
+    doc_type: 'resume',
+    file_url: fileUrl,
+    file_name: filename,
+    parsed_headings: parseResumeContent(fileText, filename),
+    status: 'processed'
+  };
+
   await query("DELETE FROM student_documents WHERE student_id=$1 AND doc_type='resume'", [s.id]);
   await query('INSERT INTO student_documents (id,student_id,title,description,category,doc_type,file_url,file_name,parsed_headings,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)', [doc.id, doc.student_id, doc.title, doc.description, doc.category, doc.doc_type, doc.file_url, doc.file_name, JSON.stringify(doc.parsed_headings), doc.status]);
   await query('UPDATE students SET resume_url=$1 WHERE id=$2', [doc.file_url, s.id]);
@@ -227,13 +385,36 @@ router.get('/documents', async (req: AuthRequest, res) => {
 });
 
 /** Upload a real file (multipart/form-data). Fields: file, title, description, category */
-router.post('/documents', docUpload.single('file'), async (req: AuthRequest, res) => {
+router.post('/documents', (req: AuthRequest, res, next) => {
+  docUpload.single('file')(req, res, (err: any) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'File size exceeds maximum permitted limit of 10 MB.' });
+      }
+      return res.status(400).json({ error: err.message || 'File upload failed.' });
+    }
+    next();
+  });
+}, async (req: AuthRequest, res) => {
   const s = await ownStudent(req.user!.id);
-  if (!s) return res.status(404).json({ error: 'Student record not found.' });
+  if (!s) {
+    if (req.file) try { fs.unlinkSync(req.file.path); } catch (_) {}
+    return res.status(404).json({ error: 'Student record not found.' });
+  }
   if (!req.file) return res.status(400).json({ error: 'A file is required. Supported types: PDF, images, DOC/DOCX, TXT.' });
-  const { title, description, category } = req.body;
-  if (!title || !category) return res.status(400).json({ error: 'Title and category are required.' });
+
   const ext = path.extname(req.file.originalname).slice(1).toLowerCase() || 'bin';
+  const magicCheck = validateMagicBytes(req.file.path, ext, req.file.mimetype);
+  if (!magicCheck.valid) {
+    try { fs.unlinkSync(req.file.path); } catch (_) {}
+    return res.status(400).json({ error: `File verification failed: ${magicCheck.reason}` });
+  }
+
+  const { title, description, category } = req.body;
+  if (!title || !category) {
+    try { fs.unlinkSync(req.file.path); } catch (_) {}
+    return res.status(400).json({ error: 'Title and category are required.' });
+  }
   const fileUrl = `/uploads/student-docs/${req.file.filename}`;
   const d = {
     id: id('doc'),
@@ -347,21 +528,53 @@ router.get('/posts', async (req: AuthRequest, res) => {
   res.json(posts.rows);
 });
 
-router.post('/posts', docUpload.array('attachments', 10), async (req: AuthRequest, res) => {
+router.post('/posts', (req: AuthRequest, res, next) => {
+  docUpload.fields([{ name: 'attachments', maxCount: 10 }, { name: 'files', maxCount: 10 }])(req, res, (err: any) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'File size exceeds maximum permitted limit of 10 MB per attachment.' });
+      }
+      return res.status(400).json({ error: err.message || 'Attachment upload failed.' });
+    }
+    next();
+  });
+}, async (req: AuthRequest, res) => {
   const s = await ownStudent(req.user!.id);
-  if (!s) return res.status(404).json({ error: 'Student record not found.' });
+  const filesObj = (req.files as { [fieldname: string]: Express.Multer.File[] }) || {};
+  const rawFiles: Express.Multer.File[] = [
+    ...(filesObj.attachments || []),
+    ...(filesObj.files || []),
+  ];
+
+  if (!s) {
+    for (const f of rawFiles) try { fs.unlinkSync(f.path); } catch (_) {}
+    return res.status(404).json({ error: 'Student record not found.' });
+  }
 
   const { title, description, category, tags, external_link } = req.body;
   if (!title || !description || !category) {
+    for (const f of rawFiles) try { fs.unlinkSync(f.path); } catch (_) {}
     return res.status(400).json({ error: 'Title, description, and category are required.' });
+  }
+
+  // Validate magic bytes for each attachment
+  for (const file of rawFiles) {
+    const ext = path.extname(file.originalname).slice(1).toLowerCase() || 'bin';
+    const magicCheck = validateMagicBytes(file.path, ext, file.mimetype);
+    if (!magicCheck.valid) {
+      for (const f of rawFiles) try { fs.unlinkSync(f.path); } catch (_) {}
+      return res.status(400).json({ error: `File verification failed for "${file.originalname}": ${magicCheck.reason}` });
+    }
   }
 
   if (external_link && typeof external_link === 'string' && external_link.trim() !== '') {
     const trimmed = external_link.trim();
     if (trimmed.length > 500) {
+      for (const f of rawFiles) try { fs.unlinkSync(f.path); } catch (_) {}
       return res.status(400).json({ error: 'External link cannot exceed 500 characters.' });
     }
     if (!/^https?:\/\/[^\s]+$/i.test(trimmed)) {
+      for (const f of rawFiles) try { fs.unlinkSync(f.path); } catch (_) {}
       return res.status(400).json({ error: 'External link must be a valid HTTP or HTTPS URL.' });
     }
   }
@@ -379,9 +592,8 @@ router.post('/posts', docUpload.array('attachments', 10), async (req: AuthReques
     VALUES ($1, $2, $3, $4, $5, $6, $7)
   `, [postId, s.id, title, description, category, JSON.stringify(parsedTags), external_link || null]);
 
-  const files = (req.files as Express.Multer.File[]) || [];
   const attachments = [];
-  for (const file of files) {
+  for (const file of rawFiles) {
     const attachmentId = id('patt');
     const fileUrl = `/uploads/student-docs/${file.filename}`;
     const ext = path.extname(file.originalname).slice(1).toLowerCase() || 'bin';
