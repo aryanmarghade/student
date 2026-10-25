@@ -40,10 +40,14 @@ import {
   Medal,
   Check,
   Info,
-  Target
+  Target,
+  Loader2
 } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import '../lib/chart-setup';
+import { useToast } from '../components/Toast';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+
 const VerificationBadge = ({ status }: { status?: string }) => {
   if (!status || status === 'Student Submitted') {
     return <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200 uppercase tracking-wider">Submitted</span>;
@@ -58,9 +62,28 @@ const VerificationBadge = ({ status }: { status?: string }) => {
 };
 
 export const StudentView: React.FC = () => {
+  const toast = useToast();
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    isDestructive?: boolean;
+    isLoading?: boolean;
+    onConfirm: () => void | Promise<void>;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+  const [isSubmittingPost, setIsSubmittingPost] = useState(false);
+
   const [activeTab, setActiveTab] = useState<'profile' | 'activity' | 'analytics' | 'portfolio' | 'sports' | 'intelligence' | 'academics' | 'events' | 'documents'>('profile');
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
 
   // Edit fields
   const [bioInput, setBioInput] = useState('');
@@ -262,15 +285,25 @@ export const StudentView: React.FC = () => {
     }
   };
 
-  const handleDeleteSport = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this sports record?')) return;
-    try {
-      await api.deleteStudentSport(id);
-      setSports(prev => prev.filter(s => s.id !== id));
-      showToast('Sports record removed.');
-    } catch (err: any) {
-      showToast(err.message || 'Failed to delete sports record', true);
-    }
+  const handleDeleteSport = (id: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Sports Record',
+      message: 'Are you sure you want to delete this sports activity record?',
+      confirmText: 'Delete Record',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await api.deleteStudentSport(id);
+          setSports(prev => prev.filter(s => s.id !== id));
+          showToast('Sports record removed.');
+        } catch (err: any) {
+          showToast(err.message || 'Failed to delete sports record', true);
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   const handleCreateLinkedInPost = async (e: React.FormEvent) => {
@@ -289,15 +322,25 @@ export const StudentView: React.FC = () => {
     }
   };
 
-  const handleDeleteLinkedInPost = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this LinkedIn post evidence?')) return;
-    try {
-      await api.deleteStudentLinkedInPost(id);
-      setLinkedinPosts(prev => prev.filter(p => p.id !== id));
-      showToast('LinkedIn post record removed.');
-    } catch (err: any) {
-      showToast(err.message || 'Failed to delete record', true);
-    }
+  const handleDeleteLinkedInPost = (id: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete LinkedIn Evidence',
+      message: 'Are you sure you want to remove this LinkedIn post evidence record?',
+      confirmText: 'Delete Evidence',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await api.deleteStudentLinkedInPost(id);
+          setLinkedinPosts(prev => prev.filter(p => p.id !== id));
+          showToast('LinkedIn post record removed.');
+        } catch (err: any) {
+          showToast(err.message || 'Failed to delete record', true);
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   const handleCreateHREvidence = async (e: React.FormEvent) => {
@@ -316,18 +359,29 @@ export const StudentView: React.FC = () => {
     }
   };
 
-  const handleDeleteHREvidence = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this HackerRank evidence?')) return;
-    try {
-      await api.deleteStudentHackerRankEvidence(id);
-      setHackerrankEvidence(prev => prev.filter(h => h.id !== id));
-      showToast('HackerRank record removed.');
-    } catch (err: any) {
-      showToast(err.message || 'Failed to delete record', true);
-    }
+  const handleDeleteHREvidence = (id: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete HackerRank Evidence',
+      message: 'Are you sure you want to remove this HackerRank evidence record?',
+      confirmText: 'Delete Evidence',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await api.deleteStudentHackerRankEvidence(id);
+          setHackerrankEvidence(prev => prev.filter(h => h.id !== id));
+          showToast('HackerRank record removed.');
+        } catch (err: any) {
+          showToast(err.message || 'Failed to delete record', true);
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   const showToast = (msg: string, isErr = false) => {
+    toast.showToast(msg, isErr ? 'error' : 'success');
     if (isErr) {
       setFeedbackError(msg);
       setTimeout(() => setFeedbackError(null), 4000);
@@ -348,9 +402,11 @@ export const StudentView: React.FC = () => {
     }
   };
 
-  // Post Handlers
+  // Post Handlers with double-submit prevention
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingPost) return;
+    setIsSubmittingPost(true);
     try {
       const formData = new FormData();
       formData.append('title', newPost.title);
@@ -367,18 +423,30 @@ export const StudentView: React.FC = () => {
       showToast('Post created successfully!');
     } catch (err: any) {
       showToast(err.message || 'Failed to create post', true);
+    } finally {
+      setIsSubmittingPost(false);
     }
   };
 
-  const handleDeletePost = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this post?')) return;
-    try {
-      await api.deleteStudentPost(id);
-      setPosts(prev => prev.filter(p => p.id !== id));
-      showToast('Post deleted.');
-    } catch (err: any) {
-      showToast(err.message || 'Failed to delete post', true);
-    }
+  const handleDeletePost = (id: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Campus Post',
+      message: 'Are you sure you want to delete this post? This action cannot be undone.',
+      confirmText: 'Delete Post',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await api.deleteStudentPost(id);
+          setPosts(prev => prev.filter(p => p.id !== id));
+          showToast('Post deleted.');
+        } catch (err: any) {
+          showToast(err.message || 'Failed to delete post', true);
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   // Portfolio Handlers
@@ -395,15 +463,25 @@ export const StudentView: React.FC = () => {
     }
   };
 
-  const handleDeleteProject = async (id: string) => {
-    if (!confirm('Are you sure you want to remove this project?')) return;
-    try {
-      await api.deleteStudentProject(id);
-      setProjects(prev => prev.filter(p => p.id !== id));
-      showToast('Project removed.');
-    } catch (err: any) {
-      showToast(err.message || 'Failed to remove project', true);
-    }
+  const handleDeleteProject = (id: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Remove Portfolio Project',
+      message: 'Are you sure you want to remove this project from your portfolio?',
+      confirmText: 'Remove Project',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await api.deleteStudentProject(id);
+          setProjects(prev => prev.filter(p => p.id !== id));
+          showToast('Project removed.');
+        } catch (err: any) {
+          showToast(err.message || 'Failed to remove project', true);
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   const handleCreateCert = async (e: React.FormEvent) => {
@@ -419,15 +497,25 @@ export const StudentView: React.FC = () => {
     }
   };
 
-  const handleDeleteCert = async (id: string) => {
-    if (!confirm('Delete this certification record?')) return;
-    try {
-      await api.deleteStudentCertification(id);
-      setCertifications(prev => prev.filter(c => c.id !== id));
-      showToast('Certification removed.');
-    } catch (err: any) {
-      showToast(err.message || 'Failed to remove certification', true);
-    }
+  const handleDeleteCert = (id: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Certification Record',
+      message: 'Are you sure you want to delete this certification record from your academic portfolio?',
+      confirmText: 'Delete Record',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await api.deleteStudentCertification(id);
+          setCertifications(prev => prev.filter(c => c.id !== id));
+          showToast('Certification removed.');
+        } catch (err: any) {
+          showToast(err.message || 'Failed to remove certification', true);
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   const handleUploadDoc = async (e: React.FormEvent) => {
@@ -452,15 +540,25 @@ export const StudentView: React.FC = () => {
     }
   };
 
-  const handleDeleteDoc = async (id: string) => {
-    if (!confirm('Remove document from your vault?')) return;
-    try {
-      await api.deleteStudentDocument(id);
-      setDocuments(prev => prev.filter(d => d.id !== id));
-      showToast('Document removed.');
-    } catch (err: any) {
-      showToast(err.message || 'Failed to remove document', true);
-    }
+  const handleDeleteDoc = (id: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Remove Vault Document',
+      message: 'Are you sure you want to remove this document from your institutional vault?',
+      confirmText: 'Remove Document',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await api.deleteStudentDocument(id);
+          setDocuments(prev => prev.filter(d => d.id !== id));
+          showToast('Document removed.');
+        } catch (err: any) {
+          showToast(err.message || 'Failed to remove document', true);
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   // Update Bio & Social Links
@@ -711,7 +809,7 @@ export const StudentView: React.FC = () => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
-            <button
+            <button type="button"
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
@@ -919,8 +1017,8 @@ export const StudentView: React.FC = () => {
                     key={idx}
                     className={`p-2.5 rounded-lg border flex items-center justify-between text-xs transition-all ${
                       item.completed
-                        ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900'
-                        : 'bg-slate-50 border-slate-200 text-slate-600'
+                        ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950'
+                        : 'bg-slate-50 border-slate-200 text-slate-700'
                     }`}
                   >
                     <div className="flex items-center gap-2">
@@ -931,7 +1029,7 @@ export const StudentView: React.FC = () => {
                       )}
                       <span className="font-medium text-[11px]">{item.label}</span>
                     </div>
-                    <span className="font-mono text-[10px] font-bold opacity-80">{item.pts}</span>
+                    <span className="font-mono text-[10px] font-bold text-slate-700">{item.pts}</span>
                   </div>
                 ))}
               </div>
@@ -949,7 +1047,7 @@ export const StudentView: React.FC = () => {
                   <h3 className="font-bold text-slate-900">Student Activity</h3>
                   <p className="text-xs text-slate-500">Share updates, achievements, and insights with your network.</p>
                </div>
-               <button
+               <button type="button"
                  onClick={() => setShowAddPostModal(true)}
                  className="px-4 py-2 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-sm font-semibold flex items-center gap-1.5 shadow-sm"
                >
@@ -1012,7 +1110,7 @@ export const StudentView: React.FC = () => {
               <p className="text-xs text-slate-500">Evidence-based metrics computed from your verified profile data</p>
             </div>
             {profile?.github_url && (
-              <button
+              <button type="button"
                 onClick={handleSyncGithub}
                 disabled={isSyncingGithub}
                 className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm disabled:opacity-50"
@@ -1172,7 +1270,7 @@ export const StudentView: React.FC = () => {
               const isExpanded = expandedSemester === semRecord.semester_id;
               return (
                 <div key={semRecord.semester_id} className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-                  <button
+                  <button type="button"
                     onClick={() => setExpandedSemester(isExpanded ? '' : semRecord.semester_id)}
                     className="w-full p-4 flex items-center justify-between bg-slate-50 hover:bg-slate-100/70 transition-colors text-left cursor-pointer"
                   >
@@ -1229,21 +1327,21 @@ export const StudentView: React.FC = () => {
               <div className="bg-emerald-50 text-emerald-900 p-4 rounded-xl space-y-3 border border-emerald-200">
                 <div className="flex items-center gap-4">
                   <div className="flex-1">
-                    <p className="text-xs font-semibold opacity-80 uppercase tracking-wider">Current CGPA (Credit-Weighted)</p>
+                    <p className="text-xs font-semibold text-emerald-950 uppercase tracking-wider">Current CGPA (Credit-Weighted)</p>
                     <p className="text-3xl font-bold">{profile.academicHistory.currentCgpa?.toFixed(2) || 'N/A'}</p>
-                    <span className="text-[10px] text-emerald-700 font-medium">Method: UGC 10-Point Scale</span>
+                    <span className="text-[10px] text-emerald-800 font-semibold">Method: UGC 10-Point Scale</span>
                   </div>
                   <div className="w-px h-12 bg-emerald-200" />
                   <div className="flex-1 pl-2">
-                    <p className="text-xs font-semibold opacity-80 uppercase tracking-wider">Credits Earned</p>
-                    <p className="text-3xl font-bold">{profile.academicHistory.totalCreditsEarned ?? 0} <span className="text-sm font-normal text-slate-500">/ {profile.academicHistory.totalCreditsAttempted ?? 0}</span></p>
-                    <span className="text-[10px] text-emerald-700 font-medium">Weight: Credit Points</span>
+                    <p className="text-xs font-semibold text-emerald-950 uppercase tracking-wider">Credits Earned</p>
+                    <p className="text-3xl font-bold">{profile.academicHistory.totalCreditsEarned ?? 0} <span className="text-sm font-normal text-slate-700">/ {profile.academicHistory.totalCreditsAttempted ?? 0}</span></p>
+                    <span className="text-[10px] text-emerald-800 font-semibold">Weight: Credit Points</span>
                   </div>
                   <div className="w-px h-12 bg-emerald-200" />
                   <div className="flex-1 pl-2">
-                    <p className="text-xs font-semibold opacity-80 uppercase tracking-wider">Active Backlogs</p>
-                    <p className="text-3xl font-bold text-red-600">{profile.academicHistory.totalActiveBacklogs || 0}</p>
-                    <span className="text-[10px] text-red-600 font-medium">{profile.academicHistory.totalActiveBacklogs > 0 ? 'Requires Clearance' : 'Clear Ledger'}</span>
+                    <p className="text-xs font-semibold text-emerald-950 uppercase tracking-wider">Active Backlogs</p>
+                    <p className="text-3xl font-bold text-red-700">{profile.academicHistory.totalActiveBacklogs || 0}</p>
+                    <span className="text-[10px] text-red-700 font-semibold">{profile.academicHistory.totalActiveBacklogs > 0 ? 'Requires Clearance' : 'Clear Ledger'}</span>
                   </div>
                 </div>
 
@@ -1329,7 +1427,7 @@ export const StudentView: React.FC = () => {
                   Showcase software builds, hardware prototypes, capstone projects, and open-source contributions
                 </p>
               </div>
-              <button
+              <button type="button"
                 onClick={() => setShowAddProjectModal(true)}
                 className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
               >
@@ -1344,7 +1442,7 @@ export const StudentView: React.FC = () => {
                 <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
                   Add projects to showcase your practical skills to faculty reviewers and recruiters.
                 </p>
-                <button
+                <button type="button"
                   onClick={() => setShowAddProjectModal(true)}
                   className="mt-2 px-3 py-1.5 bg-[#0f2744] text-white rounded-lg text-xs font-semibold"
                 >
@@ -1361,9 +1459,8 @@ export const StudentView: React.FC = () => {
                            <h4 className="font-bold text-sm text-slate-900 leading-snug">{p.title}</h4>
                            <VerificationBadge status={p.verification_status} />
                         </div>
-                        <button
-                          onClick={() => handleDeleteProject(p.id)}
-                          className="text-slate-400 hover:text-red-600 p-1 rounded transition-colors cursor-pointer"
+                        <button type="button"
+                          onClick={() => handleDeleteProject(p.id)} aria-label={`Delete project ${p.title}`} className="text-slate-400 hover:text-red-600 p-1 rounded transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
                           title="Delete Project"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1420,7 +1517,7 @@ export const StudentView: React.FC = () => {
                   Record industry credentials, cloud certifications, and technical accreditations
                 </p>
               </div>
-              <button
+              <button type="button"
                 onClick={() => setShowAddCertModal(true)}
                 className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
               >
@@ -1435,7 +1532,7 @@ export const StudentView: React.FC = () => {
                 <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
                   Add professional certificates (AWS, Google Cloud, Cisco, etc.) to enhance your institutional dossier.
                 </p>
-                <button
+                <button type="button"
                   onClick={() => setShowAddCertModal(true)}
                   className="mt-2 px-3 py-1.5 bg-[#0f2744] text-white rounded-lg text-xs font-semibold"
                 >
@@ -1452,9 +1549,8 @@ export const StudentView: React.FC = () => {
                           <h4 className="font-bold text-xs text-slate-900 leading-snug">{c.title}</h4>
                           <VerificationBadge status={c.verification_status} />
                         </div>
-                        <button
-                          onClick={() => handleDeleteCert(c.id)}
-                          className="text-slate-400 hover:text-red-600 p-1 rounded transition-colors cursor-pointer"
+                        <button type="button"
+                          onClick={() => handleDeleteCert(c.id)} aria-label={`Delete certification ${c.title}`} className="text-slate-400 hover:text-red-600 p-1 rounded transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
                           title="Delete Certification"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1498,7 +1594,7 @@ export const StudentView: React.FC = () => {
                   Student-submitted, verifiable skill badges and problem-solving certifications (subject to faculty verification)
                 </p>
               </div>
-              <button
+              <button type="button"
                 onClick={() => setShowAddHRModal(true)}
                 className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
               >
@@ -1523,9 +1619,8 @@ export const StudentView: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-1">
                         <VerificationBadge status={hr.verification_status} />
-                        <button
-                          onClick={() => handleDeleteHREvidence(hr.id)}
-                          className="text-slate-400 hover:text-red-500 p-1"
+                        <button type="button"
+                          onClick={() => handleDeleteHREvidence(hr.id)} aria-label={`Delete HackerRank evidence ${hr.badge_or_certificate_name}`} className="text-slate-400 hover:text-red-500 p-1 min-h-[44px] min-w-[44px] flex items-center justify-center"
                           title="Delete"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -1558,7 +1653,7 @@ export const StudentView: React.FC = () => {
                   Student-submitted professional posts, project announcements, and learning reflections (separate from campus posts)
                 </p>
               </div>
-              <button
+              <button type="button"
                 onClick={() => setShowAddLinkedInModal(true)}
                 className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
               >
@@ -1583,9 +1678,8 @@ export const StudentView: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-1">
                         <VerificationBadge status={lp.verification_status} />
-                        <button
-                          onClick={() => handleDeleteLinkedInPost(lp.id)}
-                          className="text-slate-400 hover:text-red-500 p-1"
+                        <button type="button"
+                          onClick={() => handleDeleteLinkedInPost(lp.id)} aria-label="Delete LinkedIn post evidence" className="text-slate-400 hover:text-red-500 p-1 min-h-[44px] min-w-[44px] flex items-center justify-center"
                           title="Delete"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -1626,7 +1720,7 @@ export const StudentView: React.FC = () => {
                 Faculty-verified athletic participation, competitive match statistics, leadership roles, and sports achievements
               </p>
             </div>
-            <button
+            <button type="button"
               onClick={() => setShowAddSportModal(true)}
               className="px-4 py-2 bg-[#0f2744] text-white hover:bg-[#163354] rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
             >
@@ -1668,7 +1762,7 @@ export const StudentView: React.FC = () => {
               <p className="text-xs text-slate-500 max-w-md mx-auto">
                 Record your inter-collegiate tournaments, university trials, sports awards, and leadership roles for official faculty and coach verification.
               </p>
-              <button
+              <button type="button"
                 onClick={() => setShowAddSportModal(true)}
                 className="mt-2 px-4 py-2 bg-[#0f2744] text-white text-xs font-semibold rounded-lg hover:bg-[#163354] inline-flex items-center gap-1.5"
               >
@@ -1692,9 +1786,8 @@ export const StudentView: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-1">
                         <VerificationBadge status={sp.verification_status} />
-                        <button
-                          onClick={() => handleDeleteSport(sp.id)}
-                          className="text-slate-400 hover:text-red-500 p-1"
+                        <button type="button"
+                          onClick={() => handleDeleteSport(sp.id)} aria-label={`Delete sports record ${sp.sport_name}`} className="text-slate-400 hover:text-red-500 p-1 min-h-[44px] min-w-[44px] flex items-center justify-center"
                           title="Delete Record"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1911,7 +2004,7 @@ export const StudentView: React.FC = () => {
                 Secure repository for verified transcripts, internship offer letters, identity proofs, and credentials
               </p>
             </div>
-            <button
+            <button type="button"
               onClick={() => setShowAddDocModal(true)}
               className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
             >
@@ -1926,7 +2019,7 @@ export const StudentView: React.FC = () => {
               <p className="text-xs text-slate-500 max-w-sm mx-auto">
                 Upload scanned transcripts, completion letters, or identity credentials for secure record keeping.
               </p>
-              <button
+              <button type="button"
                 onClick={() => setShowAddDocModal(true)}
                 className="mt-2 px-3 py-1.5 bg-[#0f2744] text-white rounded-lg text-xs font-semibold"
               >
@@ -1962,9 +2055,8 @@ export const StudentView: React.FC = () => {
                         {new Date(doc.uploaded_at).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() => handleDeleteDoc(doc.id)}
-                          className="text-slate-400 hover:text-red-600 p-1 rounded transition-colors cursor-pointer"
+                        <button type="button"
+                          onClick={() => handleDeleteDoc(doc.id)} aria-label={`Delete document ${doc.title || doc.file_name}`} className="text-slate-400 hover:text-red-600 p-1 rounded transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
                           title="Remove Document"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1988,7 +2080,7 @@ export const StudentView: React.FC = () => {
                 <FolderGit2 className="w-4 h-4 text-sky-400" />
                 <h3 className="font-bold text-sm">Add Portfolio Project</h3>
               </div>
-              <button onClick={() => setShowAddProjectModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" onClick={() => setShowAddProjectModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
@@ -2081,7 +2173,7 @@ export const StudentView: React.FC = () => {
                 <Award className="w-4 h-4 text-amber-400" />
                 <h3 className="font-bold text-sm">Add Certification Record</h3>
               </div>
-              <button onClick={() => setShowAddCertModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" onClick={() => setShowAddCertModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
@@ -2174,7 +2266,7 @@ export const StudentView: React.FC = () => {
                 <FileText className="w-4 h-4 text-emerald-400" />
                 <h3 className="font-bold text-sm">Archive Document in Vault</h3>
               </div>
-              <button onClick={() => setShowAddDocModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" onClick={() => setShowAddDocModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
@@ -2259,7 +2351,7 @@ export const StudentView: React.FC = () => {
                 <Activity className="w-4 h-4 text-sky-400" />
                 <h3 className="font-bold text-sm">Create New Post</h3>
               </div>
-              <button onClick={() => setShowAddPostModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" onClick={() => setShowAddPostModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
@@ -2355,9 +2447,11 @@ export const StudentView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-sky-600 text-white hover:bg-sky-700 rounded-lg text-xs font-semibold cursor-pointer shadow-2xs"
+                  disabled={isSubmittingPost}
+                  className="px-4 py-2 min-h-[44px] bg-sky-600 text-white hover:bg-sky-700 rounded-lg text-xs font-semibold cursor-pointer shadow-2xs disabled:opacity-50 flex items-center gap-2"
                 >
-                  Post
+                  {isSubmittingPost && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  {isSubmittingPost ? 'Publishing...' : 'Publish Post'}
                 </button>
               </div>
             </form>
@@ -2373,7 +2467,7 @@ export const StudentView: React.FC = () => {
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Trophy className="w-4 h-4 text-amber-500" /> Record Sports Activity & Athletic Achievement
               </h3>
-              <button onClick={() => setShowAddSportModal(false)} className="text-slate-400 hover:text-slate-600 text-sm font-bold">✕</button>
+              <button type="button" aria-label="Close sports modal" onClick={() => setShowAddSportModal(false)} className="text-slate-400 hover:text-slate-600 text-sm font-bold min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer">✕</button>
             </div>
 
             <form onSubmit={handleCreateSport} className="space-y-3">
@@ -2531,7 +2625,7 @@ export const StudentView: React.FC = () => {
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Linkedin className="w-4 h-4 text-blue-600" /> Submit LinkedIn Post Evidence
               </h3>
-              <button onClick={() => setShowAddLinkedInModal(false)} className="text-slate-400 hover:text-slate-600 text-sm font-bold">✕</button>
+              <button type="button" aria-label="Close LinkedIn modal" onClick={() => setShowAddLinkedInModal(false)} className="text-slate-400 hover:text-slate-600 text-sm font-bold min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer">✕</button>
             </div>
 
             <form onSubmit={handleCreateLinkedInPost} className="space-y-3">
@@ -2647,7 +2741,7 @@ export const StudentView: React.FC = () => {
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Code2 className="w-4 h-4 text-emerald-600" /> Submit HackerRank Skill / Certificate Evidence
               </h3>
-              <button onClick={() => setShowAddHRModal(false)} className="text-slate-400 hover:text-slate-600 text-sm font-bold">✕</button>
+              <button type="button" aria-label="Close HackerRank modal" onClick={() => setShowAddHRModal(false)} className="text-slate-400 hover:text-slate-600 text-sm font-bold min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer">✕</button>
             </div>
 
             <form onSubmit={handleCreateHREvidence} className="space-y-3">
@@ -2799,6 +2893,20 @@ export const StudentView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Accessible Institutional Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        isDestructive={confirmDialog.isDestructive}
+        isLoading={confirmDialog.isLoading}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };
+

@@ -846,23 +846,23 @@ export const TeacherView: React.FC = () => {
                 Faculty Class Workspace
               </h1>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-600 mt-0.5">
               Restricted to courses assigned by the Academic Registrar. Fully audited access control.
             </p>
           </div>
 
           {selectedAssignment && (
             <div className="flex items-center gap-2 bg-sky-50 border border-sky-200 px-3 py-1.5 rounded-lg text-xs">
-              <span className="font-bold text-sky-900">{selectedAssignment.className}</span>
-              <span className="text-sky-700">• {selectedAssignment.subjectCode} ({selectedAssignment.subjectName})</span>
-              <span className="text-sky-600 font-mono text-[11px]">• {selectedAssignment.semesterName}</span>
+              <span className="font-bold text-sky-950">{selectedAssignment.className}</span>
+              <span className="text-sky-800">• {selectedAssignment.subjectCode} ({selectedAssignment.subjectName})</span>
+              <span className="text-sky-800 font-mono text-[11px] font-semibold">• {selectedAssignment.semesterName}</span>
             </div>
           )}
         </div>
 
         {/* Assigned Classes Quick Tabs */}
         <div className="mt-4 pt-2 border-t border-slate-200">
-          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+          <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1">
             <Layers className="w-3.5 h-3.5" /> Your Active Teaching Scopes:
           </p>
           {assignments.active.length > 0 ? (
@@ -870,7 +870,7 @@ export const TeacherView: React.FC = () => {
               {assignments.active.map(a => {
                 const isSelected = selectedAssignment?.id === a.id;
                 return (
-                  <button
+                  <button type="button"
                     key={a.id}
                     onClick={() => selectAssignment(a)}
                     className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer text-left ${
@@ -928,7 +928,7 @@ export const TeacherView: React.FC = () => {
               const Icon = tab.icon;
               const isActive = activeSubTab === tab.id;
               return (
-                <button
+                <button type="button"
                   key={tab.id}
                   onClick={() => setActiveSubTab(tab.id as any)}
                   className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
@@ -965,14 +965,14 @@ export const TeacherView: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button
+                  <button type="button"
                     onClick={() => setShowAnnouncementModal(true)}
                     className="px-3 py-1.5 bg-amber-600 text-white hover:bg-amber-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
                   >
                     <Megaphone className="w-3.5 h-3.5" /> Post Announcement
                   </button>
 
-                  <button
+                  <button type="button"
                     onClick={handleSelectAllStudents}
                     className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg hover:bg-slate-50 text-slate-700 flex items-center gap-1.5 cursor-pointer"
                   >
@@ -985,7 +985,7 @@ export const TeacherView: React.FC = () => {
                   </button>
 
                   {selectedStudentIds.length > 0 && (
-                    <button
+                    <button type="button"
                       onClick={() => {
                         setActiveSubTab('analytics');
                         handleScopeChange('selected_students');
@@ -1056,21 +1056,21 @@ export const TeacherView: React.FC = () => {
                           </td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-1.5">
-                              <button
+                              <button type="button"
                                 onClick={() => handleViewStudentProfile(s.id)}
                                 className="px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 rounded border border-slate-300 cursor-pointer flex items-center gap-1"
                                 title="View Comprehensive Portfolio, Projects & Certifications"
                               >
                                 <FileText className="w-3 h-3 text-slate-500" /> Portfolio
                               </button>
-                              <button
+                              <button type="button"
                                 onClick={() => handleOpenStudentAnalytics(s.id)}
                                 className="px-2 py-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-300 cursor-pointer flex items-center gap-1"
                                 title="View Per-Student Analytics Dossier"
                               >
                                 <BarChart2 className="w-3 h-3 text-emerald-600" /> Analytics
                               </button>
-                              <button
+                              <button type="button"
                                 onClick={() => {
                                   setSingleStudentTarget(s.id);
                                   setActiveSubTab('analytics');
@@ -1103,13 +1103,13 @@ export const TeacherView: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button
+                  <button type="button"
                     onClick={() => setShowImportMarksModal(true)}
                     className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer border border-slate-300"
                   >
                     <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Batch CSV Import
                   </button>
-                  <button
+                  <button type="button"
                     onClick={handleSaveMarks}
                     disabled={isSavingMarks}
                     className="px-4 py-2 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
@@ -1226,7 +1226,7 @@ export const TeacherView: React.FC = () => {
                   <div className="flex items-center gap-3">
                     <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Analytics Scope:</span>
                     <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
-                      <button
+                      <button type="button"
                         onClick={() => handleScopeChange('whole_class')}
                         className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${
                           analyticsScope === 'whole_class' ? 'bg-[#0f2744] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
@@ -1234,7 +1234,7 @@ export const TeacherView: React.FC = () => {
                       >
                         Whole Class ({students.length})
                       </button>
-                      <button
+                      <button type="button"
                         onClick={() => handleScopeChange('selected_students')}
                         className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${
                           analyticsScope === 'selected_students' ? 'bg-[#0f2744] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
@@ -1242,7 +1242,7 @@ export const TeacherView: React.FC = () => {
                       >
                         Selected Cohort ({selectedStudentIds.length})
                       </button>
-                      <button
+                      <button type="button"
                         onClick={() => handleScopeChange('single_student')}
                         className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${
                           analyticsScope === 'single_student' ? 'bg-[#0f2744] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
@@ -1278,13 +1278,13 @@ export const TeacherView: React.FC = () => {
                   {/* Export Options */}
                   {teacherVisibility.academic_enabled !== false && (
                     <div className="flex items-center gap-2">
-                      <button
+                      <button type="button"
                         onClick={handleExportCsv}
                         className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer"
                       >
                         <Download className="w-3.5 h-3.5 text-emerald-600" /> Export CSV Data
                       </button>
-                      <button
+                      <button type="button"
                         onClick={handleExportChartPng}
                         className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer"
                       >
@@ -1892,7 +1892,7 @@ export const TeacherView: React.FC = () => {
                     Broadcast directives to {selectedAssignment.className} students and review official institutional circulars.
                   </p>
                 </div>
-                <button
+                <button type="button"
                   onClick={() => setShowAnnouncementModal(true)}
                   className="px-3.5 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
@@ -1938,7 +1938,7 @@ export const TeacherView: React.FC = () => {
                           <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">{n.body}</p>
                         </div>
                         {!n.is_read && (
-                          <button
+                          <button type="button"
                             onClick={() => handleMarkNotificationRead(n.id)}
                             className="px-2.5 py-1 text-[11px] text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 rounded border border-slate-200 transition-colors cursor-pointer shrink-0"
                           >
@@ -1977,7 +1977,7 @@ export const TeacherView: React.FC = () => {
                 <Megaphone className="w-4 h-4 text-amber-400" />
                 <h3 className="font-bold text-sm">Post Class Announcement</h3>
               </div>
-              <button
+              <button type="button"
                 onClick={() => setShowAnnouncementModal(false)}
                 className="text-slate-400 hover:text-white cursor-pointer"
               >
@@ -2046,7 +2046,7 @@ export const TeacherView: React.FC = () => {
                   {isLoadingStudentProfile ? 'Loading Student Dossier...' : 'Student Portfolio'}
                 </h3>
               </div>
-              <button
+              <button type="button"
                 onClick={() => setShowProfileModal(false)}
                 className="text-slate-400 hover:text-white cursor-pointer"
               >
@@ -2310,7 +2310,7 @@ export const TeacherView: React.FC = () => {
                                   {achievement.verification_status || 'Submitted'}
                                 </span>
                                 {(!achievement.verification_status || !achievement.verification_status.includes('Verified')) && (
-                                  <button
+                                  <button type="button"
                                     onClick={() => handleVerifyPortfolioItem(selectedStudentProfile.id, 'achievements', achievement.id)}
                                     className="px-2 py-1 bg-[#0f2744] text-white hover:bg-[#163354] rounded text-[10px] font-bold cursor-pointer"
                                   >
@@ -2353,7 +2353,7 @@ export const TeacherView: React.FC = () => {
                                     {project.verification_status || 'Submitted'}
                                   </span>
                                   {(!project.verification_status || !project.verification_status.includes('Verified')) && (
-                                    <button
+                                    <button type="button"
                                       onClick={() => handleVerifyPortfolioItem(selectedStudentProfile.id, 'projects', project.id)}
                                       className="px-2 py-1 bg-[#0f2744] text-white hover:bg-[#163354] rounded text-[10px] font-bold cursor-pointer"
                                     >
@@ -2424,7 +2424,7 @@ export const TeacherView: React.FC = () => {
                                   {certification.verification_status || 'Submitted'}
                                 </span>
                                 {(!certification.verification_status || !certification.verification_status.includes('Verified')) && (
-                                  <button
+                                  <button type="button"
                                     onClick={() => handleVerifyPortfolioItem(selectedStudentProfile.id, 'certifications', certification.id)}
                                     className="px-2 py-1 bg-[#0f2744] text-white hover:bg-[#163354] rounded text-[10px] font-bold cursor-pointer"
                                   >
@@ -2581,7 +2581,7 @@ export const TeacherView: React.FC = () => {
             </div>
 
             <div className="p-3 bg-slate-100 border-t border-slate-200 flex justify-end">
-              <button
+              <button type="button"
                 onClick={() => setShowProfileModal(false)}
                 className="px-4 py-1.5 bg-[#0f2744] text-white rounded-lg text-xs font-semibold cursor-pointer"
               >
@@ -2601,7 +2601,7 @@ export const TeacherView: React.FC = () => {
                 <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
                 <h3 className="font-bold text-sm">Batch Import Marks via CSV</h3>
               </div>
-              <button
+              <button type="button"
                 onClick={() => setShowImportMarksModal(false)}
                 className="text-slate-400 hover:text-white cursor-pointer"
               >
@@ -2693,7 +2693,7 @@ export const TeacherView: React.FC = () => {
                   </div>
                 </div>
               </div>
-              <button
+              <button type="button"
                 onClick={() => setShowAnalyticsModal(false)}
                 className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 cursor-pointer transition-colors"
                 title="Close Analytics Modal"
@@ -3189,7 +3189,7 @@ export const TeacherView: React.FC = () => {
 
             {/* Footer */}
             <div className="p-3 bg-slate-100 border-t border-slate-200 flex justify-end shrink-0">
-              <button
+              <button type="button"
                 onClick={() => setShowAnalyticsModal(false)}
                 className="px-4 py-1.5 bg-[#0f2744] text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs"
               >

@@ -33,8 +33,32 @@ import {
 import { Bar, Doughnut } from 'react-chartjs-2';
 import '../lib/chart-setup';
 import { PostCard } from '../components/PostCard';
+import { useToast } from '../components/Toast';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 export const AdminView: React.FC = () => {
+
+  const toast = useToast();
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    isDestructive?: boolean;
+    isLoading?: boolean;
+    onConfirm: () => void | Promise<void>;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [isSyncingGithub, setIsSyncingGithub] = useState(false);
+  const [isSyncingLinkedin, setIsSyncingLinkedin] = useState(false);
+  const [isSyncingHackerrank, setIsSyncingHackerrank] = useState(false);
+
   const [activeTab, setActiveTab] = useState<'overview' | 'classes' | 'users' | 'assignments' | 'marksheets' | 'academic_records' | 'notices' | 'events' | 'audit' | 'settings'>('overview');
 
   // Overview Data
@@ -266,6 +290,7 @@ export const AdminView: React.FC = () => {
   };
 
   const showToast = (msg: string, isError = false) => {
+    toast.showToast(msg, isError ? 'error' : 'success');
     if (isError) {
       setActionError(msg);
       setTimeout(() => setActionError(null), 4000);
@@ -275,28 +300,48 @@ export const AdminView: React.FC = () => {
     }
   };
 
-  // Class deletion
-  const handleDeleteClass = async (classId: string, className: string) => {
-    if (!window.confirm(`Are you sure you want to delete class "${className}"? This action cannot be undone.`)) return;
-    try {
-      await api.deleteClass(classId);
-      showToast(`Class "${className}" removed successfully.`);
-      loadAllAdminData();
-    } catch (err: any) {
-      showToast(err.message || 'Failed to delete class', true);
-    }
+  // Class deletion with accessible ConfirmDialog
+  const handleDeleteClass = (classId: string, className: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Academic Class',
+      message: `Are you sure you want to delete class "${className}"? This action cannot be undone.`,
+      confirmText: 'Delete Class',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await api.deleteClass(classId);
+          showToast(`Class "${className}" removed successfully.`);
+          loadAllAdminData();
+        } catch (err: any) {
+          showToast(err.message || 'Failed to delete class', true);
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
-  // Subject deletion
-  const handleDeleteSubject = async (subjectId: string, subjectName: string) => {
-    if (!window.confirm(`Are you sure you want to delete subject "${subjectName}"? This action cannot be undone.`)) return;
-    try {
-      await api.deleteSubject(subjectId);
-      showToast(`Subject "${subjectName}" removed successfully.`);
-      loadAllAdminData();
-    } catch (err: any) {
-      showToast(err.message || 'Failed to delete subject', true);
-    }
+  // Subject deletion with accessible ConfirmDialog
+  const handleDeleteSubject = (subjectId: string, subjectName: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Subject',
+      message: `Are you sure you want to delete subject "${subjectName}"? This action cannot be undone.`,
+      confirmText: 'Delete Subject',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await api.deleteSubject(subjectId);
+          showToast(`Subject "${subjectName}" removed successfully.`);
+          loadAllAdminData();
+        } catch (err: any) {
+          showToast(err.message || 'Failed to delete subject', true);
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   const handleToggleVisibility = async (teacherId: string, key: string) => {
@@ -331,6 +376,10 @@ export const AdminView: React.FC = () => {
   };
 
   const handleTogglePlacementVisibility = async (placementId: string, key: string) => {
+    const toggleId = `placement_${placementId}_${key}`;
+    if (savingVisibilityKey === toggleId) return;
+    setSavingVisibilityKey(toggleId);
+
     const currentSettings = placementVisibility[placementId] || { github_enabled: true, hackathon_enabled: true, linkedin_enabled: true, hackerrank_enabled: true, leetcode_enabled: true, academic_enabled: true };
     const newValue = !currentSettings[key];
     const newSettings = { ...currentSettings, [key]: newValue };
@@ -345,6 +394,8 @@ export const AdminView: React.FC = () => {
       // Revert on failure
       setPlacementVisibility(prev => ({ ...prev, [placementId]: currentSettings }));
       showToast(err.message || 'Failed to update placement settings', true);
+    } finally {
+      setSavingVisibilityKey(null);
     }
   };
 
@@ -398,19 +449,28 @@ export const AdminView: React.FC = () => {
     }
   };
 
-  // Reset Handler
-  const handleResetToFresh = async () => {
-    if (!window.confirm('RESET ALL DATA: This will clear all classes, subjects, students, marks, and notifications, leaving only the admin account. Continue?')) return;
-    setIsResetting(true);
-    try {
-      const res = await api.resetToFresh();
-      showToast(res.message);
-      loadAllAdminData();
-    } catch (err: any) {
-      showToast(err.message || 'Failed to reset database', true);
-    } finally {
-      setIsResetting(false);
-    }
+  // Reset Handler with accessible ConfirmDialog
+  const handleResetToFresh = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Reset Database to Fresh Institutional State',
+      message: 'CRITICAL ACTION: This will completely erase all classes, subjects, students, marks, documents, and notifications, retaining only the primary administrative account. This action cannot be undone. Are you sure you want to proceed?',
+      confirmText: 'Reset Database',
+      isDestructive: true,
+      onConfirm: async () => {
+        setIsResetting(true);
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        try {
+          const res = await api.resetToFresh();
+          showToast(res.message);
+          loadAllAdminData();
+        } catch (err: any) {
+          showToast(err.message || 'Failed to reset database', true);
+        } finally {
+          setIsResetting(false);
+        }
+      }
+    });
   };
 
   // College Events Handlers
@@ -442,15 +502,25 @@ export const AdminView: React.FC = () => {
     }
   };
 
-  const handleDeleteEvent = async (eventId: string, eventName: string) => {
-    if (!window.confirm(`Delete event "${eventName}"?`)) return;
-    try {
-      await api.deleteAdminEvent(eventId);
-      showToast('Event removed successfully.');
-      setEvents(prev => prev.filter(e => e.id !== eventId));
-    } catch (err: any) {
-      showToast(err.message || 'Failed to delete event', true);
-    }
+  const handleDeleteEvent = (eventId: string, eventName: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Institutional Event',
+      message: `Are you sure you want to remove the event "${eventName}"? Students will no longer see this in their upcoming schedule.`,
+      confirmText: 'Delete Event',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await api.deleteAdminEvent(eventId);
+          showToast('Event removed successfully.');
+          setEvents(prev => prev.filter(e => e.id !== eventId));
+        } catch (err: any) {
+          showToast(err.message || 'Failed to delete event', true);
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   // Class creation
@@ -689,25 +759,25 @@ export const AdminView: React.FC = () => {
                 Institutional Administration
               </h1>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-600 mt-0.5">
               College Operations, Academic Rosters, Course Scopes & College-Wide Analytics
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
+            <button type="button"
               onClick={() => setShowStartSemesterModal(true)}
               className="px-3 py-1.5 bg-amber-500/10 border border-amber-300 text-amber-900 hover:bg-amber-500/20 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer"
             >
               <Calendar className="w-3.5 h-3.5 text-amber-700" /> Advance Semester
             </button>
-            <button
+            <button type="button"
               onClick={() => setShowBulkImportModal(true)}
               className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer"
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Bulk CSV Import
             </button>
-            <button
+            <button type="button"
               onClick={() => setShowAssignModal(true)}
               className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer"
             >
@@ -733,7 +803,7 @@ export const AdminView: React.FC = () => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
-              <button
+              <button type="button"
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
                 className={`px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer ${isActive
@@ -755,38 +825,38 @@ export const AdminView: React.FC = () => {
           {/* Key Metric Cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 sm:gap-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Enrolled</p>
+              <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Total Enrolled</p>
               <p className="text-2xl font-serif font-bold text-[#0f2744] mt-1">{overview?.totalStudents ?? 0}</p>
-              <p className="text-[10px] text-emerald-600 mt-1 flex items-center gap-1 font-medium">
+              <p className="text-[10px] text-emerald-700 mt-1 flex items-center gap-1 font-semibold">
                 <GraduationCap className="w-3 h-3" /> Active Students
               </p>
             </div>
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Faculty Body</p>
+              <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Faculty Body</p>
               <p className="text-2xl font-serif font-bold text-[#0f2744] mt-1">{overview?.totalTeachers ?? 0}</p>
-              <p className="text-[10px] text-sky-600 mt-1 flex items-center gap-1 font-medium">
+              <p className="text-[10px] text-sky-700 mt-1 flex items-center gap-1 font-semibold">
                 <Users className="w-3 h-3" /> Instructors & TAs
               </p>
             </div>
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Academic Classes</p>
+              <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Academic Classes</p>
               <p className="text-2xl font-serif font-bold text-[#0f2744] mt-1">{overview?.totalClasses ?? 0}</p>
-              <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1 font-medium">
+              <p className="text-[10px] text-slate-600 mt-1 flex items-center gap-1 font-semibold">
                 <BookOpen className="w-3 h-3" /> Assigned Sections
               </p>
             </div>
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Active Semesters</p>
+              <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Active Semesters</p>
               <p className="text-2xl font-serif font-bold text-[#0f2744] mt-1">{overview?.activeSemesters ?? 0}</p>
-              <p className="text-[10px] text-amber-700 mt-1 flex items-center gap-1 font-medium">
+              <p className="text-[10px] text-amber-800 mt-1 flex items-center gap-1 font-semibold">
                 <Calendar className="w-3 h-3" /> Term In-Progress
               </p>
             </div>
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs col-span-2 md:col-span-1">
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Overall Pass Rate</p>
-              <p className="text-2xl font-serif font-bold text-emerald-700 mt-1">{overview?.overallPassRate ?? 92.5}%</p>
-              <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1 font-medium">
-                <CheckCircle className="w-3 h-3 text-emerald-600" /> College Benchmark
+              <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Overall Pass Rate</p>
+              <p className="text-2xl font-serif font-bold text-emerald-800 mt-1">{overview?.overallPassRate ?? 92.5}%</p>
+              <p className="text-[10px] text-slate-600 mt-1 flex items-center gap-1 font-semibold">
+                <CheckCircle className="w-3 h-3 text-emerald-700" /> College Benchmark
               </p>
             </div>
           </div>
@@ -884,7 +954,7 @@ export const AdminView: React.FC = () => {
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <button
+              <button type="button"
                 onClick={handleResetToFresh}
                 disabled={isResetting}
                 className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold disabled:opacity-50 cursor-pointer shadow-2xs flex items-center gap-1.5"
@@ -906,13 +976,13 @@ export const AdminView: React.FC = () => {
               <p className="text-xs text-slate-500">Configure year cohorts, departments, and class designations</p>
             </div>
             <div className="flex gap-2">
-              <button
+              <button type="button"
                 onClick={() => setShowAddClassModal(true)}
                 className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" /> Add Class
               </button>
-              <button
+              <button type="button"
                 onClick={() => setShowAddSubjectModal(true)}
                 className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
               >
@@ -932,9 +1002,8 @@ export const AdminView: React.FC = () => {
                     <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                       {c.studentCount} Students
                     </span>
-                    <button
-                      onClick={() => handleDeleteClass(c.id, c.name)}
-                      className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                    <button type="button"
+                      onClick={() => handleDeleteClass(c.id, c.name)} aria-label={`Delete class ${c.name}`} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
                       title="Delete Class"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -972,9 +1041,8 @@ export const AdminView: React.FC = () => {
                       <td className="px-4 py-2.5">{s.departmentName || s.department_id}</td>
                       <td className="px-4 py-2.5 font-mono">{s.max_marks} pts</td>
                       <td className="px-4 py-2.5 text-right">
-                        <button
-                          onClick={() => handleDeleteSubject(s.id, s.name)}
-                          className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                        <button type="button"
+                          onClick={() => handleDeleteSubject(s.id, s.name)} aria-label={`Delete subject ${s.name}`} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
                           title="Delete Subject"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -998,13 +1066,13 @@ export const AdminView: React.FC = () => {
               <p className="text-xs text-slate-500">Manage institutional accounts, toggle status, and reset credentials</p>
             </div>
             <div className="flex items-center gap-2">
-              <button
+              <button type="button"
                 onClick={() => setShowAddUserModal(true)}
                 className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" /> Add Single User
               </button>
-              <button
+              <button type="button"
                 onClick={() => setShowBulkImportModal(true)}
                 className="px-3 py-1.5 bg-emerald-700 text-white hover:bg-emerald-800 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
               >
@@ -1091,14 +1159,14 @@ export const AdminView: React.FC = () => {
                         </td>
                         <td className="px-4 py-3 text-right space-x-2">
                           {u.role === 'student' && u.student_id && (
-                            <button
+                            <button type="button"
                               onClick={() => handleViewStudentProfile(u.student_id!)}
                               className="px-2 py-1 rounded text-[10px] font-semibold text-[#0f2744] border border-[#0f2744]/30 hover:bg-slate-100 cursor-pointer"
                             >
                               View Profile
                             </button>
                           )}
-                          <button
+                          <button type="button"
                             onClick={() => handleToggleUserStatus(u.id)}
                             className={`px-2 py-1 rounded text-[10px] font-semibold border transition-all cursor-pointer ${u.is_active !== false
                                 ? 'text-red-700 border-red-200 hover:bg-red-50'
@@ -1107,7 +1175,7 @@ export const AdminView: React.FC = () => {
                           >
                             {u.is_active !== false ? 'Deactivate' : 'Activate'}
                           </button>
-                          <button
+                          <button type="button"
                             onClick={() => handleResetPassword(u)}
                             className="px-2 py-1 rounded text-[10px] font-semibold text-slate-700 border border-slate-200 hover:bg-slate-100 cursor-pointer"
                           >
@@ -1133,7 +1201,7 @@ export const AdminView: React.FC = () => {
                 Single source of truth for faculty authorization. Active scopes and archived history are tracked separately.
               </p>
             </div>
-            <button
+            <button type="button"
               onClick={() => setShowAssignModal(true)}
               className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
             >
@@ -1170,7 +1238,7 @@ export const AdminView: React.FC = () => {
                     </td>
                     <td className="px-4 py-3">{a.semesterName}</td>
                     <td className="px-4 py-3 text-right">
-                      <button
+                      <button type="button"
                         onClick={() => handleArchiveAssignment(a.id)}
                         className="px-2.5 py-1 text-slate-600 hover:text-amber-900 hover:bg-amber-50 rounded border border-slate-200 transition-all text-[10px] font-semibold flex items-center gap-1 ml-auto cursor-pointer"
                         title="Archive to historical records without deleting data"
@@ -1439,7 +1507,7 @@ export const AdminView: React.FC = () => {
                           )}
                         </td>
                         <td className="p-3 text-right">
-                          <button
+                          <button type="button"
                             onClick={() => handleViewStudentProfile(r.id)}
                             className="px-2 py-1 bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 rounded shadow-xs text-[10px] font-bold"
                           >
@@ -1547,7 +1615,7 @@ export const AdminView: React.FC = () => {
                 Manage upcoming inter-college hackathons, technical symposiums, and institutional workshops
               </p>
             </div>
-            <button
+            <button type="button"
               onClick={() => setShowAddEventModal(true)}
               className="px-3 py-1.5 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer"
             >
@@ -1564,7 +1632,7 @@ export const AdminView: React.FC = () => {
               <p className="text-xs text-slate-500 max-w-sm mx-auto">
                 No technical hackathons or seminars are currently scheduled. Publish an event to display it to students and faculty.
               </p>
-              <button
+              <button type="button"
                 onClick={() => setShowAddEventModal(true)}
                 className="px-3 py-1.5 bg-[#0f2744] text-white rounded-lg text-xs font-semibold"
               >
@@ -1585,9 +1653,8 @@ export const AdminView: React.FC = () => {
                         }`}>
                         {ev.status}
                       </span>
-                      <button
-                        onClick={() => handleDeleteEvent(ev.id, ev.name)}
-                        className="text-slate-400 hover:text-red-600 p-1 rounded transition-colors cursor-pointer"
+                      <button type="button"
+                        onClick={() => handleDeleteEvent(ev.id, ev.name)} aria-label={`Delete event ${ev.name}`} className="text-slate-400 hover:text-red-600 p-1 rounded transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
                         title="Delete Event"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -1900,15 +1967,25 @@ export const AdminView: React.FC = () => {
                           { key: 'hackathon_enabled', label: 'Hackathons & Events', desc: 'Participation records, project submissions, and hackathon wins.' }
                         ].map(setting => {
                           const isEnabled = settings[setting.key] !== false;
+                          const isSaving = savingVisibilityKey === `placement_${placementOfficer.id}_${setting.key}`;
                           return (
                             <div key={setting.key} className="bg-white p-3.5 rounded-lg border border-slate-200/80 shadow-2xs flex items-start justify-between gap-3">
                               <div className="space-y-0.5 flex-1 pr-1">
-                                <h4 className="text-xs font-bold text-slate-900">{setting.label}</h4>
+                                <div className="flex items-center gap-2">
+                                  <h4 className="text-xs font-bold text-slate-900">{setting.label}</h4>
+                                  <span className={`text-[10px] font-bold ${isSaving ? 'text-amber-600' : isEnabled ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                    {isSaving ? 'Saving...' : (isEnabled ? 'ON' : 'OFF')}
+                                  </span>
+                                </div>
                                 <p className="text-[11px] text-slate-500 leading-tight">{setting.desc}</p>
                               </div>
-                              <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">
+                              <label className={`relative inline-flex items-center cursor-pointer shrink-0 mt-0.5 ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                 <input 
                                   type="checkbox" 
+                                  role="switch"
+                                  aria-checked={isEnabled}
+                                  aria-label={`Toggle ${setting.label} for ${placementOfficer.full_name}`}
+                                  disabled={isSaving}
                                   className="sr-only peer" 
                                   checked={isEnabled} 
                                   onChange={() => handleTogglePlacementVisibility(placementOfficer.id, setting.key)} 
@@ -1946,59 +2023,89 @@ export const AdminView: React.FC = () => {
                 <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
+                    disabled={isSyncingGithub}
                     onClick={async () => {
+                      setIsSyncingGithub(true);
                       try {
                         const res = await api.triggerAdminGithubSync();
                         showToast(res.message);
                       } catch (err: any) {
                         showToast(err.message, true);
+                      } finally {
+                        setIsSyncingGithub(false);
                       }
                     }}
-                    className="px-3.5 py-2 bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer"
+                    className="px-3.5 py-2 min-h-[44px] bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-50"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" /> Sync GitHub
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingGithub ? 'animate-spin' : ''}`} />
+                    {isSyncingGithub ? 'Syncing GitHub...' : 'Sync GitHub'}
                   </button>
                   <button
                     type="button"
+                    disabled={isSyncingLinkedin}
                     onClick={async () => {
+                      setIsSyncingLinkedin(true);
                       try {
                         const res = await api.triggerAdminLinkedinSync();
                         showToast(res.message);
                       } catch (err: any) {
                         showToast(err.message, true);
+                      } finally {
+                        setIsSyncingLinkedin(false);
                       }
                     }}
-                    className="px-3.5 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer"
+                    className="px-3.5 py-2 min-h-[44px] bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-50"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" /> Sync LinkedIn
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingLinkedin ? 'animate-spin' : ''}`} />
+                    {isSyncingLinkedin ? 'Syncing LinkedIn...' : 'Sync LinkedIn'}
                   </button>
                   <button
                     type="button"
+                    disabled={isSyncingHackerrank}
                     onClick={async () => {
+                      setIsSyncingHackerrank(true);
                       try {
                         const res = await api.triggerAdminHackerrankSync();
                         showToast(res.message);
                       } catch (err: any) {
                         showToast(err.message, true);
+                      } finally {
+                        setIsSyncingHackerrank(false);
                       }
                     }}
-                    className="px-3.5 py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer"
+                    className="px-3.5 py-2 min-h-[44px] bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-50"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" /> Sync HackerRank
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingHackerrank ? 'animate-spin' : ''}`} />
+                    {isSyncingHackerrank ? 'Syncing HackerRank...' : 'Sync HackerRank'}
                   </button>
                   <button
                     type="button"
-                    onClick={async () => {
-                      try {
-                        const res = await api.triggerAdminSyncAll();
-                        showToast(res.message);
-                      } catch (err: any) {
-                        showToast(err.message, true);
-                      }
+                    disabled={isSyncingAll}
+                    onClick={() => {
+                      setConfirmDialog({
+                        isOpen: true,
+                        title: 'Synchronize All Student External Platforms',
+                        message: 'This will trigger background synchronization across GitHub, LeetCode, and HackerRank for all registered student profiles. Are you sure you want to proceed?',
+                        confirmText: 'Sync All Platforms',
+                        isDestructive: false,
+                        onConfirm: async () => {
+                          setIsSyncingAll(true);
+                          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                          try {
+                            const res = await api.triggerAdminSyncAll();
+                            showToast(res.message);
+                          } catch (err: any) {
+                            showToast(err.message, true);
+                          } finally {
+                            setIsSyncingAll(false);
+                          }
+                        }
+                      });
                     }}
-                    className="px-3.5 py-2 bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer"
+                    className="px-3.5 py-2 min-h-[44px] bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-50"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" /> Sync All Platforms
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingAll ? 'animate-spin' : ''}`} />
+                    {isSyncingAll ? 'Synchronizing All...' : 'Sync All Platforms'}
                   </button>
                 </div>
               </div>
@@ -2016,7 +2123,7 @@ export const AdminView: React.FC = () => {
                 <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
                 <h3 className="font-bold text-sm">Bulk CSV User Importer</h3>
               </div>
-              <button onClick={() => { setShowBulkImportModal(false); setBulkReport(null); }} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" onClick={() => { setShowBulkImportModal(false); setBulkReport(null); }} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
@@ -2277,7 +2384,7 @@ export const AdminView: React.FC = () => {
                 <Calendar className="w-4 h-4 text-amber-400" />
                 <h3 className="font-bold text-sm">Advance Academic Term / Semester</h3>
               </div>
-              <button onClick={() => setShowStartSemesterModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" onClick={() => setShowStartSemesterModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
@@ -2333,7 +2440,7 @@ export const AdminView: React.FC = () => {
                 <Trophy className="w-4 h-4 text-amber-400" />
                 <h3 className="font-bold text-sm">Publish College Event or Hackathon</h3>
               </div>
-              <button onClick={() => setShowAddEventModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" onClick={() => setShowAddEventModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
@@ -2457,7 +2564,7 @@ export const AdminView: React.FC = () => {
                 <Users className="w-4 h-4 text-emerald-400" />
                 <h3 className="font-bold text-sm">Register New User</h3>
               </div>
-              <button onClick={() => setShowAddUserModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" onClick={() => setShowAddUserModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
@@ -2516,7 +2623,7 @@ export const AdminView: React.FC = () => {
                 <Shield className="w-4 h-4 text-amber-400" />
                 <h3 className="font-bold text-sm">Reset Password</h3>
               </div>
-              <button onClick={() => setResetUser(null)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button type="button" onClick={() => setResetUser(null)} className="text-slate-400 hover:text-white cursor-pointer">
                 ✕
               </button>
             </div>
@@ -2594,7 +2701,7 @@ export const AdminView: React.FC = () => {
                   {isLoadingStudentProfile ? 'Loading Student Dossier...' : 'Student Portfolio Dossier'}
                 </h3>
               </div>
-              <button
+              <button type="button"
                 onClick={() => setShowProfileModal(false)}
                 className="text-slate-400 hover:text-white cursor-pointer"
               >
@@ -2857,7 +2964,7 @@ export const AdminView: React.FC = () => {
                                   {achievement.verification_status || 'Submitted'}
                                 </span>
                                 {(!achievement.verification_status || !achievement.verification_status.includes('Verified')) && (
-                                  <button
+                                  <button type="button"
                                     onClick={() => handleVerifyPortfolioItem(selectedStudentProfile.id, 'achievements', achievement.id)}
                                     className="px-2 py-1 bg-[#0f2744] text-white hover:bg-[#163354] rounded text-[10px] font-bold cursor-pointer"
                                   >
@@ -2900,7 +3007,7 @@ export const AdminView: React.FC = () => {
                                     {project.verification_status || 'Submitted'}
                                   </span>
                                   {(!project.verification_status || !project.verification_status.includes('Verified')) && (
-                                    <button
+                                    <button type="button"
                                       onClick={() => handleVerifyPortfolioItem(selectedStudentProfile.id, 'projects', project.id)}
                                       className="px-2 py-1 bg-[#0f2744] text-white hover:bg-[#163354] rounded text-[10px] font-bold cursor-pointer"
                                     >
@@ -2971,7 +3078,7 @@ export const AdminView: React.FC = () => {
                                   {certification.verification_status || 'Submitted'}
                                 </span>
                                 {(!certification.verification_status || !certification.verification_status.includes('Verified')) && (
-                                  <button
+                                  <button type="button"
                                     onClick={() => handleVerifyPortfolioItem(selectedStudentProfile.id, 'certifications', certification.id)}
                                     className="px-2 py-1 bg-[#0f2744] text-white hover:bg-[#163354] rounded text-[10px] font-bold cursor-pointer"
                                   >
@@ -3042,7 +3149,21 @@ export const AdminView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Accessible Institutional Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        isDestructive={confirmDialog.isDestructive}
+        isLoading={confirmDialog.isLoading}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };
+
 

@@ -23,13 +23,13 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center justify-between h-16">
           {/* Brand Logo & Name */}
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-lg bg-[var(--color-accent)] text-white flex items-center justify-center font-serif font-bold text-xl shadow-inner border border-amber-300/30">
+            <div className="w-10 h-10 rounded-lg bg-amber-400 text-slate-950 flex items-center justify-center font-serif font-black text-xl shadow-inner border border-amber-300">
               VA
             </div>
             <div>
               <div className="flex items-center space-x-2">
                 <span className="font-serif tracking-wider font-bold text-lg text-white">VISSION ACADEMY</span>
-                <span className="text-[10px] uppercase font-semibold tracking-widest px-2 py-0.5 rounded bg-[var(--color-accent)]/20 text-amber-200 border border-[var(--color-accent)]/40">
+                <span className="text-[10px] uppercase font-semibold tracking-widest px-2 py-0.5 rounded bg-amber-400/20 text-amber-200 border border-amber-400/40">
                   Est. 1988
                 </span>
               </div>
@@ -43,8 +43,9 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center space-x-3">
             {/* AI Assistant Button */}
             <button
+              type="button"
               onClick={onOpenAi}
-              className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-gradient-to-r from-[var(--color-accent)] to-[#b08d3b] hover:from-[#b08d3b] hover:to-[var(--color-accent)] text-white shadow-sm border border-amber-300/30 transition-all hover:scale-102 cursor-pointer"
+              className="flex items-center space-x-1.5 px-3 py-1.5 min-h-[44px] text-xs font-semibold rounded-lg bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white shadow-sm border border-amber-400/30 transition-all cursor-pointer"
               title="Open Grounded Academic AI Assistant"
             >
               <Sparkles className="w-4 h-4 text-amber-200 animate-pulse" />
@@ -53,13 +54,18 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Notifications Bell */}
             <button
+              type="button"
+              aria-label={unreadNotifsCount > 0 ? `Notifications, ${unreadNotifsCount} unread` : 'Notifications'}
               onClick={onOpenNotifs}
-              className="relative p-2 text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-lg transition-colors cursor-pointer"
+              className="relative p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-200 hover:text-white hover:bg-slate-800/60 rounded-lg transition-colors cursor-pointer"
               title="Notifications"
             >
               <Bell className="w-5 h-5" />
               {unreadNotifsCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-bounce">
+                <span
+                  aria-hidden="true"
+                  className="absolute top-1.5 right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-bounce"
+                >
                   {unreadNotifsCount}
                 </span>
               )}
@@ -78,17 +84,20 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
               <div className="hidden lg:block text-left text-xs leading-tight">
                 <p className="font-semibold text-white max-w-[140px] truncate">{user.full_name}</p>
-                <p className="text-slate-400 capitalize flex items-center gap-1">
+                <p className="text-slate-300 capitalize flex items-center gap-1">
                   {user.role === 'admin' && 'System Admin'}
                   {user.role === 'teacher' && 'Faculty Member'}
                   {user.role === 'student' && `Student (${user.roll_number || 'Enrolled'})`}
+                  {user.role === 'placement' && 'Placement Officer'}
                 </p>
               </div>
 
               {/* Logout Button */}
               <button
+                type="button"
+                aria-label="Sign Out"
                 onClick={onLogout}
-                className="p-1.5 text-slate-400 hover:text-red-300 hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer"
+                className="p-1.5 min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-300 hover:text-red-300 hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer"
                 title="Sign Out"
               >
                 <LogOut className="w-4 h-4" />

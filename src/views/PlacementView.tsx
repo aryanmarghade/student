@@ -19,17 +19,21 @@ import {
 import { Bar } from 'react-chartjs-2';
 import '../lib/chart-setup';
 import { RoleReadinessEvaluation } from '../types';
+import { useToast } from '../components/Toast';
 
 export const PlacementView: React.FC = () => {
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'students'>('dashboard');
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedYear, setSelectedYear] = useState<string>('All');
   
   // Student Profile Modal
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [targetRole, setTargetRole] = useState<string>('Software Engineer');
   const [isMatchingRole, setIsMatchingRole] = useState(false);
   const [roleMatchResult, setRoleMatchResult] = useState<RoleReadinessEvaluation | null>(null);
@@ -41,11 +45,15 @@ export const PlacementView: React.FC = () => {
 
   const loadDashboard = async () => {
     setIsLoading(true);
+    setDashboardError(null);
     try {
       const res = await api.getPlacementDashboard();
       setDashboardData(res);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load placement dashboard', err);
+      const msg = err.message || 'Failed to load placement office records.';
+      setDashboardError(msg);
+      toast.showToast(msg, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -55,11 +63,15 @@ export const PlacementView: React.FC = () => {
     setIsProfileLoading(true);
     setRoleMatchResult(null);
     setRoleMatchError(null);
+    setProfileError(null);
     try {
       const data = await api.getStudentFullProfileForPlacement(studentId);
       setSelectedStudent(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load profile', err);
+      const msg = err.message || 'Unable to retrieve student profile. Please verify placement access scopes.';
+      setProfileError(msg);
+      toast.showToast(msg, 'error');
     } finally {
       setIsProfileLoading(false);
     }
@@ -86,6 +98,26 @@ export const PlacementView: React.FC = () => {
     );
   }
 
+  if (dashboardError) {
+    return (
+      <div className="max-w-xl mx-auto my-16 p-8 bg-white rounded-2xl border border-red-200 shadow-sm text-center space-y-4">
+        <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+          <AlertCircle className="w-6 h-6" />
+        </div>
+        <h2 className="text-lg font-bold text-slate-900">Placement Dashboard Unavailable</h2>
+        <p className="text-xs text-slate-600">{dashboardError}</p>
+        <button
+          type="button"
+          onClick={loadDashboard}
+          className="px-5 py-2.5 min-h-[44px] bg-[#0f2744] hover:bg-[#163354] text-white rounded-xl text-xs font-semibold cursor-pointer"
+        >
+          Retry Connection
+        </button>
+      </div>
+    );
+  }
+
+
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Header */}
@@ -95,7 +127,7 @@ export const PlacementView: React.FC = () => {
             <Briefcase className="w-7 h-7 text-emerald-600" />
             Placement Office Dashboard
           </h1>
-          <p className="text-slate-500 mt-1">
+          <p className="text-slate-600 mt-1">
             Access to academic records and student performance analytics
           </p>
         </div>
@@ -108,9 +140,10 @@ export const PlacementView: React.FC = () => {
           { id: 'students', label: 'Academic Records', icon: Users },
         ].map(tab => (
           <button
+            type="button"
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 min-h-[44px] rounded-lg text-sm font-medium transition-colors cursor-pointer ${
               activeTab === tab.id
                 ? 'bg-emerald-50 text-emerald-700'
                 : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
@@ -293,8 +326,9 @@ export const PlacementView: React.FC = () => {
                         </td>
                         <td className="p-4 text-right">
                           <button
+                            type="button"
                             onClick={() => openStudentProfile(s.id)}
-                            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                            className="px-3 py-1.5 min-h-[44px] text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors cursor-pointer"
                           >
                             View Profile
                           </button>
@@ -309,6 +343,26 @@ export const PlacementView: React.FC = () => {
         )}
       </div>
 
+      {/* Profile Error Feedback Dialog */}
+      {profileError && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 border border-red-100 text-center space-y-4">
+            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900">Student Profile Unavailable</h3>
+            <p className="text-xs text-slate-600 leading-relaxed">{profileError}</p>
+            <button
+              type="button"
+              onClick={() => setProfileError(null)}
+              className="px-5 py-2.5 min-h-[44px] bg-[#0f2744] hover:bg-[#163354] text-white rounded-xl text-xs font-semibold cursor-pointer w-full"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Student Profile Modal */}
       {selectedStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
@@ -319,8 +373,10 @@ export const PlacementView: React.FC = () => {
                 <p className="text-sm text-slate-500">Roll: {selectedStudent.roll_number} • {selectedStudent.className}</p>
               </div>
               <button 
+                type="button"
+                aria-label="Close profile modal"
                 onClick={() => setSelectedStudent(null)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
               >
                 ✕
               </button>

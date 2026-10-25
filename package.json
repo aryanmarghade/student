@@ -37,6 +37,7 @@
     "vite": "^6.4.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@playwright/test": "^1.63.0",
     "@types/bcryptjs": "^3.0.0",
     "@types/cookie-parser": "^1.4.10",

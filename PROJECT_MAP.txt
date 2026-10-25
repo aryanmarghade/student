@@ -187,6 +187,8 @@ Views (`src/views/`):
 
 Components (`src/components/`):
 - `Header.tsx`: Navigation bar with branding, role badge, notification bell, and sign out.
+- `ConfirmDialog.tsx`: Accessible confirmation modal (role="alertdialog", focus trap, Esc/overlay dismiss, focus restoration, destructive styling) replacing all native window.confirm calls.
+- `Toast.tsx`: Accessible toast notification provider and hook (ToastProvider, useToast, auto-dismissing feedback messages, aria-live="polite").
 - `AiAssistantDrawer.tsx`: Grounded Gemini AI assistant drawer.
 - `NotificationModal.tsx`: Institutional notice viewer.
 - `ResetPasswordModal.tsx`: Forced first-time password reset modal.
@@ -375,7 +377,15 @@ Core Tables:
   * Incremental npm audit Upgrades: Upgraded express sub-dependencies (body-parser, proxy-addr, qs), multer to ^2.5.0, vite to ^6.4.5, and source-map-js to ^1.2.2. Validated with full Playwright suite and npm run build after each package. Final npm audit returned 0 vulnerabilities.
   * HttpOnly Cookie Session Refresh: Implemented 15-minute access JWTs in-memory (eliminated localStorage token persistence), opaque refresh token in HttpOnly; SameSite=Strict; Secure cookie with SHA-256 database hashing, automatic token rotation, family reuse detection (revokes entire token family upon duplicate presentation), sliding 2h idle / 12h absolute timeout, pre-expiry warning banner with "Stay Signed In" extension, and BroadcastChannel cross-tab synchronization.
   * Production CSP Audit: Verified strict production CSP directives (script-src 'self' with zero unsafe-inline and zero unsafe-eval). Browser-tested all 4 role dashboards (Admin, Teacher, Placement, Student), charts, and AI assistant drawer with console open: zero CSP violations across all views.
-  * Operations & Deployment: Created comprehensive DEPLOYMENT.md detailing required environment variables, HTTPS/TLS reverse proxy setup, zero-downtime DB password rotation, pg_dump backup/restore procedures, and database migrations.
+- 2026-10-25: Phase 4 UI Accessibility, Interaction States & Responsive Audits verified via tests/phase4-ui-interactions.spec.ts & tests/phase4-axe-accessibility.spec.ts (7/7 passed):
+  * Accessible ConfirmDialog Component: Implemented accessible modal (role="alertdialog", aria-modal="true", aria-labelledby, aria-describedby, focus-trap, Esc key dismiss, backdrop click dismiss, focus restoration to trigger element). Eliminated 100% of native window.confirm calls across the codebase (0 calls remaining).
+  * Accessible Toast Provider & Hook: Implemented ToastProvider and useToast hook with polite screen reader announcements (role="status" / role="alert"), auto-dismissing badges, and manual dismiss controls.
+  * Double-Submit Prevention & Button States: Added isSubmittingPost guard with loading spinner (<Loader2 className="animate-spin" />) and disabled state on StudentView post creation; verified rapid double-click creates exactly one post.
+  * Optimistic Visibility Toggles with Rollback: Added saving state, disabled toggle interaction during API calls, optimistic UI update, and automatic rollback with error toast upon network/server rejection.
+  * Button Audit & Touch Targets: Enforced explicit type="button" | "submit" on 100% of buttons across all 4 role views. Enforced minimum 44x44px touch targets on all interactive elements, visible focus rings (focus-visible:ring-2), and descriptive aria-label on all icon-only buttons.
+  * Placement Error Recovery: Added user-facing retry state for placement dashboard errors and error modal fallback for profile fetching failures.
+  * Axe Accessibility Compliance (WCAG AA): Automated Playwright + @axe-core/playwright audit across all 4 roles (Admin, Teacher, Placement, Student). Verified zero serious or critical accessibility violations. Resolved contrast ratios to >= 4.5:1 across dark and light surfaces.
+  * Multi-Viewport Visual Verification: Captured screenshots across all 4 roles at 375px (mobile), 768px (tablet), and 1440px (desktop) totaling 12 full-view snapshots stored in artifact directory.
 =============================================================================
 
 
