@@ -738,12 +738,23 @@ router.post('/github/sync', async (req: AuthRequest, res) => {
   if (!s || !s.github_url) return res.status(400).json({ error: 'No GitHub URL linked to profile.' });
   
   try {
-    const match = s.github_url.match(/github\.com\/([^\/]+)/i);
+    const match = s.github_url.match(/github\.com\/([^\/\s?#]+)/i);
     if (!match) return res.status(400).json({ error: 'Invalid GitHub URL format.' });
-    const username = match[1];
 
-    const userRes = await fetch(`https://api.github.com/users/${username}`);
-    const reposRes = await fetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=updated`);
+    const rawUser = match[1].trim();
+    if (!/^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/.test(rawUser)) {
+      return res.status(400).json({ error: 'Invalid GitHub username format. Alphanumeric and single hyphens only.' });
+    }
+    const username = encodeURIComponent(rawUser);
+
+    const userRes = await fetch(`https://api.github.com/users/${username}`, {
+      headers: { 'User-Agent': 'VissionAcademy-SSRF-Hardened/1.0' },
+      signal: AbortSignal.timeout(10000),
+    });
+    const reposRes = await fetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=updated`, {
+      headers: { 'User-Agent': 'VissionAcademy-SSRF-Hardened/1.0' },
+      signal: AbortSignal.timeout(10000),
+    });
 
     if (!userRes.ok) throw new Error('GitHub API error for user profile');
     const userData = await userRes.json();

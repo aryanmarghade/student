@@ -24,10 +24,8 @@
     "noEmit": true
   },
   "exclude": [
-    "server/index.ts",
     "server/documents.ts",
     "server/ai-assistant.ts",
-    "src/api.ts",
     "scratch/**"
   ]
 }

@@ -2,6 +2,8 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
+import helmet from 'helmet';
+import cors from 'cors';
 import authRoutes from './server/routes/auth-routes.js';
 import adminRoutes from './server/routes/admin-routes.js';
 import teacherRoutes from './server/routes/teacher-routes.js';
@@ -19,25 +21,100 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // 1. Configure Trust Proxy from environment (default: false / 0 hops to prevent IP spoofing)
+  const trustProxyEnv = process.env.TRUST_PROXY;
+  if (trustProxyEnv !== undefined && trustProxyEnv.trim() !== '') {
+    const hops = Number(trustProxyEnv);
+    app.set('trust proxy', isNaN(hops) ? trustProxyEnv.trim() : hops);
+  } else {
+    app.set('trust proxy', false);
+  }
+
   await initializeDatabase();
 
-  // Start the monthly GitHub data sync scheduler
-  // Fires automatically on the 1st of each month at 00:05
+  // 2. Helmet Security Headers with Vite/React compatible CSP
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: [
+            "'self'",
+            ...(process.env.NODE_ENV === 'production'
+              ? []
+              : ["'unsafe-inline'", "'unsafe-eval'"]),
+          ],
+          styleSrc: [
+            "'self'",
+            "'unsafe-inline'",
+            "https://fonts.googleapis.com",
+          ],
+          fontSrc: [
+            "'self'",
+            "https://fonts.gstatic.com",
+            "data:",
+          ],
+          imgSrc: [
+            "'self'",
+            "data:",
+            "blob:",
+            "https:",
+          ],
+          connectSrc: [
+            "'self'",
+            ...(process.env.NODE_ENV === 'production'
+              ? []
+              : ["ws://localhost:3000", "ws://127.0.0.1:3000", "http://localhost:3000", "http://127.0.0.1:3000"]),
+          ],
+          mediaSrc: ["'self'", "data:", "blob:"],
+          objectSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+        },
+      },
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+    })
+  );
+
+  // 3. Explicit CORS Allowlist from Environment (Same-Origin by Default)
+  const rawAllowedOrigins = process.env.ALLOWED_ORIGINS || '';
+  const allowedOrigins = rawAllowedOrigins
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.length === 0) {
+          return callback(new Error('CORS blocked by default policy (same-origin only).'));
+        }
+        if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+          return callback(null, true);
+        }
+        return callback(new Error(`Origin ${origin} not permitted by CORS allowlist.`));
+      },
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    })
+  );
+
+  // Start background schedulers
   startGitHubScheduler().catch((err) =>
     console.error('[GitHub Sync] Scheduler startup failed:', err.message)
   );
-
-  // Start the monthly LinkedIn data sync scheduler
   startLinkedInScheduler().catch((err) =>
     console.error('[LinkedIn Sync] Scheduler startup failed:', err.message)
   );
-
-  // Start the monthly HackerRank data sync scheduler
   startHackerRankScheduler().catch((err) =>
     console.error('[HackerRank Sync] Scheduler startup failed:', err.message)
   );
 
-  // JSON Body parsing with ample headroom for file/resume uploads
+  // JSON Body parsing
   app.use(express.json({ limit: '15mb' }));
   app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
@@ -58,7 +135,7 @@ async function startServer() {
   app.use('/api/placement', placementRoutes);
   app.use('/api/ai', aiRoutes);
 
-  // Upload paths are served only by authenticated route handlers.
+  // Upload paths are served only by authenticated route handlers
   app.get('/uploads/:folder/:filename', (_req, res) => {
     res.status(404).json({ error: 'Direct file access is not available.' });
   });
@@ -77,6 +154,39 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  // 4. Central Error Handler Middleware (Server-Side Logging, Clean Production Responses)
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error(`[Server Error] ${req.method} ${req.originalUrl}:`, err?.message || err);
+
+    if (res.headersSent) {
+      return next(err);
+    }
+
+    const statusCode = typeof err.status === 'number' && err.status >= 400 && err.status < 600
+      ? err.status
+      : err.name === 'UnauthorizedError' ? 401
+      : err.code === '23505' ? 409
+      : err.code === '23503' ? 409
+      : err.message?.includes('CORS') ? 403
+      : 500;
+
+    if (process.env.NODE_ENV === 'production') {
+      const safeMessage = statusCode === 400 ? (err.message || 'Bad Request')
+        : statusCode === 401 ? 'Unauthorized'
+        : statusCode === 403 ? (err.message || 'Forbidden')
+        : statusCode === 404 ? 'Resource not found'
+        : statusCode === 409 ? 'A conflicting resource already exists or is referenced.'
+        : 'An unexpected internal server error occurred.';
+
+      return res.status(statusCode).json({ error: safeMessage });
+    }
+
+    return res.status(statusCode).json({
+      error: err.message || 'Internal Server Error',
+      code: err.code || err.name,
+    });
+  });
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🏛️ Vission Academy Server running on http://0.0.0.0:${PORT}`);

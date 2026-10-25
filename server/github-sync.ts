@@ -104,8 +104,17 @@ async function fetchGitHubData(username: string): Promise<GitHubSnapshotData> {
     ...authHeader(),
   };
 
-  // 1. Fetch user profile
-  const profileRes = await fetch(`https://api.github.com/users/${username}`, { headers });
+  const cleanUsername = String(username || '').trim();
+  if (!/^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/.test(cleanUsername)) {
+    throw new Error(`Invalid GitHub username '${username}'. Potential SSRF or injection attempt.`);
+  }
+  const safeUsername = encodeURIComponent(cleanUsername);
+
+  // 1. Fetch user profile with 10s timeout
+  const profileRes = await fetch(`https://api.github.com/users/${safeUsername}`, {
+    headers,
+    signal: AbortSignal.timeout(10000),
+  });
 
   // Check rate limit
   const remaining = profileRes.headers.get('X-RateLimit-Remaining');
@@ -116,7 +125,7 @@ async function fetchGitHubData(username: string): Promise<GitHubSnapshotData> {
     await sleep(waitMs);
   }
 
-  if (profileRes.status === 404) throw new Error(`GitHub user '${username}' not found (404)`);
+  if (profileRes.status === 404) throw new Error(`GitHub user '${safeUsername}' not found (404)`);
   if (profileRes.status === 403) {
     const error = new Error('GitHub API rate limit exceeded or access forbidden');
     (error as any).code = 'RATE_LIMIT';
@@ -126,10 +135,13 @@ async function fetchGitHubData(username: string): Promise<GitHubSnapshotData> {
 
   const profileData = await profileRes.json() as Record<string, any>;
 
-  // 2. Fetch public repos (up to 100, sorted by last pushed)
+  // 2. Fetch public repos with 10s timeout
   const reposRes = await fetch(
-    `https://api.github.com/users/${username}/repos?per_page=100&sort=pushed&type=owner`,
-    { headers }
+    `https://api.github.com/users/${safeUsername}/repos?per_page=100&sort=pushed&type=owner`,
+    {
+      headers,
+      signal: AbortSignal.timeout(10000),
+    }
   );
   const reposData: any[] = reposRes.ok ? await reposRes.json() : [];
 
@@ -148,7 +160,7 @@ async function fetchGitHubData(username: string): Promise<GitHubSnapshotData> {
       language: r.language ?? null,
     }));
 
-  // 3. Optionally fetch contribution count via GraphQL (requires GITHUB_TOKEN)
+  // 3. Optionally fetch contribution count via GraphQL with 10s timeout
   let totalContributions: number | null = null;
   const token = process.env.GITHUB_TOKEN;
   if (token && token.trim()) {
@@ -169,8 +181,9 @@ async function fetchGitHubData(username: string): Promise<GitHubSnapshotData> {
               }
             }
           }`,
-          variables: { login: username },
+          variables: { login: safeUsername },
         }),
+        signal: AbortSignal.timeout(10000),
       });
       if (graphqlRes.ok) {
         const gql = await graphqlRes.json() as Record<string, any>;

@@ -10,7 +10,7 @@ export interface AuthenticatedUser { id: string; email: string; role: 'admin' | 
 export interface AuthRequest extends Request { user?: AuthenticatedUser; }
 
 export function generateToken(user: UserRecord, student?: { id: string; class_id: string | null }): string {
-  return jwt.sign({ id: user.id, email: user.email, role: user.role, full_name: user.full_name, student_id: student?.id, class_id: student?.class_id || undefined }, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign({ id: user.id, email: user.email, role: user.role, full_name: user.full_name, student_id: student?.id, class_id: student?.class_id || undefined }, JWT_SECRET, { expiresIn: '2h' });
 }
 export async function hashPassword(value: string) { return bcrypt.hash(value, 10); }
 export async function comparePassword(value: string, hash: string) { return Boolean(value && hash) && bcrypt.compare(value, hash); }

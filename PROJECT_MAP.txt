@@ -151,9 +151,9 @@ Purpose: Gemini AI Academic Query Engine.
 Responsibilities: Answers grounded academic queries using tool calls against the database schema.
 Status: ACTIVE.
 
-[ LEGACY / UNUSED FILES ]
-- server/index.ts (Legacy entry point - DO NOT USE)
-- src/api.ts (Legacy API client - DO NOT USE)
+[ LEGACY / REMOVED FILES ]
+- server/index.ts (REMOVED - Deleted to eliminate fallback development secret and dead code)
+- src/api.ts (REMOVED - Deleted dead client targeting obsolete port 4000)
 
 =============================================================================
 5. COMPLETE FRONTEND FILE MAP
@@ -356,6 +356,19 @@ Core Tables:
   * Authenticated Marksheet Access: Direct unauthenticated static file access to /uploads/marksheets blocked. Official downloads routed through authenticated student API with IDOR protection.
   * Single Upload Hardening: POST /api/admin/marksheets/upload enforces 10 MB fileSize limit, strict application/pdf MIME type, .pdf extension, and %PDF- magic-byte validation.
   * Bulk ZIP Archive Defense: POST /api/admin/marksheets/bulk-zip hardened with 1000 max entry limits, 200 MB total uncompressed expansion threshold (zip-bomb protection), and path traversal checks (zip-slip defense).
+- 2026-10-25: Phase 2C Follow-ups (Zip Defense & Full Upload Audit) verified via Playwright tests/phase2b.spec.ts & tests/uploads.spec.ts:
+  * Zip-Bomb Running Total: Enforced 200MB limit on actual cumulative decompressed bytes during extraction rather than trusting central directory header sizes. Added test fixture lying about uncompressed size.
+  * Zip Entry Path Security: Strict rejection of entries with backslashes, drive letters (e.g. C:), null bytes (\0), and absolute paths. Confirmed server-generated filenames (Date.now()-hex.pdf) are exclusively written to disk.
+  * All Multer / Upload Routes Hardened: POST /api/student/documents (10MB limit, allowed extensions, magic bytes [%PDF-, PNG, JPEG, WEBP, DOCX, TXT], server-generated filenames, authenticated download with student ownership check); POST /api/student/posts (10MB limit per file, max 10 attachments, magic bytes validation, student ownership check); POST /api/student/upload-photo (5MB limit, strict MIME allowlist, base64 magic bytes inspection [\x89PNG, \xFF\xD8\xFF, RIFF...WEBP]); POST /api/student/upload-resume (1MB text limit, sanitized /uploads/ URL format validation).
+  * AI Visibility Test Demonstrated: Reverted visibility filter temporarily to prove POST /api/placement/ai-query fails, then restored and verified passing.
+- 2026-10-25: Phase 3 Server Hardening verified via Playwright tests/hardening.spec.ts & browser-qa subagent (74/74 passed):
+  * Helmet Security Headers & CSP: Strict Content Security Policy with directives compatible with Vite HMR/dev and React production builds (default-src 'self', object-src 'none', frame-ancestors 'none'). Browser verified with zero console CSP violations.
+  * Explicit CORS Policy: Configured via ALLOWED_ORIGINS environment variable. Defaults strictly to same-origin when empty; unauthorized origins are rejected.
+  * Central Error Handler: Catches all unhandled server errors. In production (NODE_ENV=production), internal database error details, SQL queries, and stack traces are suppressed and replaced with safe HTTP status messages. Full details logged server-side only.
+  * Trust Proxy Configuration: Configured via TRUST_PROXY environment variable (e.g. TRUST_PROXY=1 for single reverse proxy hop). Defaults to false (0 hops) to prevent IP spoofing when exposed directly.
+  * Outbound SSRF & Timeout Protection: Added AbortSignal.timeout(10000) on all outbound GitHub, LeetCode, and external sync fetches. Enforced strict username format validation (/^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/) preventing SSRF and path injection.
+  * JWT Expiry & Client Storage Audit: Shortened JWT expiration from 7 days to 2 hours ({ expiresIn: '2h' }). Token is stored on client in localStorage ('vission_academy_jwt'), which creates an XSS exfiltration exposure if malicious scripts execute in origin; 2h expiry bounds session lifetime. Documented refresh token flow.
+  * Legacy Dead Code Removal: Completely deleted server/index.ts (1,201 lines, contained fallback secret) and src/api.ts (42 lines, dead client). Proved zero imports and clean production build with npm run build.
 =============================================================================
 
 
