@@ -875,7 +875,7 @@ router.get('/hackerrank/evidence', async (req: AuthRequest, res) => {
   res.json(rows.rows);
 });
 
-router.post('/hackerrank/evidence', async (req: AuthRequest, res) => {
+router.post('/hackerrank/evidence', rateLimit(30, 60 * 1000, 'hackerrank-evidence'), async (req: AuthRequest, res) => {
   const s = await ownStudent(req.user!.id);
   if (!s) return res.status(404).json({ error: 'Student record not found.' });
   const {
@@ -890,6 +890,40 @@ router.post('/hackerrank/evidence', async (req: AuthRequest, res) => {
     return res.status(400).json({ error: 'Badge or certificate name is required.' });
   }
 
+  const cleanName = String(badge_or_certificate_name).trim();
+  const cleanDomain = String(skill_domain || 'Problem Solving').trim();
+
+  if (cleanName.length > 150) {
+    return res.status(400).json({ error: 'Badge or certificate name cannot exceed 150 characters.' });
+  }
+
+  if (cleanDomain.length > 100) {
+    return res.status(400).json({ error: 'Skill domain cannot exceed 100 characters.' });
+  }
+
+  let validatedUrl: string | null = null;
+  if (certificate_url !== undefined && certificate_url !== null && String(certificate_url).trim() !== '') {
+    const trimmedUrl = String(certificate_url).trim();
+    if (trimmedUrl.length > 500) {
+      return res.status(400).json({ error: 'Certificate URL cannot exceed 500 characters.' });
+    }
+    if (!/^https?:\/\/[^\s]+$/i.test(trimmedUrl)) {
+      return res.status(400).json({ error: 'Certificate URL must be a valid HTTP or HTTPS URL.' });
+    }
+    validatedUrl = trimmedUrl;
+  }
+
+  // Duplicate submission check for same student and badge/skill
+  const existing = await query(
+    `SELECT id FROM student_hackerrank_evidence 
+     WHERE student_id = $1 AND lower(badge_name) = lower($2) AND lower(skill_name) = lower($3)
+     LIMIT 1`,
+    [s.id, cleanName, cleanDomain]
+  );
+  if (existing.rowCount > 0) {
+    return res.status(409).json({ error: 'Duplicate submission: this HackerRank evidence record has already been submitted.' });
+  }
+
   const evidenceId = id('hre');
   await query(
     `INSERT INTO student_hackerrank_evidence (id, student_id, skill_name, badge_name, stars, certificate_url, evidence_url, verification_status)
@@ -897,11 +931,11 @@ router.post('/hackerrank/evidence', async (req: AuthRequest, res) => {
     [
       evidenceId,
       s.id,
-      String(skill_domain || 'Problem Solving').trim(),
-      String(badge_or_certificate_name).trim(),
+      cleanDomain,
+      cleanName,
       Number(star_rating) || 0,
-      certificate_url ? String(certificate_url).trim() : null,
-      certificate_url ? String(certificate_url).trim() : null
+      validatedUrl,
+      validatedUrl
     ]
   );
 
@@ -921,7 +955,10 @@ router.post('/hackerrank/evidence', async (req: AuthRequest, res) => {
 router.delete('/hackerrank/evidence/:id', async (req: AuthRequest, res) => {
   const s = await ownStudent(req.user!.id);
   if (!s) return res.status(404).json({ error: 'Student record not found.' });
-  await query('DELETE FROM student_hackerrank_evidence WHERE id = $1 AND student_id = $2', [req.params.id, s.id]);
+  const result = await query('DELETE FROM student_hackerrank_evidence WHERE id = $1 AND student_id = $2', [req.params.id, s.id]);
+  if (result.rowCount === 0) {
+    return res.status(404).json({ error: 'HackerRank evidence record not found or unauthorized.' });
+  }
   res.json({ message: 'HackerRank evidence removed' });
 });
 

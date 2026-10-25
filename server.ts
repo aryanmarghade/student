@@ -16,7 +16,8 @@ import { startGitHubScheduler } from './server/github-sync.js';
 import { startLinkedInScheduler } from './server/linkedin-sync.js';
 import { startHackerRankScheduler } from './server/hackerrank-sync.js';
 
-dotenv.config();
+const envFile = process.env.DOTENV_CONFIG_PATH || (process.env.NODE_ENV === 'test' ? '.env.test' : '.env');
+dotenv.config({ path: path.resolve(process.cwd(), envFile) });
 
 async function startServer() {
   const app = express();
@@ -144,6 +145,11 @@ async function startServer() {
   app.use('/api/student', studentRoutes);
   app.use('/api/placement', placementRoutes);
   app.use('/api/ai', aiRoutes);
+
+  // Return JSON 404 for any unhandled /api/* route before SPA fallback
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ error: 'Endpoint not found', path: req.originalUrl });
+  });
 
   // Upload paths are served only by authenticated route handlers
   app.get('/uploads/:folder/:filename', (_req, res) => {

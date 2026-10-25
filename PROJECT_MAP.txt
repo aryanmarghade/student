@@ -403,7 +403,17 @@ Core Tables:
   * HackerRank Evidence Route Fix: Implemented GET, POST, DELETE /api/student/hackerrank/evidence to eliminate Vite SPA HTML fallback returning non-array objects. Frontend defensive Array.isArray guard retained.
   * Test Database Isolation: Cloned vission_academy_test from template; form submissions and interaction tests run isolated without mutating developer database.
   * Full Test Suite: All 118 Playwright tests passing cleanly across all 4 roles.
+- 2026-10-25: A3 Hardening, Isolated Small Test DB, API 404, Security & Visual Regression Audit (126/126 passed):
+  * Git History Secret Scan: Scanned all 69 commits reachable from origin/main. Categorized distinct secret types found (PostgreSQL URIs, JWT secrets, passwords, AWS keys). Verified git ls-files | findstr /i ".env scratch": zero .env or scratch files tracked (only .env.example tracked).
+  * Scratch Scripts Credential Cleanup: Removed 46 legacy scripts from scratch/ containing hardcoded credentials or connection strings. Enforced scripts read DATABASE_URL from environment.
+  * Isolated Test Environment (.env.test): Moved test configuration to .env.test (pointing to vission_academy_small_test and ALLOW_TEST_RATE_LIMIT_BYPASS=true). Configured Playwright to load .env.test. Restored .env to development database (vission_academy).
+  * Small Fake-Data Test Database: Initialized fresh installation from db/schema.sql and seeded fake accounts across all 4 roles (Admin, Teacher, Placement, Student) and standard class hierarchies. Proved fresh install operates cleanly without cloning dev.
+  * API 404 & Frontend Client Resilience: Added app.all('/api/*', ...) JSON 404 handler in server.ts prior to SPA fallback. Updated frontend API client (src/lib/api.ts) to inspect Content-Type and throw on non-JSON responses. Added tests in tests/hardening.spec.ts.
+  * HackerRank Evidence Route Hardening & RBAC: Applied rate limiting (30 req/min), student-only RBAC, input length restrictions, http/https URL validation (rejecting javascript: URLs), duplicate submission guards (409 Conflict), and ownership checks on deletion (404 on unowned records). Added comprehensive RBAC tests in tests/rbac.spec.ts.
+  * Visual Regression Audit (96793af vs HEAD): Built commit 96793af in isolated worktree, served on port 3006, and captured screenshots across all tabs and modals for all 4 roles at 1440px and 375px viewports against HEAD on port 3000. Executed pixel-diff analysis via pixelmatch; saved all screenshots, diffs, and summary report to reports/visual-diff/.
+  * Full Test Suite: All 126/126 Playwright tests passing on fresh isolated test database.
 =============================================================================
+
 
 
 

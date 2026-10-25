@@ -123,7 +123,11 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(endpoint, {
+  const url = endpoint.startsWith('http')
+    ? endpoint
+    : (typeof window !== 'undefined' ? endpoint : `http://127.0.0.1:3000${endpoint.startsWith('/') ? '' : '/'}${endpoint}`);
+
+  const res = await fetch(url, {
     ...options,
     headers,
     credentials: 'include',
@@ -139,7 +143,11 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
         headers,
         credentials: 'include',
       });
-      const retryData = await retryRes.json().catch(() => ({}));
+      const retryContentType = retryRes.headers.get('content-type') || '';
+      if (!retryContentType.includes('application/json')) {
+        throw new Error(`Expected JSON response from API but received content-type "${retryContentType}" (status ${retryRes.status})`);
+      }
+      const retryData = await retryRes.json();
       if (!retryRes.ok) {
         throw new Error(retryData.error || retryData.message || `Request failed with status ${retryRes.status}`);
       }
@@ -147,7 +155,17 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     }
   }
 
-  const data = await res.json().catch(() => ({}));
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(`Expected JSON response from API but received content-type "${contentType}" (status ${res.status})`);
+  }
+
+  let data: any;
+  try {
+    data = await res.json();
+  } catch (err: any) {
+    throw new Error(`Failed to parse JSON response: ${err.message}`);
+  }
 
   if (!res.ok) {
     throw new Error(data.error || data.message || `Request failed with status ${res.status}`);
@@ -156,7 +174,13 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   return data as T;
 }
 
+export { request };
+
 export const api = {
+  request,
+  get: <T>(url: string) => request<T>(url),
+  post: <T>(url: string, body?: any) => request<T>(url, { method: 'POST', body: JSON.stringify(body) }),
+
   // Auth & Setup
   getSetupStatus: () => request<{ needsSetup: boolean; institutionName: string; configured: boolean }>('/api/auth/setup-status'),
 

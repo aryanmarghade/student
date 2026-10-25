@@ -3,7 +3,8 @@ import path from 'path';
 import dotenv from 'dotenv';
 import pg from 'pg';
 
-dotenv.config();
+const envFile = process.env.DOTENV_CONFIG_PATH || (process.env.NODE_ENV === 'test' ? '.env.test' : '.env');
+dotenv.config({ path: path.resolve(process.cwd(), envFile) });
 
 const { Pool } = pg;
 const databaseUrl = process.env.DATABASE_URL;

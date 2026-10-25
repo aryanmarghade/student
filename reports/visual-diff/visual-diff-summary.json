@@ -1,0 +1,683 @@
+{
+  "evaluatedAt": "2026-10-25T18:09:00.810Z",
+  "baselineCommit": "96793af",
+  "headCommit": "HEAD",
+  "totalScreens": 60,
+  "flaggedScreensCount": 52,
+  "results": [
+    {
+      "screen": "admin_modal_add_user_1440",
+      "diffPercent": 0.34,
+      "diffPixels": 4437,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_modal_add_user_375",
+      "diffPercent": 0.43,
+      "diffPixels": 1299,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_modal_advance_term_1440",
+      "diffPercent": 0.33,
+      "diffPixels": 4325,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_modal_advance_term_375",
+      "diffPercent": 0.37,
+      "diffPixels": 1132,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_modal_assign_teacher_1440",
+      "diffPercent": 0.34,
+      "diffPixels": 4380,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_modal_assign_teacher_375",
+      "diffPercent": 0.38,
+      "diffPixels": 1148,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_modal_bulk_csv_1440",
+      "diffPercent": 0.34,
+      "diffPixels": 4370,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_modal_bulk_csv_375",
+      "diffPercent": 0.38,
+      "diffPixels": 1143,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_audit_1440",
+      "diffPercent": 0.91,
+      "diffPixels": 11805,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_audit_375",
+      "diffPercent": 1.88,
+      "diffPixels": 5734,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_classes_1440",
+      "diffPercent": 4.37,
+      "diffPixels": 56581,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_classes_375",
+      "diffPercent": 4.37,
+      "diffPixels": 13305,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_events_1440",
+      "diffPercent": 0.7,
+      "diffPixels": 9086,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_events_375",
+      "diffPercent": 1.31,
+      "diffPixels": 3988,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_marksheets_1440",
+      "diffPercent": 0.69,
+      "diffPixels": 8909,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_marksheets_375",
+      "diffPercent": 1.31,
+      "diffPixels": 3987,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_notices_1440",
+      "diffPercent": 0.7,
+      "diffPixels": 9055,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_notices_375",
+      "diffPercent": 1.33,
+      "diffPixels": 4064,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_overview_1440",
+      "diffPercent": 0.79,
+      "diffPixels": 10217,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_overview_375",
+      "diffPercent": 1.73,
+      "diffPixels": 5256,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_records_1440",
+      "diffPercent": 0.7,
+      "diffPixels": 9066,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_records_375",
+      "diffPercent": 1.31,
+      "diffPixels": 3979,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_settings_1440",
+      "diffPercent": 0.69,
+      "diffPixels": 8929,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_settings_375",
+      "diffPercent": 1.3,
+      "diffPixels": 3963,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_teachers_1440",
+      "diffPercent": 0.69,
+      "diffPixels": 8925,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_teachers_375",
+      "diffPercent": 1.3,
+      "diffPixels": 3972,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_users_1440",
+      "diffPercent": 0.69,
+      "diffPixels": 8903,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_users_375",
+      "diffPercent": 1.31,
+      "diffPixels": 3992,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "placement_tab_overview_1440",
+      "diffPercent": 1.5,
+      "diffPixels": 19487,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "placement_tab_overview_375",
+      "diffPercent": 3.33,
+      "diffPixels": 10136,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "placement_tab_records_1440",
+      "diffPercent": 1.5,
+      "diffPixels": 19436,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "placement_tab_records_375",
+      "diffPercent": 3.39,
+      "diffPixels": 10330,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_analytics_1440",
+      "diffPercent": 3.25,
+      "diffPixels": 42168,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_analytics_375",
+      "diffPercent": 5.36,
+      "diffPixels": 16320,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_bio_1440",
+      "diffPercent": 0.68,
+      "diffPixels": 8785,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_bio_375",
+      "diffPercent": 1.15,
+      "diffPixels": 3508,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_events_1440",
+      "diffPercent": 3.62,
+      "diffPixels": 46945,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_events_375",
+      "diffPercent": 21.62,
+      "diffPixels": 65822,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_intelligence_1440",
+      "diffPercent": 14.36,
+      "diffPixels": 186084,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_intelligence_375",
+      "diffPercent": 42.56,
+      "diffPixels": 129587,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_marks_1440",
+      "diffPercent": 3.42,
+      "diffPixels": 44304,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_marks_375",
+      "diffPercent": 21.24,
+      "diffPixels": 64686,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_posts_1440",
+      "diffPercent": 3.57,
+      "diffPixels": 46253,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_posts_375",
+      "diffPercent": 7.12,
+      "diffPixels": 21693,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_projects_1440",
+      "diffPercent": 4.08,
+      "diffPixels": 52923,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_projects_375",
+      "diffPercent": 8,
+      "diffPixels": 24372,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_sports_1440",
+      "diffPercent": 3.98,
+      "diffPixels": 51613,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_sports_375",
+      "diffPercent": 23.26,
+      "diffPixels": 70841,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_vault_1440",
+      "diffPercent": 4.08,
+      "diffPixels": 52904,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_vault_375",
+      "diffPercent": 24.7,
+      "diffPixels": 75201,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "teacher_modal_batch_csv_1440",
+      "diffPercent": 0.67,
+      "diffPixels": 8664,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "teacher_modal_batch_csv_375",
+      "diffPercent": 1.59,
+      "diffPixels": 4837,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "teacher_tab_analytics_1440",
+      "diffPercent": 0.75,
+      "diffPixels": 9659,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "teacher_tab_analytics_375",
+      "diffPercent": 1.56,
+      "diffPixels": 4745,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "teacher_tab_announcements_1440",
+      "diffPercent": 0.75,
+      "diffPixels": 9737,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "teacher_tab_announcements_375",
+      "diffPercent": 1.04,
+      "diffPixels": 3162,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "teacher_tab_marks_1440",
+      "diffPercent": 2.36,
+      "diffPixels": 30557,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "teacher_tab_marks_375",
+      "diffPercent": 5.63,
+      "diffPixels": 17136,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "teacher_tab_roster_1440",
+      "diffPercent": 0.75,
+      "diffPixels": 9742,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "teacher_tab_roster_375",
+      "diffPercent": 1.55,
+      "diffPixels": 4732,
+      "totalPixels": 304500
+    }
+  ],
+  "flagged": [
+    {
+      "screen": "admin_tab_audit_1440",
+      "diffPercent": 0.91,
+      "diffPixels": 11805,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_audit_375",
+      "diffPercent": 1.88,
+      "diffPixels": 5734,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_classes_1440",
+      "diffPercent": 4.37,
+      "diffPixels": 56581,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_classes_375",
+      "diffPercent": 4.37,
+      "diffPixels": 13305,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_events_1440",
+      "diffPercent": 0.7,
+      "diffPixels": 9086,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_events_375",
+      "diffPercent": 1.31,
+      "diffPixels": 3988,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_marksheets_1440",
+      "diffPercent": 0.69,
+      "diffPixels": 8909,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_marksheets_375",
+      "diffPercent": 1.31,
+      "diffPixels": 3987,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_notices_1440",
+      "diffPercent": 0.7,
+      "diffPixels": 9055,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_notices_375",
+      "diffPercent": 1.33,
+      "diffPixels": 4064,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_overview_1440",
+      "diffPercent": 0.79,
+      "diffPixels": 10217,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_overview_375",
+      "diffPercent": 1.73,
+      "diffPixels": 5256,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_records_1440",
+      "diffPercent": 0.7,
+      "diffPixels": 9066,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_records_375",
+      "diffPercent": 1.31,
+      "diffPixels": 3979,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_settings_1440",
+      "diffPercent": 0.69,
+      "diffPixels": 8929,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_settings_375",
+      "diffPercent": 1.3,
+      "diffPixels": 3963,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_teachers_1440",
+      "diffPercent": 0.69,
+      "diffPixels": 8925,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_teachers_375",
+      "diffPercent": 1.3,
+      "diffPixels": 3972,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "admin_tab_users_1440",
+      "diffPercent": 0.69,
+      "diffPixels": 8903,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "admin_tab_users_375",
+      "diffPercent": 1.31,
+      "diffPixels": 3992,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "placement_tab_overview_1440",
+      "diffPercent": 1.5,
+      "diffPixels": 19487,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "placement_tab_overview_375",
+      "diffPercent": 3.33,
+      "diffPixels": 10136,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "placement_tab_records_1440",
+      "diffPercent": 1.5,
+      "diffPixels": 19436,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "placement_tab_records_375",
+      "diffPercent": 3.39,
+      "diffPixels": 10330,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_analytics_1440",
+      "diffPercent": 3.25,
+      "diffPixels": 42168,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_analytics_375",
+      "diffPercent": 5.36,
+      "diffPixels": 16320,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_bio_1440",
+      "diffPercent": 0.68,
+      "diffPixels": 8785,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_bio_375",
+      "diffPercent": 1.15,
+      "diffPixels": 3508,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_events_1440",
+      "diffPercent": 3.62,
+      "diffPixels": 46945,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_events_375",
+      "diffPercent": 21.62,
+      "diffPixels": 65822,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_intelligence_1440",
+      "diffPercent": 14.36,
+      "diffPixels": 186084,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_intelligence_375",
+      "diffPercent": 42.56,
+      "diffPixels": 129587,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_marks_1440",
+      "diffPercent": 3.42,
+      "diffPixels": 44304,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_marks_375",
+      "diffPercent": 21.24,
+      "diffPixels": 64686,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_posts_1440",
+      "diffPercent": 3.57,
+      "diffPixels": 46253,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_posts_375",
+      "diffPercent": 7.12,
+      "diffPixels": 21693,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_projects_1440",
+      "diffPercent": 4.08,
+      "diffPixels": 52923,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_projects_375",
+      "diffPercent": 8,
+      "diffPixels": 24372,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_sports_1440",
+      "diffPercent": 3.98,
+      "diffPixels": 51613,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_sports_375",
+      "diffPercent": 23.26,
+      "diffPixels": 70841,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "student_tab_vault_1440",
+      "diffPercent": 4.08,
+      "diffPixels": 52904,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "student_tab_vault_375",
+      "diffPercent": 24.7,
+      "diffPixels": 75201,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "teacher_modal_batch_csv_1440",
+      "diffPercent": 0.67,
+      "diffPixels": 8664,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "teacher_modal_batch_csv_375",
+      "diffPercent": 1.59,
+      "diffPixels": 4837,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "teacher_tab_analytics_1440",
+      "diffPercent": 0.75,
+      "diffPixels": 9659,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "teacher_tab_analytics_375",
+      "diffPercent": 1.56,
+      "diffPixels": 4745,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "teacher_tab_announcements_1440",
+      "diffPercent": 0.75,
+      "diffPixels": 9737,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "teacher_tab_announcements_375",
+      "diffPercent": 1.04,
+      "diffPixels": 3162,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "teacher_tab_marks_1440",
+      "diffPercent": 2.36,
+      "diffPixels": 30557,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "teacher_tab_marks_375",
+      "diffPercent": 5.63,
+      "diffPixels": 17136,
+      "totalPixels": 304500
+    },
+    {
+      "screen": "teacher_tab_roster_1440",
+      "diffPercent": 0.75,
+      "diffPixels": 9742,
+      "totalPixels": 1296000
+    },
+    {
+      "screen": "teacher_tab_roster_375",
+      "diffPercent": 1.55,
+      "diffPixels": 4732,
+      "totalPixels": 304500
+    }
+  ]
+}

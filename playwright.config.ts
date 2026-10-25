@@ -1,4 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Point test suite at .env.test
+dotenv.config({ path: path.resolve(process.cwd(), '.env.test'), override: true });
 
 export default defineConfig({
   testDir: './tests',

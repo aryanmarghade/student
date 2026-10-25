@@ -113,4 +113,19 @@ test.describe('Phase 3: Server Hardening Suite', () => {
       process.env.ALLOW_TEST_RATE_LIMIT_BYPASS = oldFlag;
     }
   });
+
+  test('Unknown /api/* paths must return JSON 404 before SPA fallback', async ({ request }) => {
+    const res = await request.get(`${BASE_URL}/api/nonexistent-route-404-test`);
+    expect(res.status()).toBe(404);
+    const contentType = res.headers()['content-type'] || '';
+    expect(contentType).toContain('application/json');
+    const json = await res.json();
+    expect(json.error).toBeDefined();
+  });
+
+  test('Frontend API client throws an error when server returns non-JSON', async () => {
+    const { api } = await import('../src/lib/api.js');
+    await expect(api.get('/login')).rejects.toThrow(/Expected JSON response/);
+  });
 });
+

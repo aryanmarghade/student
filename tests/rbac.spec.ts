@@ -266,4 +266,75 @@ test.describe('Vission Academy RBAC Master Endpoint Matrix Suite', () => {
     expect(res.status()).toBe(403);
   });
 
+  // ── 8. HACKERRANK EVIDENCE RBAC & SECURITY TESTS ─────────────────────────────
+
+  test('Admin is forbidden from accessing /api/student/hackerrank/evidence (403)', async ({ request }) => {
+    const res = await request.get(`${BASE_URL}/api/student/hackerrank/evidence`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.status()).toBe(403);
+  });
+
+  test('Teacher is forbidden from accessing /api/student/hackerrank/evidence (403)', async ({ request }) => {
+    const res = await request.get(`${BASE_URL}/api/student/hackerrank/evidence`, {
+      headers: { Authorization: `Bearer ${teacherToken}` },
+    });
+    expect(res.status()).toBe(403);
+  });
+
+  test('Placement officer is forbidden from accessing /api/student/hackerrank/evidence (403)', async ({ request }) => {
+    const res = await request.get(`${BASE_URL}/api/student/hackerrank/evidence`, {
+      headers: { Authorization: `Bearer ${placementToken}` },
+    });
+    expect(res.status()).toBe(403);
+  });
+
+  test('HackerRank evidence rejects javascript: pseudo-protocol URLs with 400', async ({ request }) => {
+    const res = await request.post(`${BASE_URL}/api/student/hackerrank/evidence`, {
+      headers: { Authorization: `Bearer ${studentToken}` },
+      data: {
+        badge_or_certificate_name: 'Python Gold',
+        skill_domain: 'Problem Solving',
+        certificate_url: 'javascript:alert(document.cookie)',
+      },
+    });
+    expect(res.status()).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/valid HTTP or HTTPS URL/i);
+  });
+
+  test('HackerRank evidence rejects duplicate badge submission for same student', async ({ request }) => {
+    const badgeName = `Unique Badge ${Date.now()}`;
+    const firstRes = await request.post(`${BASE_URL}/api/student/hackerrank/evidence`, {
+      headers: { Authorization: `Bearer ${studentToken}` },
+      data: {
+        badge_or_certificate_name: badgeName,
+        skill_domain: 'Problem Solving',
+        certificate_url: 'https://hackerrank.com/certificates/test-unique',
+      },
+    });
+    expect(firstRes.status()).toBe(201);
+
+    // Duplicate submission
+    const dupRes = await request.post(`${BASE_URL}/api/student/hackerrank/evidence`, {
+      headers: { Authorization: `Bearer ${studentToken}` },
+      data: {
+        badge_or_certificate_name: badgeName,
+        skill_domain: 'Problem Solving',
+        certificate_url: 'https://hackerrank.com/certificates/test-unique',
+      },
+    });
+    expect([400, 409]).toContain(dupRes.status());
+    const json = await dupRes.json();
+    expect(json.error).toMatch(/duplicate/i);
+  });
+
+  test('Deleting another students HackerRank evidence record returns 404', async ({ request }) => {
+    // Attempt to delete a nonexistent or another student's evidence ID
+    const res = await request.delete(`${BASE_URL}/api/student/hackerrank/evidence/hre_nonexistent_other_student_999`, {
+      headers: { Authorization: `Bearer ${studentToken}` },
+    });
+    expect(res.status()).toBe(404);
+  });
+
 });
