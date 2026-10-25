@@ -81,7 +81,7 @@ export const AdminView: React.FC = () => {
   // Form states
   const [newClassData, setNewClassData] = useState({ name: '', department_id: '', year: 3, section: 'A' });
   const [newSubjectData, setNewSubjectData] = useState({ name: '', code: '', department_id: '', max_marks: 100 });
-  const [newUserData, setNewUserData] = useState({ email: '', full_name: '', role: 'student', password: 'password123', roll_number: '', class_id: '', department_id: '' });
+  const [newUserData, setNewUserData] = useState({ email: '', full_name: '', role: 'student', password: '', roll_number: '', class_id: '', department_id: '' });
   const [newAssignData, setNewAssignData] = useState({ teacher_user_id: '', class_id: '', subject_id: '', semester_id: '' });
   const [marksheetData, setMarksheetData] = useState({ student_id: '', semester_id: 'sem_4', sgpa: 8.5, cgpa: 8.5 });
   const [marksheetFile, setMarksheetFile] = useState<File | null>(null);

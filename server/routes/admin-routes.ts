@@ -135,6 +135,21 @@ router.patch('/users/:id/status', async (req: AuthRequest, res) => {
   res.json({ message: 'Account status updated successfully.', is_active: r.rows[0].is_active });
 });
 
+router.patch('/users/:id/role', async (req: AuthRequest, res) => {
+  const { role } = req.body;
+  if (!['admin', 'teacher', 'student', 'placement'].includes(role)) {
+    return res.status(400).json({ error: 'Invalid user role.' });
+  }
+  if (req.params.id === req.user!.id && role !== 'admin') {
+    return res.status(400).json({ error: 'You cannot demote your own master administrator account.' });
+  }
+  const r = await query<{ full_name: string }>('UPDATE users SET role=$1 WHERE id=$2 RETURNING full_name', [role, req.params.id]);
+  if (!r.rowCount) return res.status(404).json({ error: 'User not found.' });
+  await revokeAllUserRefreshTokens(req.params.id);
+  await logActivity(req.user!.id, 'USER_ROLE_CHANGE', 'USER', req.params.id, `Changed role for ${r.rows[0].full_name} to ${role}.`);
+  res.json({ message: 'User role updated successfully.', role });
+});
+
 router.post('/users/:id/reset-password', async (req: AuthRequest, res) => {
   const { password } = req.body;
   if (password && password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters long.' });

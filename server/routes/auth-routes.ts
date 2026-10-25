@@ -94,7 +94,24 @@ router.post('/login', rateLimit(15, 5 * 60 * 1000, 'login'), async (req, res) =>
   });
 });
 
-router.post('/refresh', rateLimit(60, 60 * 1000, 'refresh'), async (req, res) => {
+const validateOrigin = (req: any, res: any, next: any) => {
+  const origin = req.headers.origin;
+  if (!origin) return next();
+  try {
+    const parsed = new URL(origin);
+    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+      return next();
+    }
+  } catch {}
+  const rawAllowedOrigins = process.env.ALLOWED_ORIGINS || '';
+  const allowed = rawAllowedOrigins.split(',').map(s => s.trim()).filter(Boolean);
+  if (allowed.includes(origin)) {
+    return next();
+  }
+  return res.status(403).json({ error: 'Origin not allowed.' });
+};
+
+router.post('/refresh', validateOrigin, rateLimit(10, 60 * 1000, 'refresh'), async (req, res) => {
   // CSRF Defense: Require custom header
   const refreshHeader = req.headers['x-auth-refresh'];
   if (refreshHeader !== '1') {
@@ -126,7 +143,7 @@ router.post('/refresh', rateLimit(60, 60 * 1000, 'refresh'), async (req, res) =>
   }
 });
 
-router.post('/logout', async (req, res) => {
+router.post('/logout', validateOrigin, async (req, res) => {
   const rawToken = req.cookies?.va_refresh_token;
   if (rawToken) {
     try {
@@ -137,7 +154,7 @@ router.post('/logout', async (req, res) => {
   res.json({ message: 'Logged out successfully.' });
 });
 
-router.post('/logout-all', requireAuth, async (req: AuthRequest, res) => {
+router.post('/logout-all', validateOrigin, requireAuth, async (req: AuthRequest, res) => {
   try {
     await revokeAllUserRefreshTokens(req.user!.id);
   } catch {}

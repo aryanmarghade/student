@@ -9,9 +9,10 @@ const { Pool } = pg;
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required; PostgreSQL is the application source of truth.');
 
+const requiresSsl = process.env.DB_SSL === 'true' || databaseUrl.includes('sslmode=require') || databaseUrl.includes('sslmode=verify-full');
 export const pool = new Pool({
   connectionString: databaseUrl,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+  ssl: requiresSsl ? { rejectUnauthorized: process.env.DB_REJECT_UNAUTHORIZED !== 'false' } : undefined,
 });
 
 export type UserRole = 'admin' | 'teacher' | 'student';
@@ -86,7 +87,9 @@ export async function initializeDatabase() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_marks_class_subject_semester ON marks(class_id, subject_id, semester_id);`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_tca_active_assignment ON teacher_class_assignments (teacher_user_id, class_id, subject_id, semester_id) WHERE status = 'active';`);
 
-  await pool.query(lockedSeed);
+  if (process.env.NODE_ENV !== 'production') {
+    await pool.query(lockedSeed);
+  }
 }
 
 export function id(prefix: string) { return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }

@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import pg from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
+import jwt from 'jsonwebtoken';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
@@ -222,4 +223,153 @@ test.describe('Session Refresh Architecture & Family Reuse Detection', () => {
     // Reset back to FALSE
     await pool.query('UPDATE users SET must_reset_password = FALSE WHERE id = $1', [testUserId]);
   });
+
+  test('Refresh tokens are revoked on password change, role change, and deactivation', async ({ request }) => {
+    // 1. Login user
+    const loginRes = await loginUser(request);
+    const token = loginRes.headersArray().find(h => h.name.toLowerCase() === 'set-cookie')!.value.match(/va_refresh_token=([^;]+)/)![1];
+    const { token: accessToken } = await loginRes.json();
+
+    // 2. Change password
+    const newPass = 'BrandNewPassword123!';
+    const changePassRes = await request.post(`${BASE_URL}/api/auth/change-password`, {
+      headers: { Authorization: `Bearer ${accessToken}`, 'x-bypass-ratelimit': 'qa-stress-suite' },
+      data: { currentPassword: testPassword, newPassword: newPass },
+    });
+    expect(changePassRes.status()).toBe(200);
+
+    // Old refresh token must be rejected
+    const refreshOld = await request.post(`${BASE_URL}/api/auth/refresh`, {
+      headers: { Cookie: `va_refresh_token=${token}`, 'X-Auth-Refresh': '1', 'x-bypass-ratelimit': 'qa-stress-suite' },
+    });
+    expect(refreshOld.status()).toBe(401);
+
+    // Reset password back for other tests
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [await bcrypt.hash(testPassword, 10), testUserId]);
+
+    // 3. Test Deactivation: login again, deactivate account via admin, verify refresh fails
+    const loginRes2 = await loginUser(request);
+    const token2 = loginRes2.headersArray().find(h => h.name.toLowerCase() === 'set-cookie')!.value.match(/va_refresh_token=([^;]+)/)![1];
+
+    const adminToken = jwt.sign(
+      { id: 'usr_admin_01', email: 'admin@visionacademy.edu', role: 'admin', full_name: 'Administrator' },
+      process.env.JWT_SECRET!,
+      { expiresIn: '1h' }
+    );
+
+    // Toggle status to inactive
+    const deactivateRes = await request.patch(`${BASE_URL}/api/admin/users/${testUserId}/status`, {
+      headers: { Authorization: `Bearer ${adminToken}`, 'x-bypass-ratelimit': 'qa-stress-suite' },
+    });
+    expect(deactivateRes.status()).toBe(200);
+
+    const refreshDeactivated = await request.post(`${BASE_URL}/api/auth/refresh`, {
+      headers: { Cookie: `va_refresh_token=${token2}`, 'X-Auth-Refresh': '1', 'x-bypass-ratelimit': 'qa-stress-suite' },
+    });
+    expect(refreshDeactivated.status()).toBe(401);
+
+    // Reactivate user
+    await pool.query('UPDATE users SET is_active = TRUE WHERE id = $1', [testUserId]);
+
+    // 4. Test Role Change: login again, change role via admin, verify old refresh token revoked
+    const loginRes3 = await loginUser(request);
+    const token3 = loginRes3.headersArray().find(h => h.name.toLowerCase() === 'set-cookie')!.value.match(/va_refresh_token=([^;]+)/)![1];
+
+    const changeRoleRes = await request.patch(`${BASE_URL}/api/admin/users/${testUserId}/role`, {
+      headers: { Authorization: `Bearer ${adminToken}`, 'x-bypass-ratelimit': 'qa-stress-suite' },
+      data: { role: 'student' },
+    });
+    expect(changeRoleRes.status()).toBe(200);
+
+    const refreshRoleChanged = await request.post(`${BASE_URL}/api/auth/refresh`, {
+      headers: { Cookie: `va_refresh_token=${token3}`, 'X-Auth-Refresh': '1', 'x-bypass-ratelimit': 'qa-stress-suite' },
+    });
+    expect(refreshRoleChanged.status()).toBe(401);
+
+    // Revert role
+    await pool.query('UPDATE users SET role = $1 WHERE id = $2', ['teacher', testUserId]);
+  });
+
+  test('POST /api/auth/refresh enforces rate limiting on repeated calls', async ({ request }) => {
+    const loginRes = await loginUser(request);
+    const token = loginRes.headersArray().find(h => h.name.toLowerCase() === 'set-cookie')!.value.match(/va_refresh_token=([^;]+)/)![1];
+
+    // Rapidly send requests without bypass header
+    let hitRateLimit = false;
+    for (let i = 0; i < 20; i++) {
+      const res = await request.post(`${BASE_URL}/api/auth/refresh`, {
+        headers: {
+          Cookie: `va_refresh_token=${token}`,
+          'X-Auth-Refresh': '1',
+          // no bypass header
+        },
+      });
+      if (res.status() === 429) {
+        hitRateLimit = true;
+        break;
+      }
+    }
+    expect(hitRateLimit).toBe(true);
+  });
+
+  test('Origin header check rejects untrusted cross-origin on refresh, logout, and logout-all', async ({ request }) => {
+    const loginRes = await loginUser(request);
+    const token = loginRes.headersArray().find(h => h.name.toLowerCase() === 'set-cookie')!.value.match(/va_refresh_token=([^;]+)/)![1];
+    const { token: access } = await loginRes.json();
+
+    const maliciousOrigin = 'https://malicious-cross-origin.com';
+
+    // 1. Refresh with malicious origin -> 403 Forbidden
+    const refreshBadOrigin = await request.post(`${BASE_URL}/api/auth/refresh`, {
+      headers: {
+        Origin: maliciousOrigin,
+        Cookie: `va_refresh_token=${token}`,
+        'X-Auth-Refresh': '1',
+        'x-bypass-ratelimit': 'qa-stress-suite',
+      },
+    });
+    expect(refreshBadOrigin.status()).toBe(403);
+
+    // 2. Logout with malicious origin -> 403 Forbidden
+    const logoutBadOrigin = await request.post(`${BASE_URL}/api/auth/logout`, {
+      headers: {
+        Origin: maliciousOrigin,
+        Cookie: `va_refresh_token=${token}`,
+        'X-Auth-Refresh': '1',
+        'x-bypass-ratelimit': 'qa-stress-suite',
+      },
+    });
+    expect(logoutBadOrigin.status()).toBe(403);
+
+    // 3. Logout-all with malicious origin -> 403 Forbidden
+    const logoutAllBadOrigin = await request.post(`${BASE_URL}/api/auth/logout-all`, {
+      headers: {
+        Origin: maliciousOrigin,
+        Authorization: `Bearer ${access}`,
+        'x-bypass-ratelimit': 'qa-stress-suite',
+      },
+    });
+    expect(logoutAllBadOrigin.status()).toBe(403);
+  });
+
+  test('Production cookie options: Secure flag present in production mode', async () => {
+    const { setRefreshCookie } = await import('../server/refresh-tokens.js');
+    const mockRes: any = {
+      cookie: (name: string, val: string, opts: any) => {
+        mockRes.lastCookie = { name, val, opts };
+      },
+    };
+
+    const prevEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      setRefreshCookie(mockRes, 'dummy_token', new Date());
+      expect(mockRes.lastCookie.opts.secure).toBe(true);
+      expect(mockRes.lastCookie.opts.httpOnly).toBe(true);
+      expect(mockRes.lastCookie.opts.sameSite).toBe('strict');
+    } finally {
+      process.env.NODE_ENV = prevEnv;
+    }
+  });
 });
+
