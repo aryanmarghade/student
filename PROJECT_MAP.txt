@@ -339,6 +339,7 @@ Core Tables:
 10. `placement_analytics_visibility`: placement_user_id, github_enabled, linkedin_enabled, hackerrank_enabled, leetcode_enabled, hackathon_enabled, academic_enabled.
 11. `student_github_snapshots`, `student_linkedin_snapshots`, `student_hackerrank_snapshots`, `student_leetcode_snapshots`.
 12. `notifications`, `notification_reads`, `events`, `audit_logs`, `ai_query_logs`.
+13. `refresh_tokens`: id, user_id, token_hash (SHA-256), family_id, is_revoked, expires_at, created_at, last_used_at.
 
 =============================================================================
 8. VERIFIED RECENT AUDIT LOGS
@@ -369,6 +370,13 @@ Core Tables:
   * Outbound SSRF & Timeout Protection: Added AbortSignal.timeout(10000) on all outbound GitHub, LeetCode, and external sync fetches. Enforced strict username format validation (/^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/) preventing SSRF and path injection.
   * JWT Expiry & Client Storage Audit: Shortened JWT expiration from 7 days to 2 hours ({ expiresIn: '2h' }). Token is stored on client in localStorage ('vission_academy_jwt'), which creates an XSS exfiltration exposure if malicious scripts execute in origin; 2h expiry bounds session lifetime. Documented refresh token flow.
   * Legacy Dead Code Removal: Completely deleted server/index.ts (1,201 lines, contained fallback secret) and src/api.ts (42 lines, dead client). Proved zero imports and clean production build with npm run build.
+- 2026-10-25: Phase 3B Follow-ups verified via Playwright tests/browser-csp-roles.spec.ts, tests/auth-refresh.spec.ts & suite (87/87 passed):
+  * Zip Decompression Stream Abort: Enforces strict 25MB per-entry threshold and 200MB cumulative expansion limit while streaming (immediate stream.destroy() abort), preventing RAM exhaustion before full extraction. Verified with in-memory compressed bomb fixture.
+  * Incremental npm audit Upgrades: Upgraded express sub-dependencies (body-parser, proxy-addr, qs), multer to ^2.5.0, vite to ^6.4.5, and source-map-js to ^1.2.2. Validated with full Playwright suite and npm run build after each package. Final npm audit returned 0 vulnerabilities.
+  * HttpOnly Cookie Session Refresh: Implemented 15-minute access JWTs in-memory (eliminated localStorage token persistence), opaque refresh token in HttpOnly; SameSite=Strict; Secure cookie with SHA-256 database hashing, automatic token rotation, family reuse detection (revokes entire token family upon duplicate presentation), sliding 2h idle / 12h absolute timeout, pre-expiry warning banner with "Stay Signed In" extension, and BroadcastChannel cross-tab synchronization.
+  * Production CSP Audit: Verified strict production CSP directives (script-src 'self' with zero unsafe-inline and zero unsafe-eval). Browser-tested all 4 role dashboards (Admin, Teacher, Placement, Student), charts, and AI assistant drawer with console open: zero CSP violations across all views.
+  * Operations & Deployment: Created comprehensive DEPLOYMENT.md detailing required environment variables, HTTPS/TLS reverse proxy setup, zero-downtime DB password rotation, pg_dump backup/restore procedures, and database migrations.
 =============================================================================
+
 
 
