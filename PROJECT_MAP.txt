@@ -347,10 +347,15 @@ Core Tables:
 - 2026-10-02: LeetCode toggle on/off verified with visual screenshot proof.
 - 2026-10-02: Placement Account Synced Data Verified for Aryan Marghade (16 Repos GitHub) & Atharva Ghodki (GitHub, LinkedIn) with browser screenshots.
 - 2026-10-02: Placement student search & multi-year filtering empty state handling resolved.
-- 2026-10-25: Phase 2A Security Fixes & Follow-ups verified via Playwright suite tests/phase2a.spec.ts (10/10 passed) & tests/rbac.spec.ts (43/43 passed, total 53/53).
-  * Stored XSS Prevention: Server-side validation on PUT /api/student/profile, POST /api/student/projects, POST /api/student/posts enforcing protocol (^https?://) and max 500 chars (rejecting javascript: URLs). Frontend URL sanitization (sanitizeUrl) enforced across AdminView, TeacherView, StudentView, PlacementView, PostCard, and NotificationModal.
+- 2026-10-25: Phase 2A Security Fixes & Follow-ups verified via Playwright suite tests/phase2a.spec.ts (11/11 passed) & tests/rbac.spec.ts (43/43 passed, total 54/54).
+  * Stored XSS Prevention: Server-side validation on PUT /api/student/profile, POST /api/student/projects, POST /api/student/posts enforcing protocol (^https?://) and max 500 chars (rejecting javascript: URLs). Frontend URL sanitization (sanitizeUrl) enforced across AdminView, TeacherView, StudentView, PlacementView, PostCard, and NotificationModal. Unit tests verify strict rejection of javascript:, data:, vbscript:, and whitespace evasion.
   * AI Assistant Visibility Enforcement: buildScopedContext, processAiQuery, and handlePlacementAiRequest strictly adhere to teacher_analytics_visibility and placement_analytics_visibility (strips GitHub, LeetCode, Hackathons, Sports, and Academic backlogs/marks when disabled).
   * Auth Route Rate Limiting: Attached rateLimit middleware to POST /api/auth/reset-first-login-password and POST /api/auth/change-password with composite user id + IP keying for authenticated sessions. Restricted x-bypass-ratelimit header to non-production environments.
-  * Security Hygiene: Secret scan conducted; all connection strings/credentials scrubbed from tracking. Read-only URL audit script developed (scratch/scan-urls.ts).
+  * Security Hygiene: Full dev DB backup taken outside repo. Idempotent cleaning migration executed on non-http(s) and untrimmed rows. Tests clean up created state in afterAll.
+- 2026-10-25: Phase 2B File Handling & Archive Defense verified via Playwright suite tests/phase2b.spec.ts (9/9 passed, total suite 63/63).
+  * Authenticated Marksheet Access: Direct unauthenticated static file access to /uploads/marksheets blocked. Official downloads routed through authenticated student API with IDOR protection.
+  * Single Upload Hardening: POST /api/admin/marksheets/upload enforces 10 MB fileSize limit, strict application/pdf MIME type, .pdf extension, and %PDF- magic-byte validation.
+  * Bulk ZIP Archive Defense: POST /api/admin/marksheets/bulk-zip hardened with 1000 max entry limits, 200 MB total uncompressed expansion threshold (zip-bomb protection), and path traversal checks (zip-slip defense).
 =============================================================================
+
 

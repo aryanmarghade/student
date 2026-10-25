@@ -23,18 +23,31 @@ const upload = multer({
     destination: uploadDir,
     filename: (_req, file, cb) => cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}-${path.basename(file.originalname)}`),
   }),
-  fileFilter: (_req, file, cb) => cb(null, file.mimetype === 'application/pdf' && file.originalname.toLowerCase().endsWith('.pdf')),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10 MB maximum
+  },
+  fileFilter: (_req, file, cb) => {
+    const isPdfExt = file.originalname.toLowerCase().endsWith('.pdf');
+    const isPdfMime = file.mimetype === 'application/pdf';
+    if (!isPdfExt || !isPdfMime) {
+      return cb(new Error('Only official PDF files with .pdf extension and application/pdf MIME type are allowed.'));
+    }
+    cb(null, true);
+  },
 });
 
 // Multer for bulk ZIP upload — stored in memory, processed in-flight
 const zipUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB max archive size
   fileFilter: (_req, file, cb) => {
     const ok = file.mimetype === 'application/zip' ||
       file.mimetype === 'application/x-zip-compressed' ||
       file.originalname.toLowerCase().endsWith('.zip');
-    cb(null, ok);
+    if (!ok) {
+      return cb(new Error('Only ZIP archives (.zip) are permitted for bulk upload.'));
+    }
+    cb(null, true);
   },
 });
 
@@ -221,7 +234,17 @@ router.post('/start-new-semester', async (req: AuthRequest, res) => {
 router.get('/marksheets', async (_req, res) => res.json((await query(`SELECT m.*,u.full_name AS "studentName",s.roll_number AS "rollNumber",sem.name AS "semesterName" FROM marksheets m JOIN students s ON s.id=m.student_id JOIN users u ON u.id=s.user_id JOIN semesters sem ON sem.id=m.semester_id ORDER BY m.created_at DESC`)).rows));
 
 /** Single PDF upload for one student */
-router.post('/marksheets/upload', upload.single('file'), async (req: AuthRequest, res) => {
+router.post('/marksheets/upload', (req: AuthRequest, res, next) => {
+  upload.single('file')(req, res, (err: any) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'File size exceeds maximum permitted limit of 10 MB.' });
+      }
+      return res.status(400).json({ error: err.message || 'File upload failed.' });
+    }
+    next();
+  });
+}, async (req: AuthRequest, res) => {
   if (!req.file) return res.status(400).json({ error: 'Please upload a PDF file.' });
   const bytes = fs.readFileSync(req.file.path);
   if (!bytes.subarray(0, 5).toString('ascii').startsWith('%PDF-')) {
@@ -244,7 +267,17 @@ router.post('/marksheets/upload', upload.single('file'), async (req: AuthRequest
  * Example: QA-S1-001.pdf → student with roll_number = QA-S1-001
  * Body: file (ZIP), semester_id
  */
-router.post('/marksheets/bulk-zip', zipUpload.single('file'), async (req: AuthRequest, res) => {
+router.post('/marksheets/bulk-zip', (req: AuthRequest, res, next) => {
+  zipUpload.single('file')(req, res, (err: any) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'ZIP archive exceeds maximum 100 MB limit.' });
+      }
+      return res.status(400).json({ error: err.message || 'ZIP upload failed.' });
+    }
+    next();
+  });
+}, async (req: AuthRequest, res) => {
   if (!req.file) return res.status(400).json({ error: 'Please upload a ZIP archive.' });
   const { semester_id } = req.body;
   if (!semester_id) return res.status(400).json({ error: 'semester_id is required.' });
@@ -253,13 +286,43 @@ router.post('/marksheets/bulk-zip', zipUpload.single('file'), async (req: AuthRe
   try { zip = await JSZip.loadAsync(req.file.buffer); }
   catch { return res.status(400).json({ error: 'Failed to open ZIP archive. Ensure it is a valid ZIP file.' }); }
 
+  const entries = Object.entries(zip.files).filter(([_, e]) => !e.dir);
+
+  // Guard 1: Maximum entries per ZIP archive (Zip-bomb defense)
+  const MAX_ZIP_ENTRIES = 1000;
+  if (entries.length > MAX_ZIP_ENTRIES) {
+    return res.status(400).json({
+      error: `ZIP entry count limit exceeded: archive contains ${entries.length} files (maximum permitted: ${MAX_ZIP_ENTRIES}).`,
+    });
+  }
+
+  // Guard 2: Pre-check uncompressed size if header metadata is available
+  const MAX_TOTAL_UNCOMPRESSED_BYTES = 200 * 1024 * 1024; // 200 MB
+  let reportedUncompressed = 0;
+  for (const [_, entry] of entries) {
+    const uncompressed = (entry as any)._data?.uncompressedSize || 0;
+    reportedUncompressed += uncompressed;
+    if (reportedUncompressed > MAX_TOTAL_UNCOMPRESSED_BYTES) {
+      return res.status(400).json({
+        error: 'ZIP uncompressed size limit exceeded: total expanded size exceeds 200 MB threshold.',
+      });
+    }
+  }
+
   const allStudents = (await query<any>('SELECT s.id, s.roll_number, u.full_name FROM students s JOIN users u ON u.id=s.user_id')).rows;
   const studentByRoll = new Map(allStudents.map((s: any) => [s.roll_number.toUpperCase(), s]));
   const results: { file: string; status: 'saved' | 'skipped' | 'error'; reason?: string }[] = [];
   let savedCount = 0;
+  let cumulativeBytesExtracted = 0;
 
-  for (const [filename, zipEntry] of Object.entries(zip.files)) {
-    if (zipEntry.dir) continue;
+  for (const [filename, zipEntry] of entries) {
+    // Guard 3: Zip-slip path traversal check
+    const normalizedPath = path.normalize(filename).replace(/^(\.\.(\/|\\|$))+/, '');
+    if (filename.includes('..') || path.isAbsolute(filename) || normalizedPath !== path.normalize(filename)) {
+      results.push({ file: filename, status: 'error', reason: 'Security violation: illegal path traversal in ZIP entry filename' });
+      continue;
+    }
+
     const basename = path.basename(filename);
     if (!basename.toLowerCase().endsWith('.pdf')) {
       results.push({ file: basename, status: 'skipped', reason: 'Not a PDF file' });
@@ -272,7 +335,15 @@ router.post('/marksheets/bulk-zip', zipUpload.single('file'), async (req: AuthRe
       continue;
     }
     let pdfBuffer: Buffer;
-    try { pdfBuffer = Buffer.from(await zipEntry.async('arraybuffer')); }
+    try {
+      pdfBuffer = Buffer.from(await zipEntry.async('arraybuffer'));
+      cumulativeBytesExtracted += pdfBuffer.length;
+      if (cumulativeBytesExtracted > MAX_TOTAL_UNCOMPRESSED_BYTES) {
+        return res.status(400).json({
+          error: 'ZIP uncompressed size limit exceeded during extraction: expansion exceeds 200 MB threshold.',
+        });
+      }
+    }
     catch { results.push({ file: basename, status: 'error', reason: 'Failed to read file from ZIP' }); continue; }
     if (!pdfBuffer.subarray(0, 5).toString('ascii').startsWith('%PDF-')) {
       results.push({ file: basename, status: 'error', reason: 'File is not a valid PDF' });

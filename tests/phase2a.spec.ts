@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { Pool } from 'pg';
 import { buildScopedContext } from '../server/ai-assistant.js';
+import { sanitizeUrl } from '../src/lib/api.js';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
@@ -55,6 +56,25 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
+  try {
+    if (placementUser?.id) {
+      await pool.query(
+        `UPDATE placement_analytics_visibility
+         SET github_enabled = true, leetcode_enabled = true, academic_enabled = true,
+             linkedin_enabled = true, hackerrank_enabled = true, hackathon_enabled = true, sports_enabled = true
+         WHERE placement_user_id = $1`,
+        [placementUser.id]
+      );
+    }
+    if (teacherUser?.id) {
+      await pool.query(
+        `UPDATE teacher_analytics_visibility
+         SET academic_enabled = true, github_enabled = true, leetcode_enabled = true
+         WHERE teacher_user_id = $1`,
+        [teacherUser.id]
+      );
+    }
+  } catch (_e) {}
   await pool.end();
 });
 
@@ -117,6 +137,32 @@ test.describe('Phase 2A: Stored XSS Prevention & URL Validation', () => {
     expect(res.status()).toBe(400);
     const json = await res.json();
     expect(json.error).toMatch(/valid.*url/i);
+  });
+
+  test('sanitizeUrl unit tests: allows valid http/https and strictly rejects javascript:, data:, vbscript:, and leading-whitespace tricks', () => {
+    // Valid URLs
+    expect(sanitizeUrl('https://github.com/vission-academy')).toBe('https://github.com/vission-academy');
+    expect(sanitizeUrl('http://insecure-but-allowed.com/path')).toBe('http://insecure-but-allowed.com/path');
+    expect(sanitizeUrl('  https://example.com/trimmed  ')).toBe('https://example.com/trimmed');
+    expect(sanitizeUrl('/dashboard/overview')).toBe('/dashboard/overview');
+
+    // Rejected dangerous schemes
+    expect(sanitizeUrl('javascript:alert(1)')).toBe('#');
+    expect(sanitizeUrl('JAVASCRIPT:alert(document.domain)')).toBe('#');
+    expect(sanitizeUrl('  javascript:void(0)  ')).toBe('#');
+    expect(sanitizeUrl('data:text/html,<script>alert(1)</script>')).toBe('#');
+    expect(sanitizeUrl('vbscript:msgbox("malicious")')).toBe('#');
+    expect(sanitizeUrl('file:///etc/passwd')).toBe('#');
+
+    // Protocol evasion tricks
+    expect(sanitizeUrl(' //evil.com/phish')).toBe('#');
+    expect(sanitizeUrl('/\\evil.com')).toBe('#');
+    expect(sanitizeUrl('jav\tascript:alert(1)')).toBe('#');
+
+    // Empty / nullish
+    expect(sanitizeUrl('')).toBe('');
+    expect(sanitizeUrl(null)).toBe('');
+    expect(sanitizeUrl(undefined)).toBe('');
   });
 });
 
