@@ -3,7 +3,8 @@ import path from 'path';
 import dotenv from 'dotenv';
 import pg from 'pg';
 
-const envFile = process.env.DOTENV_CONFIG_PATH || (process.env.NODE_ENV === 'test' ? '.env.test' : '.env');
+const isDemoMode = process.env.NODE_ENV === 'demo' || process.argv.includes('--demo');
+const envFile = process.env.DOTENV_CONFIG_PATH || (process.env.NODE_ENV === 'test' ? '.env.test' : isDemoMode ? '.env.demo' : '.env');
 dotenv.config({ path: path.resolve(process.cwd(), envFile) });
 
 const { Pool } = pg;
@@ -129,7 +130,7 @@ export async function initializeDatabase() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_marks_class_subject_semester ON marks(class_id, subject_id, semester_id);`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_tca_active_assignment ON teacher_class_assignments (teacher_user_id, class_id, subject_id, semester_id) WHERE status = 'active';`);
 
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' && !isDemoMode) {
     await pool.query(lockedSeed);
   }
 }

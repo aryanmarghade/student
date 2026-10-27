@@ -14,6 +14,8 @@
     "sync:github": "tsx server/scripts/sync-github.ts",
     "seed:demo": "tsx scripts/seed-demo-analytics.ts",
     "seed:demo:reset": "tsx scripts/seed-demo-analytics.ts --reset",
+    "demo:db:setup": "tsx scripts/setup-demo-db.ts",
+    "dev:demo": "tsx server.ts --demo",
     "test:db:setup": "tsx scripts/setup-test-db.ts",
     "test": "playwright test"
   },

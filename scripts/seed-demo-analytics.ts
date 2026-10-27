@@ -3,17 +3,26 @@ import dotenv from 'dotenv';
 import path from 'path';
 import bcrypt from 'bcryptjs';
 
-// Load test environment by default
-dotenv.config({ path: path.resolve(process.cwd(), '.env.test'), override: true });
+// Load environment: prioritize DOTENV_CONFIG_PATH, or .env.demo if NODE_ENV=demo, otherwise .env.test
+const explicitDbUrl = process.env.DATABASE_URL;
+const explicitNodeEnv = process.env.NODE_ENV;
+const envFile = process.env.DOTENV_CONFIG_PATH || (process.env.NODE_ENV === 'demo' ? '.env.demo' : '.env.test');
+dotenv.config({ path: path.resolve(process.cwd(), envFile) });
+if (explicitDbUrl) {
+  process.env.DATABASE_URL = explicitDbUrl;
+}
+if (explicitNodeEnv) {
+  process.env.NODE_ENV = explicitNodeEnv;
+}
 
-// 1. Refuse to run in production or against non-test databases
+// 1. Refuse to run in production
 if (process.env.NODE_ENV === 'production') {
   console.error('Refusing to run seed-demo-analytics in production environment.');
   process.exit(1);
 }
 
 // Deterministic Pseudo-Random Number Generator (Mulberry32)
-function createPrng(seed: number) {
+export function createPrng(seed: number) {
   let s = seed;
   return function() {
     let t = s += 0x6D2B79F5;
@@ -21,6 +30,25 @@ function createPrng(seed: number) {
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+export function pearsonCorrelation(x: number[], y: number[]): number {
+  const n = x.length;
+  if (n === 0) return 0;
+  const meanX = x.reduce((a, b) => a + b, 0) / n;
+  const meanY = y.reduce((a, b) => a + b, 0) / n;
+  let num = 0;
+  let denX = 0;
+  let denY = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = x[i] - meanX;
+    const dy = y[i] - meanY;
+    num += dx * dy;
+    denX += dx * dx;
+    denY += dy * dy;
+  }
+  const den = Math.sqrt(denX * denY);
+  return den === 0 ? 0 : num / den;
 }
 
 const FIRST_NAMES = [
@@ -64,14 +92,165 @@ export async function resetDemoData(pool: pg.Pool) {
     DELETE FROM student_hackerrank_evidence WHERE id LIKE 'demo_%';
     DELETE FROM student_linkedin_posts WHERE id LIKE 'demo_%';
     DELETE FROM posts WHERE id LIKE 'demo_%';
-    DELETE FROM students WHERE id LIKE 'demo_%' OR roll_number LIKE 'DEMO%';
+    DELETE FROM teacher_analytics_visibility WHERE teacher_user_id LIKE 'demo_%';
+    DELETE FROM placement_analytics_visibility WHERE placement_user_id LIKE 'demo_%';
+    DELETE FROM teacher_class_assignments WHERE id LIKE 'demo_%' OR teacher_user_id LIKE 'demo_%';
+    DELETE FROM students WHERE id LIKE 'demo_%' OR user_id LIKE 'demo_%' OR roll_number LIKE 'DEMO%';
     DELETE FROM users WHERE id LIKE 'demo_%';
-    DELETE FROM teacher_class_assignments WHERE id LIKE 'demo_%';
     DELETE FROM classes WHERE id LIKE 'demo_%';
     DELETE FROM subjects WHERE id LIKE 'demo_%';
     DELETE FROM departments WHERE id LIKE 'demo_%';
   `);
   console.log('[seed:demo:reset] Cleanup completed successfully.');
+}
+
+export async function printDataQualityEvidence(pool: pg.Pool) {
+  console.log('\n================ DATA QUALITY EVIDENCE LEDGER ================');
+
+  // 1. Row counts per table
+  const tablesRes = await pool.query<{ table_name: string }>(`
+    SELECT table_name 
+    FROM information_schema.tables 
+    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+    ORDER BY table_name;
+  `);
+
+  console.log('--- TABLE ROW COUNTS ---');
+  for (const t of tablesRes.rows) {
+    const cRes = await pool.query<{ count: string }>(`SELECT count(*) FROM "${t.table_name}"`);
+    const demoCRes = await pool.query<{ count: string }>(`
+      SELECT count(*) FROM "${t.table_name}" 
+      WHERE (id::text LIKE 'demo_%' OR id::text LIKE 'DEMO%')
+    `).catch(() => ({ rows: [{ count: 'N/A' }] }));
+    console.log(`Table ${t.table_name.padEnd(32)}: total = ${cRes.rows[0].count.padStart(5)}, demo = ${demoCRes.rows[0].count.padStart(5)}`);
+  }
+
+  // 2. Students per year and department
+  const yearDeptRes = await pool.query<{ year: number; dept_name: string; count: string }>(`
+    SELECT c.year, d.name as dept_name, count(s.id) as count
+    FROM students s
+    JOIN classes c ON s.class_id = c.id
+    JOIN departments d ON s.department_id = d.id
+    WHERE s.id LIKE 'demo_%'
+    GROUP BY c.year, d.name
+    ORDER BY c.year, d.name;
+  `);
+  console.log('\n--- STUDENTS PER YEAR & DEPARTMENT ---');
+  for (const r of yearDeptRes.rows) {
+    console.log(`Year ${r.year} | ${r.dept_name.padEnd(45)}: ${r.count} students`);
+  }
+
+  // 3. LeetCode Metrics & easy >= medium >= hard check
+  const lcRes = await pool.query<{
+    total_solved: number;
+    easy_solved: number;
+    medium_solved: number;
+    hard_solved: number;
+    ranking: number | null;
+  }>(`
+    SELECT (leetcode_data->>'totalSolved')::int as total_solved,
+           (leetcode_data->>'easySolved')::int as easy_solved,
+           (leetcode_data->>'mediumSolved')::int as medium_solved,
+           (leetcode_data->>'hardSolved')::int as hard_solved,
+           (leetcode_data->>'ranking')::int as ranking
+    FROM students
+    WHERE id LIKE 'demo_%' AND leetcode_data IS NOT NULL;
+  `);
+
+  const solvedValues = lcRes.rows.map(r => r.total_solved);
+  const minSolved = Math.min(...solvedValues);
+  const maxSolved = Math.max(...solvedValues);
+  const avgSolved = solvedValues.reduce((a, b) => a + b, 0) / (solvedValues.length || 1);
+
+  let allEasyGteMed = true;
+  let allMedGteHard = true;
+  for (const r of lcRes.rows) {
+    if (r.easy_solved < r.medium_solved) allEasyGteMed = false;
+    if (r.medium_solved < r.hard_solved) allMedGteHard = false;
+  }
+
+  console.log('\n--- LEETCODE METRICS & VALIDATION ---');
+  console.log(`Active LeetCode Profiles   : ${lcRes.rows.length}`);
+  console.log(`Problems Solved (Min/Max)  : ${minSolved} / ${maxSolved}`);
+  console.log(`Average Problems Solved    : ${avgSolved.toFixed(1)}`);
+  console.log(`Easy >= Medium for ALL     : ${allEasyGteMed ? '✅ PASS' : '❌ FAIL'}`);
+  console.log(`Medium >= Hard for ALL     : ${allMedGteHard ? '✅ PASS' : '❌ FAIL'}`);
+
+  // 4. Rank vs Solved Correlation
+  const ranked = lcRes.rows.filter(r => r.ranking && r.total_solved > 0);
+  const solvedArr = ranked.map(r => r.total_solved);
+  const rankArr = ranked.map(r => r.ranking!);
+  const rankSolvedCorr = pearsonCorrelation(solvedArr, rankArr);
+  console.log(`Rank vs Solved Correlation : ${rankSolvedCorr.toFixed(3)} (Negative confirms higher solved -> better rank)`);
+
+  // 5. Monthly Snapshots Non-Decreasing Check
+  const snapRes = await pool.query<{ student_id: string; snapshot_month: string; total_solved: number }>(`
+    SELECT student_id, snapshot_month, total_solved
+    FROM student_leetcode_snapshots
+    WHERE id LIKE 'demo_%'
+    ORDER BY student_id, snapshot_month ASC;
+  `);
+
+  let snapsNeverDecrease = true;
+  let prevStudent = '';
+  let prevSolved = 0;
+  for (const row of snapRes.rows) {
+    if (row.student_id !== prevStudent) {
+      prevStudent = row.student_id;
+      prevSolved = row.total_solved;
+    } else {
+      if (row.total_solved < prevSolved) {
+        snapsNeverDecrease = false;
+      }
+      prevSolved = row.total_solved;
+    }
+  }
+  console.log(`Monthly Snapshots Monotonic: ${snapsNeverDecrease ? '✅ PASS (Never decrease over time)' : '❌ FAIL'}`);
+
+  // 6. Edge Cases Counts
+  const [noLinksRes, zeroActRes, singlePlatRes, topRes, atRiskRes] = await Promise.all([
+    pool.query(`SELECT count(*) FROM students WHERE id LIKE 'demo_%' AND github_url IS NULL AND leetcode_url IS NULL AND hackerrank_url IS NULL AND linkedin_url IS NULL`),
+    pool.query(`SELECT count(*) FROM students WHERE id LIKE 'demo_%' AND (github_url IS NOT NULL OR leetcode_url IS NOT NULL) AND COALESCE((leetcode_data->>'totalSolved')::int, 0) = 0 AND COALESCE((github_data->>'public_repos')::int, 0) = 0`),
+    pool.query(`SELECT count(*) FROM students WHERE id LIKE 'demo_%' AND ((github_url IS NOT NULL AND leetcode_url IS NULL AND hackerrank_url IS NULL) OR (leetcode_url IS NOT NULL AND github_url IS NULL AND hackerrank_url IS NULL))`),
+    pool.query(`SELECT count(*) FROM students WHERE id LIKE 'demo_%' AND profile_strength >= 90`),
+    pool.query(`SELECT count(DISTINCT student_id) FROM marks WHERE id LIKE 'demo_%' AND marks_obtained < 40`),
+  ]);
+
+  console.log('\n--- EDGE CASES VERIFICATION COUNTS ---');
+  console.log(`1. Unlinked Profiles       : ${noLinksRes.rows[0].count} students`);
+  console.log(`2. Zero Activity Profiles  : ${zeroActRes.rows[0].count} students`);
+  console.log(`3. Single Platform Linked  : ${singlePlatRes.rows[0].count} students`);
+  console.log(`4. Top Performers          : ${topRes.rows[0].count} students`);
+  console.log(`5. At-Risk (Active Backlog): ${atRiskRes.rows[0].count} students`);
+
+  // 7. CGPA vs LeetCode Correlation
+  const cgpaLcRes = await pool.query<{ cgpa: number; total_solved: number }>(`
+    SELECT m.cgpa, (s.leetcode_data->>'totalSolved')::int as total_solved
+    FROM marksheets m
+    JOIN students s ON s.id = m.student_id
+    WHERE s.id LIKE 'demo_%' 
+      AND s.leetcode_data IS NOT NULL 
+      AND m.semester_id = 'sem_1'
+      AND (s.leetcode_data->>'totalSolved')::int > 0;
+  `);
+  const cgpaArr = cgpaLcRes.rows.map(r => Number(r.cgpa));
+  const lcArr = cgpaLcRes.rows.map(r => r.total_solved);
+  const cgpaLcCorr = pearsonCorrelation(cgpaArr, lcArr);
+  console.log(`\nCGPA vs LeetCode Solved Cor: ${cgpaLcCorr.toFixed(3)} (Positive confirms realistic correlation)`);
+  console.log('==============================================================\n');
+
+  return {
+    allEasyGteMed,
+    allMedGteHard,
+    rankSolvedCorr,
+    snapsNeverDecrease,
+    cgpaLcCorr,
+    noLinksCount: parseInt(noLinksRes.rows[0].count, 10),
+    zeroActCount: parseInt(zeroActRes.rows[0].count, 10),
+    singlePlatCount: parseInt(singlePlatRes.rows[0].count, 10),
+    topCount: parseInt(topRes.rows[0].count, 10),
+    atRiskCount: parseInt(atRiskRes.rows[0].count, 10),
+  };
 }
 
 export async function seedDemoAnalytics(options: { resetOnly?: boolean } = {}) {
@@ -83,8 +262,8 @@ export async function seedDemoAnalytics(options: { resetOnly?: boolean } = {}) {
   const parsedUrl = new URL(databaseUrl);
   const targetDbName = parsedUrl.pathname.replace(/^\//, '');
 
-  if (!targetDbName.includes('test')) {
-    throw new Error(`Safety Guard: Refusing to seed database "${targetDbName}" because its name does not contain "test". Never touch the dev or production database.`);
+  if (!targetDbName.includes('test') && !targetDbName.includes('demo')) {
+    throw new Error(`Safety Guard: Refusing to seed database "${targetDbName}" because its name does not contain "test" or "demo". Never touch the dev or production database.`);
   }
 
   const pool = new pg.Pool({ connectionString: databaseUrl });
@@ -95,11 +274,12 @@ export async function seedDemoAnalytics(options: { resetOnly?: boolean } = {}) {
       return;
     }
 
-    console.log('[seed:demo] Starting deterministic demo analytics seeding...');
+    console.log(`[seed:demo] Starting deterministic demo analytics seeding on DB "${targetDbName}"...`);
     await resetDemoData(pool);
 
     const rand = createPrng(42);
-    const passwordHash = await bcrypt.hash('password123', 10);
+    const demoPassword = process.env.DEMO_PASSWORD || 'DemoPassSecure2026!';
+    const passwordHash = await bcrypt.hash(demoPassword, 10);
 
     // 1. Ensure core departments exist
     for (const dept of DEPARTMENTS) {
@@ -111,7 +291,6 @@ export async function seedDemoAnalytics(options: { resetOnly?: boolean } = {}) {
     }
 
     // 2. Ensure classes exist for each department across 4 years
-    // We utilize cls_y1_a..cls_y4_a for CS and demo_cls_yX_dept for others
     const classMap: Record<string, string[]> = {
       1: ['cls_y1_a'],
       2: ['cls_y2_a'],
@@ -140,7 +319,7 @@ export async function seedDemoAnalytics(options: { resetOnly?: boolean } = {}) {
       }
     }
 
-    // 3. Ensure subjects exist
+    // 3. Ensure baseline subjects exist
     const standardSubjects = [
       { id: 'sbj_math1', name: 'Mathematics & Linear Algebra', code: 'MTH101', credits: 4 },
       { id: 'sbj_cprog', name: 'Computer Programming & C', code: 'CS101', credits: 4 },
@@ -159,11 +338,91 @@ export async function seedDemoAnalytics(options: { resetOnly?: boolean } = {}) {
       `, [s.id, s.name, s.code, s.credits]);
     }
 
-    // 4. Generate 150 students
+    // 4. Provision Dedicated Role Logins (Admin, 2 Teachers, Placement, 3 Students)
+    const demoAccounts = [
+      { id: 'demo_usr_admin', email: 'demo_admin@vissionacademy.edu', role: 'admin', name: 'Demo Administrator' },
+      { id: 'demo_usr_teacher1', email: 'demo_teacher1@vissionacademy.edu', role: 'teacher', name: 'Prof. Demo Teacher One' },
+      { id: 'demo_usr_teacher2', email: 'demo_teacher2@vissionacademy.edu', role: 'teacher', name: 'Prof. Demo Teacher Two' },
+      { id: 'demo_usr_placement', email: 'demo_placement@vissionacademy.edu', role: 'placement', name: 'Demo Placement Officer' },
+      { id: 'demo_usr_std_top', email: 'demo_student_top@vissionacademy.edu', role: 'student', name: 'Demo Top Performer Student' },
+      { id: 'demo_usr_std_avg', email: 'demo_student_avg@vissionacademy.edu', role: 'student', name: 'Demo Average Student' },
+      { id: 'demo_usr_std_atrisk', email: 'demo_student_atrisk@vissionacademy.edu', role: 'student', name: 'Demo At-Risk Student' },
+    ];
+
+    for (const acc of demoAccounts) {
+      await pool.query(`
+        INSERT INTO users (id, email, password_hash, role, full_name, is_active, must_reset_password)
+        VALUES ($1, $2, $3, $4, $5, true, false)
+        ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, password_hash = EXCLUDED.password_hash
+      `, [acc.id, acc.email, passwordHash, acc.role, acc.name]);
+    }
+
+    // Link the 3 specialized demo students
+    await pool.query(`
+      INSERT INTO students (id, user_id, roll_number, class_id, department_id, bio, profile_strength, github_url, leetcode_url, hackerrank_url, linkedin_url, leetcode_data, github_data, hackerrank_data)
+      VALUES 
+      ('demo_std_top', 'demo_usr_std_top', 'DEMO_TOP_001', 'cls_y1_a', 'dept_cs', 'Top Performing Demo Candidate in CSE.', 98,
+       'https://github.com/demo_dev_top', 'https://leetcode.com/demo_coder_top', 'https://hackerrank.com/demo_rank_top', 'https://linkedin.com/in/demo-student-top',
+       '{"totalSolved": 520, "easySolved": 280, "mediumSolved": 180, "hardSolved": 60, "ranking": 24500, "reputation": 820}',
+       '{"public_repos": 24, "total_stars": 85, "total_forks": 15, "followers": 45, "languages": ["TypeScript", "Go", "Python"]}',
+       '{"badges_count": 6, "verified_skills": ["Problem Solving", "Algorithms", "Python"]}'),
+      
+      ('demo_std_avg', 'demo_usr_std_avg', 'DEMO_AVG_001', 'cls_y1_a', 'dept_cs', 'Consistent Academic Student in CSE.', 76,
+       'https://github.com/demo_dev_avg', 'https://leetcode.com/demo_coder_avg', 'https://hackerrank.com/demo_rank_avg', 'https://linkedin.com/in/demo-student-avg',
+       '{"totalSolved": 140, "easySolved": 85, "mediumSolved": 45, "hardSolved": 10, "ranking": 185000, "reputation": 120}',
+       '{"public_repos": 8, "total_stars": 12, "total_forks": 2, "followers": 8, "languages": ["JavaScript", "Python"]}',
+       '{"badges_count": 3, "verified_skills": ["Problem Solving"]}'),
+
+      ('demo_std_atrisk', 'demo_usr_std_atrisk', 'DEMO_RISK_001', 'cls_y1_a', 'dept_cs', 'Student requiring additional academic mentoring.', 42,
+       NULL, 'https://leetcode.com/demo_coder_risk', NULL, NULL,
+       '{"totalSolved": 12, "easySolved": 10, "mediumSolved": 2, "hardSolved": 0, "ranking": 850000, "reputation": 10}',
+       NULL, NULL)
+      ON CONFLICT (id) DO UPDATE SET
+        roll_number = EXCLUDED.roll_number,
+        profile_strength = EXCLUDED.profile_strength,
+        leetcode_data = EXCLUDED.leetcode_data,
+        github_data = EXCLUDED.github_data,
+        hackerrank_data = EXCLUDED.hackerrank_data
+    `);
+
+    // Assign demo teachers to classes containing demo students
+    await pool.query(`
+      INSERT INTO teacher_class_assignments (id, teacher_user_id, class_id, subject_id, semester_id, status)
+      VALUES 
+      ('demo_tca_d1', 'demo_usr_teacher1', 'cls_y1_a', 'sbj_math1', 'sem_1', 'active'),
+      ('demo_tca_d2', 'demo_usr_teacher1', 'cls_y1_a', 'sbj_cprog', 'sem_1', 'active'),
+      ('demo_tca_d3', 'demo_usr_teacher2', 'cls_y1_a', 'sbj_algo', 'sem_1', 'active'),
+      ('demo_tca_d4', 'demo_usr_teacher2', 'cls_y1_a', 'sbj_dbms', 'sem_1', 'active')
+      ON CONFLICT (teacher_user_id, class_id, subject_id, semester_id) WHERE status = 'active' DO NOTHING;
+    `);
+
+    const testTeacherCheck = await pool.query(`SELECT 1 FROM users WHERE id = 'usr_teacher_test'`);
+    if (testTeacherCheck.rowCount && testTeacherCheck.rowCount > 0) {
+      await pool.query(`
+        INSERT INTO teacher_class_assignments (id, teacher_user_id, class_id, subject_id, semester_id, status)
+        VALUES ('demo_tca_02', 'usr_teacher_test', 'cls_y1_a', 'sbj_cprog', 'sem_1', 'active')
+        ON CONFLICT (teacher_user_id, class_id, subject_id, semester_id) WHERE status = 'active' DO NOTHING;
+      `);
+    }
+
+    // Enable analytics visibility toggles for demo teachers & placement officer
+    await pool.query(`
+      INSERT INTO teacher_analytics_visibility (teacher_user_id, academic_enabled, github_enabled, hackerrank_enabled, linkedin_enabled, leetcode_enabled, hackathon_enabled, sports_enabled)
+      VALUES 
+      ('demo_usr_teacher1', true, true, true, true, true, true, true),
+      ('demo_usr_teacher2', true, true, true, true, true, true, true)
+      ON CONFLICT (teacher_user_id) DO UPDATE SET academic_enabled = true, github_enabled = true, leetcode_enabled = true;
+
+      INSERT INTO placement_analytics_visibility (placement_user_id, academic_enabled, github_enabled, hackerrank_enabled, linkedin_enabled, leetcode_enabled, hackathon_enabled, sports_enabled)
+      VALUES 
+      ('demo_usr_placement', true, true, true, true, true, true, true)
+      ON CONFLICT (placement_user_id) DO UPDATE SET academic_enabled = true, github_enabled = true, leetcode_enabled = true;
+    `);
+
+    // 5. Generate ~150 students across 4 years with correlated metrics
     console.log('[seed:demo] Generating 150 fake students across 4 years with correlated metrics...');
 
     const totalStudents = 150;
-    // Distribution: Y1: 38, Y2: 38, Y3: 37, Y4: 37
     const yearDistribution: number[] = [];
     for (let i = 0; i < 38; i++) yearDistribution.push(1);
     for (let i = 0; i < 38; i++) yearDistribution.push(2);
@@ -350,7 +609,7 @@ export async function seedDemoAnalytics(options: { resetOnly?: boolean } = {}) {
         `Student at Vission Academy pursuing ${dept.name}. Year ${year}.`
       ]);
 
-      // Insert 6 Monthly Snapshots
+      // Insert 6 Monthly Snapshots (Monotonically non-decreasing)
       for (let mIdx = 0; mIdx < MONTHS.length; mIdx++) {
         const month = MONTHS[mIdx];
         const progressFactor = (mIdx + 1) / MONTHS.length;
@@ -569,22 +828,18 @@ export async function seedDemoAnalytics(options: { resetOnly?: boolean } = {}) {
       }
 
       // 5. Correlated Marks, Semesters, SGPA, CGPA, Backlogs
-      // Semesters to populate for this student:
       const maxSemToSeed = year === 1 ? 1 : year === 2 ? 3 : year === 3 ? 5 : 7;
       let cumCredits = 0;
       let cumPts = 0;
 
       for (let sNum = 1; sNum <= maxSemToSeed; sNum++) {
         const semId = `sem_${sNum}`;
-        // Ensure semester exists
         await pool.query(`
           INSERT INTO semesters (id, academic_year_id, semester_number, name, is_active)
           VALUES ($1, $2, $3, $4, $5)
           ON CONFLICT (id) DO NOTHING
         `, [semId, academicYears[Math.ceil(sNum / 2) as 1 | 2 | 3 | 4] || 'ay_2025_29', sNum, `Semester ${sNum}`, sNum === maxSemToSeed]);
 
-        let semObtained = 0;
-        let semMax = 0;
         let semCredits = 0;
         let semPts = 0;
 
@@ -592,13 +847,10 @@ export async function seedDemoAnalytics(options: { resetOnly?: boolean } = {}) {
           let mark = Math.floor(60 + rand() * 25);
           if (isTopPerformer) mark = Math.floor(86 + rand() * 12); // 86-98
           if (isAtRisk) {
-            // Give failed mark (<40) in 1 or 2 subjects
             mark = sub.id === 'sbj_math1' || sub.id === 'sbj_algo' ? Math.floor(22 + rand() * 16) : Math.floor(45 + rand() * 15);
           }
 
           const gradePoint = mark >= 90 ? 10 : mark >= 80 ? 9 : mark >= 70 ? 8 : mark >= 60 ? 7 : mark >= 55 ? 6 : mark >= 50 ? 5 : mark >= 40 ? 4 : 0;
-          semObtained += mark;
-          semMax += 100;
           semCredits += sub.credits;
           semPts += sub.credits * gradePoint;
 
@@ -636,15 +888,22 @@ export async function seedDemoAnalytics(options: { resetOnly?: boolean } = {}) {
       }
     }
 
-    // 6. Ensure default test teacher is assigned to Year 1 Class A and subjects so they see the demo students
-    await pool.query(`
-      INSERT INTO teacher_class_assignments (id, teacher_user_id, class_id, subject_id, semester_id, status)
-      VALUES 
-      ('demo_tca_02', 'usr_teacher_test', 'cls_y1_a', 'sbj_cprog', 'sem_1', 'active')
-      ON CONFLICT (teacher_user_id, class_id, subject_id, semester_id) WHERE status = 'active' DO NOTHING
-    `);
-
     console.log('[seed:demo] ✅ Successfully seeded 150 demo students with realistic correlated data!');
+
+    // Print emails and data quality evidence
+    console.log('\n================ DEMO ACCOUNTS PROVISIONED ================');
+    console.log('Role: Administrator       -> Email: demo_admin@vissionacademy.edu');
+    console.log('Role: Teacher 1           -> Email: demo_teacher1@vissionacademy.edu');
+    console.log('Role: Teacher 2           -> Email: demo_teacher2@vissionacademy.edu');
+    console.log('Role: Placement Officer   -> Email: demo_placement@vissionacademy.edu');
+    console.log('Role: Student (Top)       -> Email: demo_student_top@vissionacademy.edu');
+    console.log('Role: Student (Average)   -> Email: demo_student_avg@vissionacademy.edu');
+    console.log('Role: Student (At-Risk)   -> Email: demo_student_atrisk@vissionacademy.edu');
+    console.log('Password sourced securely from DEMO_PASSWORD environment variable.');
+    console.log('===========================================================\n');
+
+    await printDataQualityEvidence(pool);
+
   } finally {
     await pool.end();
   }

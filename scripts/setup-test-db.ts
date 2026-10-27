@@ -60,7 +60,12 @@ export async function setupTestDb(options: { drop?: boolean } = {}) {
     // Seed Academic hierarchy
     await testPool.query(`
       INSERT INTO colleges (id, name, code) VALUES ('col_01', 'Test Engineering College', 'TEC01') ON CONFLICT (id) DO NOTHING;
-      INSERT INTO departments (id, college_id, name, code) VALUES ('dept_cs', 'col_01', 'Computer Science and Engineering', 'CSE') ON CONFLICT (id) DO NOTHING;
+      INSERT INTO departments (id, college_id, name, code) VALUES 
+      ('dept_cs', 'col_01', 'Computer Science and Engineering', 'CSE'),
+      ('dept_it', 'col_01', 'Information Technology', 'IT'),
+      ('dept_ece', 'col_01', 'Electronics & Communication Engineering', 'ECE'),
+      ('dept_me', 'col_01', 'Mechanical Engineering', 'ME')
+      ON CONFLICT (id) DO NOTHING;
       
       INSERT INTO academic_years (id, year_name, is_current) VALUES
       ('ay_2023_27', '2023-2027', false),

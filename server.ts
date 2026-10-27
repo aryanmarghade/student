@@ -16,8 +16,9 @@ import { startGitHubScheduler } from './server/github-sync.js';
 import { startLinkedInScheduler } from './server/linkedin-sync.js';
 import { startHackerRankScheduler } from './server/hackerrank-sync.js';
 
-const envFile = process.env.DOTENV_CONFIG_PATH || (process.env.NODE_ENV === 'test' ? '.env.test' : '.env');
-dotenv.config({ path: path.resolve(process.cwd(), envFile) });
+const isDemoMode = process.env.NODE_ENV === 'demo' || process.argv.includes('--demo');
+const envFile = process.env.DOTENV_CONFIG_PATH || (process.env.NODE_ENV === 'test' ? '.env.test' : isDemoMode ? '.env.demo' : '.env');
+dotenv.config({ path: path.resolve(process.cwd(), envFile), override: true });
 
 async function startServer() {
   const app = express();

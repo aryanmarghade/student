@@ -215,10 +215,11 @@ async function syncOneStudent(
   student: { id: string; github_url: string | null; full_name: string; roll_number: string },
   month: string
 ): Promise<SnapshotSyncResult> {
-  // Safety guard: skip demo students
+  // DEMO SKIP GUARD: Never sync demo students to external APIs
   if (student.id.startsWith('demo_') || (student.roll_number && student.roll_number.startsWith('DEMO'))) {
     return { studentId: student.id, username: null, status: 'not_synced', error: 'Skipped demo student' };
   }
+
   // No GitHub URL — store not_synced marker
   if (!student.github_url || !student.github_url.trim()) {
     await upsertSnapshot({

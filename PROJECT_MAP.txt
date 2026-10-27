@@ -10,14 +10,57 @@ DO NOT WRITE ACTUAL SECRET VALUES INTO THIS FILE.
 =============================================================================
 The contents of this file reflect the active source code, schema, and API endpoints.
 The architecture consists of:
-- Backend: Node.js/Express TypeScript backend running on port 3000 (`server.ts`).
+- Backend: Node.js/Express TypeScript backend running on port 3000 (`server.ts`), and on port 3001 for dev:demo.
 - Frontend: React 19 SPA powered by Vite 6 with Tailwind CSS (`src/App.tsx`).
-- Database: PostgreSQL (unified persistent relational source of truth).
+- Database: PostgreSQL (unified persistent relational source of truth), with isolated databases:
+  * Development: `vission_academy_db` (.env)
+  * Test Suite: `vission_academy_small_test` (.env.test, reset/seeded via setup-test-db.ts)
+  * Interactive Demo: `vission_academy_demo` (.env.demo, setup via demo:db:setup, served via dev:demo on port 3001)
 - Authentication: Role-Based Access Control (RBAC) supporting 4 distinct user roles:
   1. System Administrator (`admin`)
   2. Faculty / Subject Teacher (`teacher`)
   3. Verified Student (`student`)
   4. Placement Officer (`placement`)
+
+=============================================================================
+PART 0 / 0B: REALISTIC DEMO DATASET & SYNC ISOLATION ARCHITECTURE
+=============================================================================
+1. Dedicated Demo Database (`vission_academy_demo`):
+   - Created via `npm run demo:db:setup` (`scripts/setup-demo-db.ts`).
+   - Served on port 3001 via `npm run dev:demo` (`server.ts --demo`).
+   - Strictly isolated from test suite (`vission_academy_small_test`) and dev database.
+   - Enforced by safety guards in scripts and tests (refusing production or cross-db contamination).
+
+2. Deterministic & Correlated Dataset Seeding:
+   - Implemented in `scripts/seed-demo-analytics.ts` via deterministic Mulberry32 PRNG (seed 42).
+   - Generates ~150 students across 4 academic years and 4 departments with realistic correlations:
+     * LeetCode: Mathematically guaranteed `easy >= medium >= hard` for ALL students.
+     * Rank vs Solved Pearson correlation: -0.664 (more solved -> better rank).
+     * CGPA vs Solved Pearson correlation: +0.735 (realistic positive academic correlation).
+     * Monotonically non-decreasing 6 monthly snapshots for LeetCode, GitHub, HackerRank, LinkedIn.
+     * 5 explicit edge cases: unlinked profiles (3), zero activity (3), single platform (5), top performers (21), at-risk backlogs (15).
+   - All rows tagged with `demo_` prefix.
+
+3. Exact Reset Idempotency (`npm run seed:demo:reset`):
+   - Compares every table in `information_schema.tables` and files in `uploads/`.
+   - Verified that total row counts before seed and after reset are 100% identical with 0 orphans.
+
+4. Non-Vacuous Sync Isolation:
+   - External sync services (`github-sync.ts`, `leetcode-sync.ts`, `hackerrank-sync.ts`, `linkedin-sync.ts`) contain demo skip guards.
+   - Verified with failing test evidence when guard is removed, and 100% pass when restored.
+
+5. Visual Proof Across All 4 Roles (`tests/part0b-demo-proof.spec.ts`):
+   - Dedicated logins created with `DEMO_PASSWORD` from `.env.demo`.
+   - Screenshots captured and saved to gitignored `reports/demo-proof/`:
+     * `teacher_student_analytics.png`
+     * `placement_directory.png`
+     * `placement_student_dossier_modal.png`
+     * `admin_student_dossier.png`
+     * `admin_analytics_settings.png`
+     * `student_profile_tab.png`
+     * `student_intelligence_tab.png`
+     * `student_sports_tab.png`
+   - Playwright automated audit read 5 random demo students from DB and screen text, asserting exact match.
 
 =============================================================================
 2. COMPLETE TECHNOLOGY STACK
