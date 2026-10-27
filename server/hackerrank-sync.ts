@@ -46,6 +46,9 @@ async function syncOneStudent(
   student: { id: string; hackerrank_url: string | null; full_name: string; roll_number: string },
   month: string
 ): Promise<SnapshotSyncResult> {
+  if (student.id.startsWith('demo_') || (student.roll_number && student.roll_number.startsWith('DEMO'))) {
+    return { studentId: student.id, username: null, status: 'not_synced', error: 'Skipped demo student' };
+  }
   if (!student.hackerrank_url || !student.hackerrank_url.trim()) {
     return { studentId: student.id, username: null, status: 'not_synced' };
   }
@@ -119,6 +122,7 @@ export async function runMonthlyHackerRankSync(overrideMonth?: string): Promise<
     `SELECT s.id, s.hackerrank_url, u.full_name, s.roll_number
      FROM students s
      JOIN users u ON u.id = s.user_id
+     WHERE s.id NOT LIKE 'demo_%' AND (s.roll_number NOT LIKE 'DEMO%' OR s.roll_number IS NULL)
      ORDER BY s.roll_number`
   );
   const students = studentsRes.rows;

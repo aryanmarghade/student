@@ -12,6 +12,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "sync:github": "tsx server/scripts/sync-github.ts",
+    "seed:demo": "tsx scripts/seed-demo-analytics.ts",
+    "seed:demo:reset": "tsx scripts/seed-demo-analytics.ts --reset",
     "test:db:setup": "tsx scripts/setup-test-db.ts",
     "test": "playwright test"
   },

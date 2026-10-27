@@ -116,6 +116,7 @@ export async function runMonthlyLeetCodeSync(overrideMonth?: string) {
     `SELECT s.id, s.leetcode_url, u.full_name, s.roll_number
      FROM students s
      JOIN users u ON u.id = s.user_id
+     WHERE s.id NOT LIKE 'demo_%' AND (s.roll_number NOT LIKE 'DEMO%' OR s.roll_number IS NULL)
      ORDER BY s.roll_number`
   );
 
@@ -123,6 +124,10 @@ export async function runMonthlyLeetCodeSync(overrideMonth?: string) {
   const details = [];
 
   for (const student of studentsRes.rows) {
+    if (student.id.startsWith('demo_') || (student.roll_number && student.roll_number.startsWith('DEMO'))) {
+      skipped++;
+      continue;
+    }
     if (!student.leetcode_url) {
       skipped++;
       continue;

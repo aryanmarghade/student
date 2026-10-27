@@ -418,7 +418,14 @@ Core Tables:
   * Reproducible Test Database Architecture: Implemented scripts/setup-test-db.ts with `--drop` support and synthetic seed data. Added `npm run test:db:setup` and `test` scripts in package.json, tests/global-setup.ts in playwright.config.ts, and committed .env.test.example (names only). Verified tests create dynamic users and pass after complete DB drop.
   * API Client 204 & Binary Blob Support: Fixed src/lib/api.ts to properly handle HTTP 204 No Content / empty responses without attempting JSON parsing, and return raw Blobs on PDF/octet-stream/ZIP/image responses. Added failing tests first in tests/hardening.spec.ts.
   * DB SSL Production Security: Enforced strict SSL verification (`rejectUnauthorized: true`) in server/db.ts for production and SSL connections. Implemented `parseDbSslConfig` supporting `DB_SSL=verify-full`, `DB_SSL_CA`, and explicit opt-in `DB_SSL_INSECURE=true`. Tested parser thoroughly in tests/hardening.spec.ts and updated DEPLOYMENT.md.
-  * Brain/Scratch Folder Cleanup: Audited all external scripts in antigravity-ide/brain/scratch. Removed scripts containing credentials or connection strings, leaving only environment-driven utilities.
+- 2026-10-27: Part 0 Demo Analytics Data Engine & Platform Isolation:
+  * Deterministic Demo Analytics Seed: Created `scripts/seed-demo-analytics.ts` exposing `npm run seed:demo` and `npm run seed:demo:reset`.
+  * Production & Safety Guards: Refuses to run if `NODE_ENV=production` or if target database name does not contain "test".
+  * Deterministic Correlated Dataset: Generates 150 fake students across 4 years and 4 departments (CSE, IT, ECE, ME) with Mulberry32 PRNG (seed 42). Correlated marks, SGPA/CGPA, backlogs, LeetCode (easy > medium > hard, global rank, 6 monthly snapshots), HackerRank (badges, stars, evidence, 6 monthly snapshots), GitHub (repos, stars, languages, 6 monthly snapshots), verified projects, certifications, hackathons, sports, and achievements.
+  * Edge Cases: Covered unlinked profiles, zero-activity profiles, single-platform profiles, top performers (9.0+ CGPA, 300+ LeetCode), and at-risk candidates with active backlogs.
+  * Sync Isolation: `server/github-sync.ts`, `server/leetcode-sync.ts`, `server/hackerrank-sync.ts`, and `server/linkedin-sync.ts` explicitly filter out demo rows (`id LIKE 'demo_%'` or `roll_number LIKE 'DEMO%'`), leaving real/production sync intact.
+  * Reset Isolation: `seed:demo:reset` removes only rows tagged `demo_%` or roll numbers matching `DEMO%`. Real and system test accounts are untouched.
+  * Visual UI Proof: Automated browser tests captured full-page screenshots outside git (`C:\Users\Aryan\.gemini\antigravity-ide\brain\f18d0e1f-9150-4aab-8b27-d606c6770da6\screenshots`) for Admin, Teacher, Placement Officer, and Student roles.
 =============================================================================
 
 
