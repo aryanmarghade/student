@@ -243,11 +243,20 @@ test.describe('Part 0: Demo Analytics Seed, Data Quality & Sync Isolation Verifi
   });
 
   test('2. NON-VACUOUS SYNC-SKIP: sync services SKIP demo rows when demo students exist', async () => {
-    // 1. Ensure demo students ARE present in the database
-    const demoStudentsCountRes = await pool.query<{ count: string }>(
+    // 1. Seed demo students first to guarantee demo students exist in the database
+    let countRes = await pool.query<{ count: string }>(
       `SELECT count(*) FROM students WHERE id LIKE 'demo_%'`
     );
-    const demoCount = parseInt(demoStudentsCountRes.rows[0].count, 10);
+    if (parseInt(countRes.rows[0].count, 10) < 140) {
+      execSync('npm run seed:demo', {
+        env: { ...process.env, NODE_ENV: 'test' },
+        stdio: 'pipe',
+      });
+      countRes = await pool.query<{ count: string }>(
+        `SELECT count(*) FROM students WHERE id LIKE 'demo_%'`
+      );
+    }
+    const demoCount = parseInt(countRes.rows[0].count, 10);
     expect(demoCount).toBeGreaterThanOrEqual(140);
 
     // 2. Run monthly sync services

@@ -19,4 +19,5 @@ diagnose-*.cjs
 test_endpoints.cjs
 reports/visual-diff/**/*.png
 reports/demo-proof/
+reports/qa-evidence/
 
