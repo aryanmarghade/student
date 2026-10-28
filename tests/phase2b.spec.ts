@@ -7,7 +7,7 @@ import { Pool } from 'pg';
 import JSZip from 'jszip';
 import zlib from 'zlib';
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env'), override: true });
 
 const BASE_URL = 'http://127.0.0.1:3000';
 const JWT_SECRET = process.env.JWT_SECRET;

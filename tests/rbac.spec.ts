@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { Pool } from 'pg';
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env'), override: true });
 
 const BASE_URL = 'http://127.0.0.1:3000';
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -66,6 +66,12 @@ test.beforeAll(async () => {
     JWT_SECRET,
     { expiresIn: '-10s' }
   );
+
+  // Proactive cleanup of any lingering must_reset test records
+  try {
+    await pool.query("DELETE FROM students WHERE id = 'std_test_must_reset'");
+    await pool.query("DELETE FROM users WHERE id = 'usr_test_must_reset'");
+  } catch {}
 
   // Set up a user specifically flagged with must_reset_password = TRUE
   await pool.query(

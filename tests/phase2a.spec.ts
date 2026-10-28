@@ -6,7 +6,7 @@ import { Pool } from 'pg';
 import { buildScopedContext } from '../server/ai-assistant.js';
 import { sanitizeUrl } from '../src/lib/api.js';
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env.test'), override: true });
 
 const BASE_URL = 'http://127.0.0.1:3000';
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -266,10 +266,14 @@ test.describe('Phase 2A: AI Assistant Visibility Enforcement', () => {
     expect(answer).not.toContain('120 solved');
     expect(answer).not.toContain('15 repos');
 
-    // Restore visibility to true
+    // Restore visibility to true and clean up test data from student
     await pool.query(
       `UPDATE placement_analytics_visibility SET github_enabled = true, leetcode_enabled = true WHERE placement_user_id = $1`,
       [placementUser.id]
+    );
+    await pool.query(
+      `UPDATE students SET github_data = NULL, leetcode_data = NULL WHERE user_id = $1`,
+      [studentUser.id]
     );
   });
 });

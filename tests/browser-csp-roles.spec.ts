@@ -4,7 +4,7 @@ import pg from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env'), override: true });
 
 const BASE_URL = 'http://127.0.0.1:3000';
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -12,6 +12,8 @@ const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 test.describe('CSP Production Compliance & 4-Role Dashboard Browser Audit', () => {
   const roles = ['admin', 'teacher', 'placement', 'student'] as const;
   const userMap: Record<string, { email: string; pass: string; id: string }> = {};
+  const createdUserIds: string[] = [];
+  const createdStudentIds: string[] = [];
 
   test.beforeAll(async () => {
     const password = 'RolePassword123!';
@@ -25,6 +27,7 @@ test.describe('CSP Production Compliance & 4-Role Dashboard Browser Audit', () =
          VALUES ($1, $2, $3, $4, $5, true, false)`,
         [id, email, passwordHash, r, `CSP Audit ${r.toUpperCase()}`]
       );
+      createdUserIds.push(id);
       if (r === 'student') {
         const studentId = `std_csp_${Date.now()}`;
         await pool.query(
@@ -32,6 +35,7 @@ test.describe('CSP Production Compliance & 4-Role Dashboard Browser Audit', () =
            VALUES ($1, $2, $3, 'cls_y1_a')`,
           [studentId, id, `CSP${Math.floor(100000 + Math.random() * 900000)}`]
         );
+        createdStudentIds.push(studentId);
       }
       userMap[r] = { email, pass: password, id };
     }
@@ -46,11 +50,11 @@ test.describe('CSP Production Compliance & 4-Role Dashboard Browser Audit', () =
 
   test.afterAll(async () => {
     try {
-      for (const r of roles) {
-        if (userMap[r]?.id) {
-          await pool.query(`DELETE FROM students WHERE user_id = $1`, [userMap[r].id]);
-          await pool.query(`DELETE FROM users WHERE id = $1`, [userMap[r].id]);
-        }
+      for (const sId of createdStudentIds) {
+        await pool.query('DELETE FROM students WHERE id = $1', [sId]);
+      }
+      for (const uId of createdUserIds) {
+        await pool.query('DELETE FROM users WHERE id = $1', [uId]);
       }
     } catch {}
     await pool.end();

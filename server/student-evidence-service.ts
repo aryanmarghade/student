@@ -500,11 +500,12 @@ export async function getBulkStudentEvidence(
     }
 
     // --- Domain 2: GitHub ---
-    const ghSnap = ghSnapsRes.rows.find((g: any) => g.student_id === sId);
+    const hasGhUrl = Boolean(st.github_url && st.github_url.trim());
+    const ghSnap = hasGhUrl ? ghSnapsRes.rows.find((g: any) => g.student_id === sId) : null;
     const ghStatus: StudentNormalizedEvidence['github']['status'] =
-      ghSnap && ghSnap.sync_status === 'synced'
+      hasGhUrl && ghSnap && ghSnap.sync_status === 'synced'
         ? 'SYNCED'
-        : st.github_url
+        : hasGhUrl
         ? 'NOT_SYNCED'
         : 'NOT_AVAILABLE';
 
@@ -539,12 +540,13 @@ export async function getBulkStudentEvidence(
     }
 
     // --- Domain 3: LeetCode ---
-    const sLcSnaps = lcSnapsRes.rows.filter((l: any) => l.student_id === sId);
-    const latestLc = sLcSnaps[0] || (st.leetcode_data ? { ...st.leetcode_data, sync_status: 'synced' } : null);
+    const hasLcUrl = Boolean(st.leetcode_url && st.leetcode_url.trim());
+    const sLcSnaps = hasLcUrl ? lcSnapsRes.rows.filter((l: any) => l.student_id === sId) : [];
+    const latestLc = hasLcUrl ? (sLcSnaps[0] || (st.leetcode_data ? { ...st.leetcode_data, sync_status: 'synced' } : null)) : null;
     const lcStatus: StudentNormalizedEvidence['leetcode']['status'] =
-      latestLc && latestLc.sync_status === 'synced'
+      hasLcUrl && latestLc && latestLc.sync_status === 'synced'
         ? 'SYNCED'
-        : st.leetcode_url
+        : hasLcUrl
         ? 'NOT_SYNCED'
         : 'NOT_AVAILABLE';
 

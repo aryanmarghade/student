@@ -2835,14 +2835,16 @@ export const TeacherView: React.FC = () => {
                       </div>
                     )}
 
-                    {/* Card 4: Professional Posts */}
+                    {/* Card 4: LinkedIn Profile Status */}
                     {teacherVisibility.linkedin_enabled !== false && studentAnalyticsData.linkedinData !== undefined && (
                       <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Professional Posts</p>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">LinkedIn</p>
                         <p className="text-xl font-bold font-mono text-blue-800 mt-1">
-                          {studentAnalyticsData.totalPosts ?? 0}
+                          {studentAnalyticsData.linkedinData?.synced ? 'Synced' : studentAnalyticsData.student?.linkedin_url || studentAnalyticsData.linkedinUrl ? 'Unverified' : 'Not linked'}
                         </p>
-                        <p className="text-[10px] text-slate-500 mt-0.5 truncate">LinkedIn / Activity</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5 truncate">
+                          {studentAnalyticsData.linkedinData?.synced ? `${studentAnalyticsData.linkedinData.connections || 0} Connections` : studentAnalyticsData.student?.linkedin_url || studentAnalyticsData.linkedinUrl ? 'OAuth Required' : 'No profile linked'}
+                        </p>
                       </div>
                     )}
 
@@ -3153,9 +3155,9 @@ export const TeacherView: React.FC = () => {
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                       <div>
                         <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                          <Linkedin className="w-4 h-4 text-blue-600" /> 4. LinkedIn & Student Posts Activity
+                          <Linkedin className="w-4 h-4 text-blue-600" /> 4. LinkedIn & Student Publications
                         </h4>
-                        <p className="text-[11px] text-slate-500">Active participation, academic achievements, and articles</p>
+                        <p className="text-[11px] text-slate-500">Professional networking and campus academic publications</p>
                       </div>
                       {(studentAnalyticsData.linkedinUrl || studentAnalyticsData.student?.linkedin_url) && (
                         <a
@@ -3194,7 +3196,11 @@ export const TeacherView: React.FC = () => {
                       </div>
                     ) : (
                       <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-center">
-                        <p className="text-[11px] text-slate-500">LinkedIn statistics not synced.</p>
+                        <p className="text-[11px] text-slate-600">
+                          {studentAnalyticsData.student?.linkedin_url || studentAnalyticsData.linkedinUrl
+                            ? 'LinkedIn profile linked — Live sync requires student OAuth 2.0 authorization. Profile metrics are currently unverified.'
+                            : 'No LinkedIn profile linked for this student.'}
+                        </p>
                       </div>
                     )}
 
@@ -3202,14 +3208,14 @@ export const TeacherView: React.FC = () => {
                     {studentAnalyticsData.postsByMonth && studentAnalyticsData.postsByMonth.length > 0 ? (
                       <div className="space-y-4">
                         <div>
-                          <h5 className="text-xs font-semibold text-slate-700 mb-2">Student Activity / Posts Over Time</h5>
+                          <h5 className="text-xs font-semibold text-slate-700 mb-2">Campus Publications & Activity Over Time</h5>
                           <div className="h-48 w-full">
                             <Bar
                               data={{
                                 labels: studentAnalyticsData.postsByMonth.map((p: any) => p.label || p.month),
                                 datasets: [
                                   {
-                                    label: 'Posts Published',
+                                    label: 'Publications / Posts',
                                     data: studentAnalyticsData.postsByMonth.map((p: any) => p.count),
                                     backgroundColor: '#2563eb',
                                     borderRadius: 4,
@@ -3231,7 +3237,7 @@ export const TeacherView: React.FC = () => {
                         {/* Recent Posts List */}
                         {studentAnalyticsData.recentPosts && studentAnalyticsData.recentPosts.length > 0 && (
                           <div>
-                            <h5 className="text-xs font-semibold text-slate-700 mb-2">Recent Student Posts</h5>
+                            <h5 className="text-xs font-semibold text-slate-700 mb-2">Recent Campus Publications & Posts</h5>
                             <div className="space-y-2">
                               {studentAnalyticsData.recentPosts.slice(0, 4).map((post: any, idx: number) => (
                                 <div key={idx} className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">

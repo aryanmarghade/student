@@ -82,8 +82,18 @@ Confirmed from package.json:
 - Build/Bundler: esbuild ^0.25.0
 
 =============================================================================
-3. RECENT CHANGES & NEW IMPLEMENTATIONS (2026-10-02)
+3. RECENT CHANGES & NEW IMPLEMENTATIONS (2026-10-28)
 =============================================================================
+0. Real Data Integration, Student Visibility & Provenance Audit (2026-10-28):
+   - Fixed student visibility parity: 413 students in `public.students` exactly matches 413 users (`role = 'student'`).
+   - Resolved 1 orphaned student user account (`std_csp_student_1792930603124`, `VA_603124`) and backfilled 11 students with null `department_id` to `dept_cs`.
+   - Converted all student queries to `LEFT JOIN users u` and `LEFT JOIN departments d ON d.id = COALESCE(s.department_id, c.department_id)` ensuring students with no marks or external profiles are never dropped.
+   - Removed fabricated analytics & phantom JSON profiles; guarded test cleanup in `tests/phase2a.spec.ts`.
+   - Implemented genuine HackerRank live REST API (`https://www.hackerrank.com/rest/hackers/${username}` and badges) with 404 detection and error handling.
+   - Enforced genuine LeetCode GraphQL sync with failed snapshot persistence, never fabricating acceptance rates.
+   - Eliminated substitution of campus posts for LinkedIn metrics in `teacher-routes.ts` and `TeacherView.tsx`.
+   - Implemented complete data provenance UI (Verified, Unverified, Not Connected, Unavailable, Sync Failed) across PlacementView and AdminView, displaying sources and timestamps without converting null metrics to zero.
+
 1. Granular Analytics Visibility Controls for Admin:
    - Added `placement_analytics_visibility` table in PostgreSQL.
    - Added `leetcode_enabled` support across all visibility systems (`teacher_analytics_visibility` and `placement_analytics_visibility`).
@@ -113,6 +123,18 @@ Confirmed from package.json:
 4. Password Reset Flow (`must_reset_password`):
    - Modal enforcement on initial login for users flagged for password reset.
    - Secure updating via `/api/auth/reset-password`.
+
+5. Isolated QA Coding Stats Test Data System (2026-10-27):
+   - Isolated `qa` PostgreSQL schema with `qa.coding_stats_test_runs` and `qa.student_coding_stats_test`.
+   - Deterministic mock data generator (`server/qa-coding-stats-generator.ts`) generating realistic LeetCode (easy >= medium >= hard, contest rating, streaks) and HackerRank statistics.
+   - Protected Admin REST endpoints in `server/routes/admin-qa-routes.ts`:
+     * `POST /api/admin/qa/coding-stats/generate`
+     * `GET /api/admin/qa/coding-stats/runs`
+     * `GET /api/admin/qa/coding-stats?runId=<uuid>`
+     * `DELETE /api/admin/qa/coding-stats/runs/:runId`
+   - Strict environment safety: disabled in production by default, requires `ENABLE_QA_CODING_DATA=true`.
+   - Admin UI controls under Settings (`settingsSubTab === 'qa'`) with clear `TEST DATA — NOT VERIFIED` badges, run creation, run selection, preview table with filtering/search, and run deletion.
+   - Zero contamination of production tables (`students`, `marks`, `marksheets`, `student_*_snapshots`).
 
 =============================================================================
 4. COMPLETE BACKEND FILE MAP
@@ -193,6 +215,16 @@ Status: ACTIVE.
 server/ai-assistant.ts & server/ai.ts
 Purpose: Gemini AI Academic Query Engine.
 Responsibilities: Answers grounded academic queries using tool calls against the database schema.
+Status: ACTIVE.
+
+server/qa-coding-stats-generator.ts
+Purpose: Deterministic QA Coding Stats Mock Generator.
+Responsibilities: Generates mathematically bounded, repeatable LeetCode and HackerRank statistics for active students. Fully transactional and idempotent.
+Status: ACTIVE.
+
+server/routes/admin-qa-routes.ts
+Purpose: Admin QA Test Data Management REST API.
+Responsibilities: Protected endpoints for generating, listing, querying, and deleting test runs in the isolated qa schema. Enforces admin role, environment flag guards, and UUID validation.
 Status: ACTIVE.
 
 [ LEGACY / REMOVED FILES ]
@@ -386,6 +418,9 @@ Core Tables:
 11. `student_github_snapshots`, `student_linkedin_snapshots`, `student_hackerrank_snapshots`, `student_leetcode_snapshots`.
 12. `notifications`, `notification_reads`, `events`, `audit_logs`, `ai_query_logs`.
 13. `refresh_tokens`: id, user_id, token_hash (SHA-256), family_id, is_revoked, expires_at, created_at, last_used_at.
+14. Isolated QA Schema (`qa`):
+    - `qa.coding_stats_test_runs`: id (UUID), name, created_at.
+    - `qa.student_coding_stats_test`: id (UUID), test_run_id (FK to coding_stats_test_runs ON DELETE CASCADE), student_id (FK to public.students ON DELETE CASCADE), platform ('leetcode'|'hackerrank'), easy_count, medium_count, hard_count, total_problems, contest_rating, streak_days, data_source ('mock'), created_at. Unique on `(test_run_id, student_id, platform)`.
 
 =============================================================================
 8. VERIFIED RECENT AUDIT LOGS
@@ -469,6 +504,66 @@ Core Tables:
   * Sync Isolation: `server/github-sync.ts`, `server/leetcode-sync.ts`, `server/hackerrank-sync.ts`, and `server/linkedin-sync.ts` explicitly filter out demo rows (`id LIKE 'demo_%'` or `roll_number LIKE 'DEMO%'`), leaving real/production sync intact.
   * Reset Isolation: `seed:demo:reset` removes only rows tagged `demo_%` or roll numbers matching `DEMO%`. Real and system test accounts are untouched.
   * Visual UI Proof: Automated browser tests captured full-page screenshots outside git (`C:\Users\Aryan\.gemini\antigravity-ide\brain\f18d0e1f-9150-4aab-8b27-d606c6770da6\screenshots`) for Admin, Teacher, Placement Officer, and Student roles.
+- 2026-10-27: Isolated QA HackerRank & LeetCode Test Data System (20/20 tests passed):
+  * Automated Suite: `tests/qa-coding-stats.spec.ts` (20/20 passed) covering unit tests, database constraints, RBAC authorization, integration run lifecycle, regression protection, and browser UI interaction.
+  * Database Isolation: Created isolated `qa` schema with `qa.coding_stats_test_runs` and `qa.student_coding_stats_test` (`data_source = 'mock'`, non-negative constraints, uniqueness on `[test_run_id, student_id, platform]`, cascading deletion only from test run to its mock records).
+  * Generator: `server/qa-coding-stats-generator.ts` with Mulberry32 PRNG seeded from student identifier and platform, guaranteeing deterministic, repeatable values with realistic LeetCode (easy >= medium >= hard) and HackerRank bounds.
+  * Backend API: Protected Express endpoints under `/api/admin/qa/coding-stats` (generate, runs, query with UUID runId, delete with cascade). Non-admin roles (student, teacher, placement, unauthenticated) strictly blocked (401/403).
+  * Production & Environment Safety: Disabled in production by default; requires `ENABLE_QA_CODING_DATA=true`.
+  * Frontend Integration: Admin View Settings subtab (`settingsSubTab === 'qa'`) with prominent `TEST DATA — NOT VERIFIED` badges, run creation form, test run selector, per-platform KPI cards, search/filter, and confirmation dialog for run deletion.
+  * Zero Contamination Proof: Baseline counts of `students` (412), `marks` (5103), `marksheets` (3), and `student_*_snapshots` verified 100% identical and untouched.
+- 2026-10-28: Real Data Integration, Student Visibility & Provenance Audit:
+  * Student Record Integrity: Reconciled student accounts with `public.students`. Resolved 1 orphaned student user account by creating corresponding `students` record (`std_csp_student_1792930603124`, `VA_603124`), achieving exact 1:1 parity (413 students in `public.students` = 413 users with `role = 'student'`).
+  * Department Resolution & Join Safeguards: Backfilled 11 students with null `department_id` to `dept_cs` based on class hierarchy (`cls_y1_a`). Added permanent database initialization guards in `server/db.ts`. Replaced `JOIN users u` with `LEFT JOIN users u` and `LEFT JOIN departments d ON d.id = COALESCE(s.department_id, c.department_id)` across Admin, Placement, and Teacher routes to guarantee students without marks or external coding profiles are never accidentally dropped.
+  * Removal of Fabricated Analytics: Cleaned phantom external JSON metrics from students `std_1789747000001_athrava` and `std_1789746971149_1bo0kj`. Added post-test cleanup to `tests/phase2a.spec.ts`. Enforced in `server/student-evidence-service.ts` that `SYNCED` statuses and metrics require non-empty profile URLs.
+  * Genuine HackerRank Live REST Integration: Rewrote `server/hackerrank-sync.ts` with live HTTP integration against `https://www.hackerrank.com/rest/hackers/${username}` and badges endpoints, supporting User-Agent headers, timeouts, 404 detection, real badges/skills extraction, snapshot persistence, and error logging.
+  * Genuine LeetCode GraphQL & Failure Logging: Enhanced `server/leetcode-sync.ts` to record failed snapshots with explicit error messages when profiles cannot be resolved or parsed. Never invent or synthesize acceptance rates.
+  * LinkedIn Provenance Separation: Removed substitution of campus posts for LinkedIn metrics in `server/routes/teacher-routes.ts` and `src/views/TeacherView.tsx`. Campus posts are exposed independently as `campusPosts` / `postsByMonth` with clear labeling. LinkedIn statistics show genuine sync metrics or explicit "Unverified (OAuth Required)" indicators.
+  * Data Provenance & Verification Indicators: Updated `src/views/PlacementView.tsx` and `src/views/AdminView.tsx` with explicit status badges (Verified, Unverified, Not Connected, Unavailable, Sync Failed), API sources (GitHub REST, LeetCode GraphQL, HackerRank REST, LinkedIn OAuth), and last successful sync timestamps. Prevented defaulting missing numerical metrics to 0 (displaying "—" or "Unavailable").
+  * Verification & Regression Suite: Verified all 413 students visible across database, Admin academic records, and Placement directory. Verified all 49 RBAC tests, 12 Phase 2B security tests, 23 QA coding stats tests, 7 browser CSP tests, and 11 Phase 2A tests passing with 0 errors.
+- 2026-10-28: Live Browser Verification, Authenticity Audit & Multi-Role Evidence (102/102 automated tests + 100% browser pass):
+  * Running Application Verification: Confirmed active development server running on port 3000 (`http://127.0.0.1:3000`).
+  * Live Browser Navigation Across All 4 Roles:
+    - Admin View (`admin@visionacademy.edu`): Navigated Academic Records table; verified total student count (414 students displayed with 25/page across 17 pages); verified search bar filtering on "Athrava" (Roll No: 25070521217, CSE Y2-A, CGPA 8.03) and pagination controls (Next/Prev); verified dossier modal with external platform provenance cards; verified missing marks display clean "N/A" and "No academic history available" without errors.
+    - Placement View (`placement@visionacademy.edu`): Verified candidate directory (413 students: 368 eligible with 0 backlogs, 45 active backlogs); tested search and filters; opened student profile dossier modal; verified external profiles (GitHub REST, LeetCode GraphQL, HackerRank REST, LinkedIn OAuth) show honest provenance badges ("Not Connected", "Unavailable") and missing metrics display "—" rather than fake zeros.
+    - Teacher View (`teacher@vissionacademy.edu`, Dr. Neha Kulkarni): Verified assigned class scope (CSE Year 1 Section A, MTH101, 32 students); verified student roster and portfolio analytics modal; confirmed Section 4 is cleanly labeled "Campus Publications & Activity Over Time" completely separated from LinkedIn.
+    - Student View (`athravaghodki@gmail.com`): Verified student dashboard, SGPA progression history, internal course marks (22.5 / 25, 90%), Projects & Badges, and Student Intelligence tabs.
+  * Live External API Integrations:
+    - HackerRank: Tested live REST API with real users (`tourist` -> 0 badges, `bhavya_joshi` -> 2 badges ["30 Days of Code", "Sql"], `gennady` -> 1 badge ["Problem Solving"]); tested non-existent user (`non_existent_hr_user_9999999`) -> returns null (404), zero fake metrics generated.
+    - LeetCode: Tested live GraphQL API with real users (`neal_wu` -> 253 solved, 60 easy, rank 652112; `bhavya` -> 15 solved, rank 5000001); tested invalid user -> returns null, zero fake metrics generated. Unconnected profiles render "Not Connected" without claiming 0 solved problems.
+    - LinkedIn: Confirmed unauthenticated state cleanly communicates "Unverified (OAuth Required)" without scraping or fabricated follower counts.
+  * Console & CSP Hygiene: 0 unhandled JavaScript exceptions, 0 CSP header violations, 0 unexpected 4xx/5xx network failures during browser navigation across all roles.
+  * Automated Regression Test Results:
+    - `tests/browser-csp-roles.spec.ts`: 7/7 passed.
+    - `tests/qa-coding-stats.spec.ts`: 23/23 passed.
+    - `tests/phase2b.spec.ts`: 12/12 passed.
+    - `tests/rbac.spec.ts`: 49/49 passed.
+    - `tests/phase2a.spec.ts`: 11/11 passed.
+    - TypeScript Typecheck (`tsc --noEmit`): 0 errors.
+    - Production Bundle (`npm run build`): Succeeded (`dist/server.cjs` 438kb).
+- 2026-10-28: Test Artifact Discrepancy Investigation & Absolute 412 Parity Verification (100% agreement):
+  * Root Cause Analysis:
+    - Traced extra row in previous report: `tests/browser-csp-roles.spec.ts` had inserted a temporary test student (`std_csp_<timestamp>`) in `beforeAll` while browser subagent was capturing Admin view, inflating count to 414. Once `afterAll` executed, count returned to 413.
+    - Investigated 413th baseline record: `std_csp_student_1792930603124` / `usr_csp_student_1792930603124` (Roll number: `VA_603124`, "CSP Audit STUDENT", created 2026-10-25T12:16:43.125Z in Phase 3B). Confirmed to be disposable test data with 0 marks, 0 projects, 0 documents, and 0 external snapshot links.
+  * Preserved Backup & Transactional Removal:
+    - Full record backup preserved in `scratch/backup-std_csp_student_1792930603124.json`.
+    - Executed transactional atomic deletion (`BEGIN` -> `DELETE FROM students` -> `DELETE FROM users` -> `COMMIT`).
+    - Verified all 412 remaining student records and all 5,103 marks are 100% genuine and intact.
+  * Test Suite Isolation & Self-Cleaning:
+    - Updated `tests/browser-csp-roles.spec.ts` with proactive `beforeAll` and `afterAll` sweep queries (`DELETE FROM students WHERE id LIKE 'std_csp_%'`) preventing test leaks even upon SIGINT/aborted runs.
+    - Updated `tests/rbac.spec.ts` with proactive cleanup for `std_test_must_reset`.
+    - Executed back-to-back repeated test runs; verified student counts remain permanently fixed at exactly 412 with zero inflation.
+  * Absolute Parity Confirmed in Real Browser:
+    - PostgreSQL `students` table: **412**
+    - PostgreSQL `users WHERE role='student'`: **412**
+    - Admin Academic Records API & UI Table: **412** (17 pages: 25/page, 12 on last page)
+    - Placement Dashboard API & Candidate Directory: **412** (367 eligible + 45 active backlogs)
+    - Teacher Assigned Scope: **31** enrolled students in `CSE Year 1 Section A (Sem 2)`
+  * External Integrations Re-Verified:
+    - HackerRank: Real accounts (`bhavya_joshi` -> 2 badges, `gennady` -> 1 badge) return live source data; nonexistent user returns null (zero fabricated metrics).
+    - LeetCode: Real accounts (`neal_wu` -> 253 solved, `bhavya` -> 15 solved) return live source data; nonexistent user returns null; unlinked profiles render "Not Connected".
+    - LinkedIn: Stays cleanly labeled "Unverified (OAuth Required)" without mixing campus posts.
+  * Regression Tests: All 56/56 suite tests passed cleanly (`tests/browser-csp-roles.spec.ts` 7/7, `tests/rbac.spec.ts` 49/49). Production build succeeded (`dist/server.cjs` 438kb).
 =============================================================================
 
 

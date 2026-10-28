@@ -6,7 +6,7 @@ import { query, UserRecord } from './db.js';
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('JWT_SECRET is required; refusing to use an in-memory fallback secret.');
 
-export interface AuthenticatedUser { id: string; email: string; role: 'admin' | 'teacher' | 'student' | 'placement'; full_name: string; student_id?: string; class_id?: string; }
+export interface AuthenticatedUser { id: string; email: string; role: 'admin' | 'teacher' | 'student' | 'placement'; full_name: string; student_id?: string; class_id?: string; must_reset_password?: boolean; }
 export interface AuthRequest extends Request { user?: AuthenticatedUser; }
 
 export function generateToken(user: UserRecord, student?: { id: string; class_id: string | null }): string {

@@ -12,6 +12,7 @@ import { runMonthlyLinkedInSync } from '../linkedin-sync.js';
 import { runMonthlyHackerRankSync } from '../hackerrank-sync.js';
 import { runMonthlyLeetCodeSync } from '../leetcode-sync.js';
 import { revokeAllUserRefreshTokens } from '../refresh-tokens.js';
+import adminQaRoutes from './admin-qa-routes.js';
 
 const router = Router();
 const root = process.cwd();
@@ -54,6 +55,9 @@ const zipUpload = multer({
 
 router.use(requireAuth, requireRole('admin'));
 
+// QA Test Data Management Endpoints (Isolated Schema)
+router.use('/qa/coding-stats', adminQaRoutes);
+
 router.get('/overview', async (_req, res) => {
   const [counts, pass, trends, departments, activity] = await Promise.all([
     query(`SELECT (SELECT count(*)::int FROM students) AS "totalStudents", (SELECT count(*)::int FROM users WHERE role='teacher') AS "totalTeachers", (SELECT count(*)::int FROM classes) AS "totalClasses", (SELECT count(*)::int FROM semesters WHERE is_active) AS "activeSemesters"`),
@@ -82,9 +86,9 @@ router.get('/academic-records', async (req, res) => {
   const students = (await query(`
     SELECT s.id, s.roll_number, u.full_name, c.name AS "className", c.year AS "classYear", c.section AS "classSection", d.name AS "departmentName"
     FROM students s
-    JOIN users u ON u.id = s.user_id
+    LEFT JOIN users u ON u.id = s.user_id
     LEFT JOIN classes c ON c.id = s.class_id
-    LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN departments d ON d.id = COALESCE(s.department_id, c.department_id)
     ORDER BY s.roll_number
   `)).rows;
 
@@ -370,14 +374,14 @@ router.post('/marksheets/bulk-zip', (req: AuthRequest, res, next) => {
           if (entryBytes > MAX_ENTRY_UNCOMPRESSED_BYTES) {
             streamAbortError = new Error(`ZIP entry size limit exceeded: entry exceeds 25 MB decompressed limit.`);
             streamAbortError.code = 'ENTRY_LIMIT_EXCEEDED';
-            stream.destroy();
+            (stream as any).destroy();
             reject(streamAbortError);
             return;
           }
           if (cumulativeBytesExtracted + entryBytes > MAX_TOTAL_UNCOMPRESSED_BYTES) {
             streamAbortError = new Error(`ZIP uncompressed size limit exceeded: actual decompressed size exceeds 200 MB threshold.`);
             streamAbortError.code = 'TOTAL_LIMIT_EXCEEDED';
-            stream.destroy();
+            (stream as any).destroy();
             reject(streamAbortError);
             return;
           }
@@ -842,9 +846,9 @@ router.put('/placement/:placementId/analytics-visibility', async (req: AuthReque
 router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) => {
   const s = (await query<any>(
     `SELECT s.*,u.full_name,u.email,c.name AS "className",d.name AS "departmentName"
-     FROM students s JOIN users u ON u.id=s.user_id
+     FROM students s LEFT JOIN users u ON u.id=s.user_id
      LEFT JOIN classes c ON c.id=s.class_id
-     LEFT JOIN departments d ON d.id=s.department_id
+     LEFT JOIN departments d ON d.id=COALESCE(s.department_id, c.department_id)
      WHERE s.id=$1`,
     [req.params.studentId],
   )).rows[0];

@@ -43,7 +43,7 @@ async function syncOneStudent(
   month: string
 ): Promise<SnapshotSyncResult> {
   if (student.id.startsWith('demo_') || (student.roll_number && student.roll_number.startsWith('DEMO'))) {
-    return { studentId: student.id, username: null, status: 'not_synced', error: 'Skipped demo student' };
+    return { studentId: student.id, url: null, status: 'not_synced', error: 'Skipped demo student' };
   }
   if (!student.linkedin_url || !student.linkedin_url.trim()) {
     return { studentId: student.id, url: null, status: 'not_synced' };

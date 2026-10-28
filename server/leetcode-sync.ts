@@ -136,6 +136,24 @@ export async function runMonthlyLeetCodeSync(overrideMonth?: string) {
     const username = extractLeetCodeUsername(student.leetcode_url);
     if (!username) {
       failed++;
+      const snapId = id('lcs');
+      const errMsg = `Cannot parse LeetCode username from URL: ${student.leetcode_url}`;
+      await query(
+        `INSERT INTO student_leetcode_snapshots
+           (id, student_id, leetcode_username, snapshot_month, synced_at,
+            sync_status, error_message, created_at)
+         VALUES ($1, $2, 'INVALID_URL', $3, NOW(), 'failed', $4, NOW())
+         ON CONFLICT (student_id, snapshot_month) DO UPDATE SET
+            sync_status = 'failed',
+            error_message = EXCLUDED.error_message,
+            synced_at = NOW()`,
+        [snapId, student.id, month, errMsg]
+      );
+      await query(
+        `UPDATE students SET leetcode_data = $1, leetcode_synced_at = NOW() WHERE id = $2`,
+        [JSON.stringify({ status: 'FAILED', error: errMsg }), student.id]
+      );
+      details.push({ studentId: student.id, username: null, status: 'failed', error: errMsg });
       continue;
     }
 
@@ -144,14 +162,14 @@ export async function runMonthlyLeetCodeSync(overrideMonth?: string) {
       const snapId = id('lcs');
       await query(
         `UPDATE students SET leetcode_data = $1, leetcode_synced_at = NOW() WHERE id = $2`,
-        [JSON.stringify(data), student.id]
+        [JSON.stringify({ ...data, status: 'SYNCED' }), student.id]
       );
       await query(
         `INSERT INTO student_leetcode_snapshots
            (id, student_id, leetcode_username, snapshot_month, synced_at,
             total_solved, easy_solved, medium_solved, hard_solved, ranking, reputation,
-            raw_data, sync_status, created_at)
-         VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8, $9, $10, $11, 'synced', NOW())
+            raw_data, sync_status, error_message, created_at)
+         VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8, $9, $10, $11, 'synced', NULL, NOW())
          ON CONFLICT (student_id, snapshot_month) DO UPDATE SET
             total_solved = EXCLUDED.total_solved,
             easy_solved = EXCLUDED.easy_solved,
@@ -161,6 +179,7 @@ export async function runMonthlyLeetCodeSync(overrideMonth?: string) {
             reputation = EXCLUDED.reputation,
             raw_data = EXCLUDED.raw_data,
             sync_status = 'synced',
+            error_message = NULL,
             synced_at = NOW()`,
         [
           snapId,
@@ -180,7 +199,24 @@ export async function runMonthlyLeetCodeSync(overrideMonth?: string) {
       details.push({ studentId: student.id, username, status: 'synced', data });
     } else {
       failed++;
-      details.push({ studentId: student.id, username, status: 'failed' });
+      const snapId = id('lcs');
+      const errMsg = `LeetCode user '${username}' not found or profile query returned null`;
+      await query(
+        `INSERT INTO student_leetcode_snapshots
+           (id, student_id, leetcode_username, snapshot_month, synced_at,
+            sync_status, error_message, created_at)
+         VALUES ($1, $2, $3, $4, NOW(), 'failed', $5, NOW())
+         ON CONFLICT (student_id, snapshot_month) DO UPDATE SET
+            sync_status = 'failed',
+            error_message = EXCLUDED.error_message,
+            synced_at = NOW()`,
+        [snapId, student.id, username, month, errMsg]
+      );
+      await query(
+        `UPDATE students SET leetcode_data = $1, leetcode_synced_at = NOW() WHERE id = $2`,
+        [JSON.stringify({ status: 'FAILED', username, error: errMsg }), student.id]
+      );
+      details.push({ studentId: student.id, username, status: 'failed', error: errMsg });
     }
   }
 

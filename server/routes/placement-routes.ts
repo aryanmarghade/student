@@ -78,12 +78,13 @@ router.get('/dashboard', async (req: AuthRequest, res) => {
     SELECT s.id, s.roll_number, u.full_name, c.name AS "className", c.year AS "classYear", c.section AS "classSection", d.name AS "departmentName", c.id AS "classId",
            s.github_url, s.hackerrank_url, s.leetcode_url, s.linkedin_url, s.portfolio_url, s.resume_url, s.profile_strength AS ai_score,
            s.github_data, s.hackerrank_data, s.leetcode_data,
+           s.github_synced_at, s.hackerrank_synced_at, s.leetcode_synced_at,
            (SELECT COUNT(*) FROM projects p WHERE p.student_id = s.id) as projects_count,
            (SELECT COUNT(*) FROM posts pt WHERE pt.student_id = s.id) as posts_count
     FROM students s
-    JOIN users u ON u.id = s.user_id
+    LEFT JOIN users u ON u.id = s.user_id
     LEFT JOIN classes c ON c.id = s.class_id
-    LEFT JOIN departments d ON d.id = s.department_id
+    LEFT JOIN departments d ON d.id = COALESCE(s.department_id, c.department_id)
     ORDER BY c.year, s.roll_number
   `)).rows;
 
@@ -98,11 +99,14 @@ router.get('/dashboard', async (req: AuthRequest, res) => {
       cgpa: visibility.academic_enabled ? hist.cgpa : null,
       github_url: visibility.github_enabled ? s.github_url : null,
       github_data: visibility.github_enabled ? s.github_data : null,
+      github_synced_at: visibility.github_enabled ? s.github_synced_at : null,
       linkedin_url: visibility.linkedin_enabled ? s.linkedin_url : null,
       hackerrank_url: visibility.hackerrank_enabled ? s.hackerrank_url : null,
       hackerrank_data: visibility.hackerrank_enabled ? s.hackerrank_data : null,
+      hackerrank_synced_at: visibility.hackerrank_enabled ? s.hackerrank_synced_at : null,
       leetcode_url: (visibility.leetcode_enabled ?? true) ? s.leetcode_url : null,
       leetcode_data: (visibility.leetcode_enabled ?? true) ? s.leetcode_data : null,
+      leetcode_synced_at: (visibility.leetcode_enabled ?? true) ? s.leetcode_synced_at : null,
     };
   });
 
@@ -168,9 +172,9 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
 
   const s = (await query<any>(
     `SELECT s.*,u.full_name,u.email,c.name AS "className",c.year AS "classYear",c.section AS "classSection",d.name AS "departmentName"
-     FROM students s JOIN users u ON u.id=s.user_id
+     FROM students s LEFT JOIN users u ON u.id=s.user_id
      LEFT JOIN classes c ON c.id=s.class_id
-     LEFT JOIN departments d ON d.id=s.department_id
+     LEFT JOIN departments d ON d.id=COALESCE(s.department_id, c.department_id)
      WHERE s.id=$1`,
     [req.params.studentId],
   )).rows[0];

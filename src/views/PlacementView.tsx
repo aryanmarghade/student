@@ -400,81 +400,209 @@ export const PlacementView: React.FC = () => {
               )}
 
               {/* External Profiles & Coding Platform Badges */}
+              {/* External Profiles & Coding Platform Badges */}
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-[#0f2744]" /> External Profiles & Technical Platforms
-                </h3>
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-[#0f2744]" /> External Profiles & Technical Platforms
+                  </h3>
+                  <span className="text-[10px] text-slate-500 font-medium">Data Provenance & Verification</span>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {selectedStudent.github_url !== null && (
-                    <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                      <p className="text-[10px] uppercase font-bold text-slate-500">GitHub</p>
+                  {/* GitHub Card */}
+                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] uppercase font-bold text-slate-500">GitHub</p>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                          selectedStudent.github_data?.public_repos !== undefined || selectedStudent.github_data?.status === 'SYNCED'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : selectedStudent.github_data?.status === 'FAILED'
+                            ? 'bg-red-50 text-red-700 border-red-200'
+                            : selectedStudent.github_url
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-slate-100 text-slate-500 border-slate-200'
+                        }`}>
+                          {selectedStudent.github_data?.public_repos !== undefined || selectedStudent.github_data?.status === 'SYNCED'
+                            ? 'Verified'
+                            : selectedStudent.github_data?.status === 'FAILED'
+                            ? 'Sync Failed'
+                            : selectedStudent.github_url
+                            ? 'Unverified'
+                            : 'Not Connected'}
+                        </span>
+                      </div>
                       <p className="font-semibold text-xs text-slate-800 mt-1">
-                        {selectedStudent.github_data?.public_repos !== undefined ? `${selectedStudent.github_data.public_repos} Repos (${selectedStudent.github_data.stars ?? 0}★)` : (selectedStudent.github_url ? 'Linked' : 'Not linked')}
+                        {selectedStudent.github_data?.public_repos !== undefined
+                          ? `${selectedStudent.github_data.public_repos} Repos (${selectedStudent.github_data.stars ?? '—'}★)`
+                          : selectedStudent.github_url
+                          ? 'Profile Linked'
+                          : 'Not Connected'}
                       </p>
-                      {selectedStudent.github_url && (
-                        <a href={sanitizeUrl(selectedStudent.github_url)} target="_blank" rel="noreferrer" className="text-[11px] text-blue-600 hover:underline font-medium block mt-1">
-                          View GitHub →
-                        </a>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Source: GitHub REST API
+                      </p>
+                      {selectedStudent.github_synced_at && (
+                        <p className="text-[9px] text-slate-400 mt-0.5 font-mono">
+                          Synced: {new Date(selectedStudent.github_synced_at).toLocaleDateString()}
+                        </p>
                       )}
                     </div>
-                  )}
+                    {selectedStudent.github_url && (
+                      <a href={sanitizeUrl(selectedStudent.github_url)} target="_blank" rel="noreferrer" className="text-[11px] text-blue-600 hover:underline font-medium block mt-2">
+                        View GitHub →
+                      </a>
+                    )}
+                  </div>
 
-                  {selectedStudent.leetcode_url !== null && (
-                    <div className="p-3 bg-amber-50/60 rounded-lg border border-amber-200">
-                      <p className="text-[10px] uppercase font-bold text-amber-900 flex items-center justify-between">
-                        <span>LeetCode</span>
-                        {selectedStudent.leetcode_data?.ranking && (
-                          <span className="text-[9px] text-amber-700 font-mono">Rank #{selectedStudent.leetcode_data.ranking.toLocaleString()}</span>
-                        )}
-                      </p>
+                  {/* LeetCode Card */}
+                  <div className="p-3 bg-amber-50/60 rounded-lg border border-amber-200 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] uppercase font-bold text-amber-900">LeetCode</p>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                          selectedStudent.leetcode_data?.status === 'SYNCED' || selectedStudent.leetcode_data?.totalSolved !== undefined
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : selectedStudent.leetcode_data?.status === 'FAILED'
+                            ? 'bg-red-50 text-red-700 border-red-200'
+                            : selectedStudent.leetcode_url
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-slate-100 text-slate-500 border-slate-200'
+                        }`}>
+                          {selectedStudent.leetcode_data?.status === 'SYNCED' || selectedStudent.leetcode_data?.totalSolved !== undefined
+                            ? 'Verified'
+                            : selectedStudent.leetcode_data?.status === 'FAILED'
+                            ? 'Sync Failed'
+                            : selectedStudent.leetcode_url
+                            ? 'Unverified'
+                            : 'Not Connected'}
+                        </span>
+                      </div>
                       <p className="font-semibold text-xs text-amber-950 mt-1">
-                        {selectedStudent.leetcode_data?.totalSolved !== undefined ? `${selectedStudent.leetcode_data.totalSolved} Solved` : (selectedStudent.leetcode_url ? 'Linked' : 'Not linked')}
+                        {selectedStudent.leetcode_data?.totalSolved !== undefined
+                          ? `${selectedStudent.leetcode_data.totalSolved} Solved`
+                          : selectedStudent.leetcode_url
+                          ? 'Profile Linked'
+                          : 'Not Connected'}
                       </p>
                       {selectedStudent.leetcode_data?.totalSolved !== undefined && (
                         <p className="text-[10px] text-amber-800 mt-0.5 font-mono">
-                          E: {selectedStudent.leetcode_data.easySolved || 0} | M: {selectedStudent.leetcode_data.mediumSolved || 0} | H: {selectedStudent.leetcode_data.hardSolved || 0}
+                          E: {selectedStudent.leetcode_data.easySolved ?? '—'} | M: {selectedStudent.leetcode_data.mediumSolved ?? '—'} | H: {selectedStudent.leetcode_data.hardSolved ?? '—'}
                         </p>
                       )}
-                      {selectedStudent.leetcode_url && (
-                        <a href={sanitizeUrl(selectedStudent.leetcode_url)} target="_blank" rel="noreferrer" className="text-[11px] text-amber-700 hover:underline font-medium block mt-1">
-                          View LeetCode →
-                        </a>
+                      {selectedStudent.leetcode_data?.ranking && (
+                        <p className="text-[9px] text-amber-700 font-mono mt-0.5">
+                          Rank #{selectedStudent.leetcode_data.ranking.toLocaleString()}
+                        </p>
+                      )}
+                      <p className="text-[10px] text-amber-700 mt-0.5">
+                        Source: LeetCode GraphQL
+                      </p>
+                      {selectedStudent.leetcode_synced_at && (
+                        <p className="text-[9px] text-amber-600 mt-0.5 font-mono">
+                          Synced: {new Date(selectedStudent.leetcode_synced_at).toLocaleDateString()}
+                        </p>
                       )}
                     </div>
-                  )}
+                    {selectedStudent.leetcode_url && (
+                      <a href={sanitizeUrl(selectedStudent.leetcode_url)} target="_blank" rel="noreferrer" className="text-[11px] text-amber-700 hover:underline font-medium block mt-2">
+                        View LeetCode →
+                      </a>
+                    )}
+                  </div>
 
-                  {selectedStudent.hackerrank_url !== null && (
-                    <div className="p-3 bg-emerald-50/60 rounded-lg border border-emerald-200">
-                      <p className="text-[10px] uppercase font-bold text-emerald-900 flex items-center justify-between">
-                        <span>HackerRank</span>
-                        {selectedStudent.hackerrank_data?.badges_count ? (
-                          <span className="text-[9px] text-emerald-700 font-mono">{selectedStudent.hackerrank_data.badges_count} Badges</span>
-                        ) : null}
-                      </p>
+                  {/* HackerRank Card */}
+                  <div className="p-3 bg-emerald-50/60 rounded-lg border border-emerald-200 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] uppercase font-bold text-emerald-900">HackerRank</p>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                          selectedStudent.hackerrank_data?.status === 'SYNCED' || selectedStudent.hackerrank_data?.badges_count !== undefined
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : selectedStudent.hackerrank_data?.status === 'FAILED'
+                            ? 'bg-red-50 text-red-700 border-red-200'
+                            : selectedStudent.hackerrank_url
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-slate-100 text-slate-500 border-slate-200'
+                        }`}>
+                          {selectedStudent.hackerrank_data?.status === 'SYNCED' || selectedStudent.hackerrank_data?.badges_count !== undefined
+                            ? 'Verified'
+                            : selectedStudent.hackerrank_data?.status === 'FAILED'
+                            ? 'Sync Failed'
+                            : selectedStudent.hackerrank_url
+                            ? 'Unverified'
+                            : 'Not Connected'}
+                        </span>
+                      </div>
                       <p className="font-semibold text-xs text-emerald-950 mt-1">
-                        {selectedStudent.hackerrank_data?.verified_skills?.length > 0 ? `${selectedStudent.hackerrank_data.verified_skills.length} Skills Verified` : (selectedStudent.hackerrank_url ? 'Profile Linked' : 'Not linked')}
+                        {selectedStudent.hackerrank_data?.badges_count !== undefined
+                          ? `${selectedStudent.hackerrank_data.badges_count} Badges`
+                          : selectedStudent.hackerrank_url
+                          ? 'Profile Linked'
+                          : 'Not Connected'}
                       </p>
-                      {selectedStudent.hackerrank_url && (
-                        <a href={sanitizeUrl(selectedStudent.hackerrank_url)} target="_blank" rel="noreferrer" className="text-[11px] text-emerald-700 hover:underline font-medium block mt-1">
-                          View HackerRank →
-                        </a>
+                      {selectedStudent.hackerrank_data?.verified_skills?.length > 0 && (
+                        <p className="text-[10px] text-emerald-800 mt-0.5">
+                          {selectedStudent.hackerrank_data.verified_skills.length} Skills Verified
+                        </p>
+                      )}
+                      <p className="text-[10px] text-emerald-700 mt-0.5">
+                        Source: HackerRank REST API
+                      </p>
+                      {selectedStudent.hackerrank_synced_at && (
+                        <p className="text-[9px] text-emerald-600 mt-0.5 font-mono">
+                          Synced: {new Date(selectedStudent.hackerrank_synced_at).toLocaleDateString()}
+                        </p>
                       )}
                     </div>
-                  )}
+                    {selectedStudent.hackerrank_url && (
+                      <a href={sanitizeUrl(selectedStudent.hackerrank_url)} target="_blank" rel="noreferrer" className="text-[11px] text-emerald-700 hover:underline font-medium block mt-2">
+                        View HackerRank →
+                      </a>
+                    )}
+                  </div>
 
-                  {selectedStudent.linkedin_url !== null && (
-                    <div className="p-3 bg-blue-50/60 rounded-lg border border-blue-200">
-                      <p className="text-[10px] uppercase font-bold text-blue-900">LinkedIn</p>
+                  {/* LinkedIn Card */}
+                  <div className="p-3 bg-blue-50/60 rounded-lg border border-blue-200 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] uppercase font-bold text-blue-900">LinkedIn</p>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                          selectedStudent.linkedin_data?.status === 'SYNCED'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : selectedStudent.linkedin_url
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-slate-100 text-slate-500 border-slate-200'
+                        }`}>
+                          {selectedStudent.linkedin_data?.status === 'SYNCED'
+                            ? 'Verified'
+                            : selectedStudent.linkedin_url
+                            ? 'Unverified'
+                            : 'Not Connected'}
+                        </span>
+                      </div>
                       <p className="font-semibold text-xs text-blue-950 mt-1">
-                        {selectedStudent.linkedin_url ? 'Profile Linked' : 'Not linked'}
+                        {selectedStudent.linkedin_url ? 'Profile Linked' : 'Not Connected'}
                       </p>
-                      {selectedStudent.linkedin_url && (
-                        <a href={sanitizeUrl(selectedStudent.linkedin_url)} target="_blank" rel="noreferrer" className="text-[11px] text-blue-700 hover:underline font-medium block mt-1">
-                          View LinkedIn →
-                        </a>
+                      <p className="text-[10px] text-blue-700 mt-0.5">
+                        Source: LinkedIn OAuth API
+                      </p>
+                      {selectedStudent.linkedin_synced_at ? (
+                        <p className="text-[9px] text-blue-600 mt-0.5 font-mono">
+                          Synced: {new Date(selectedStudent.linkedin_synced_at).toLocaleDateString()}
+                        </p>
+                      ) : (
+                        <p className="text-[9px] text-blue-500 mt-0.5">
+                          {selectedStudent.linkedin_url ? 'OAuth Sync Pending' : 'No Profile Linked'}
+                        </p>
                       )}
                     </div>
-                  )}
+                    {selectedStudent.linkedin_url && (
+                      <a href={sanitizeUrl(selectedStudent.linkedin_url)} target="_blank" rel="noreferrer" className="text-[11px] text-blue-700 hover:underline font-medium block mt-2">
+                        View LinkedIn →
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
 

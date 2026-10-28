@@ -28,7 +28,11 @@ import {
   Trophy,
   MapPin,
   ExternalLink,
-  Settings
+  Settings,
+  Database,
+  FlaskConical,
+  AlertTriangle,
+  Code2
 } from 'lucide-react';
 import { Bar, Doughnut } from 'react-chartjs-2';
 import '../lib/chart-setup';
@@ -67,7 +71,19 @@ export const AdminView: React.FC = () => {
   const [analyticsVisibility, setAnalyticsVisibility] = useState<Record<string, any>>({});
   const [placementVisibility, setPlacementVisibility] = useState<Record<string, any>>({});
   const [savingVisibilityKey, setSavingVisibilityKey] = useState<string | null>(null);
-  const [settingsSubTab, setSettingsSubTab] = useState<'teachers' | 'placement' | 'sync'>('teachers');
+  const [settingsSubTab, setSettingsSubTab] = useState<'teachers' | 'placement' | 'sync' | 'qa'>('teachers');
+
+  // QA Test Data Controls (Dev Only)
+  const [qaRuns, setQaRuns] = useState<any[]>([]);
+  const [selectedQaRunId, setSelectedQaRunId] = useState<string | null>(null);
+  const [qaRunData, setQaRunData] = useState<{ run: any; stats: any[]; summary: any } | null>(null);
+  const [isLoadingQaRuns, setIsLoadingQaRuns] = useState(false);
+  const [isLoadingQaStats, setIsLoadingQaStats] = useState(false);
+  const [isGeneratingQa, setIsGeneratingQa] = useState(false);
+  const [newRunName, setNewRunName] = useState('');
+  const [qaPlatformFilter, setQaPlatformFilter] = useState<'all' | 'leetcode' | 'hackerrank'>('all');
+  const [qaSearchQuery, setQaSearchQuery] = useState('');
+  const [isDeletingQaRun, setIsDeletingQaRun] = useState(false);
 
   // Entities Data
   const [academicRecords, setAcademicRecords] = useState<any[]>([]);
@@ -299,6 +315,95 @@ export const AdminView: React.FC = () => {
       setTimeout(() => setActionSuccess(null), 4000);
     }
   };
+
+  // QA Test Data Handlers (Isolated Schema)
+  const fetchQaRuns = async () => {
+    setIsLoadingQaRuns(true);
+    try {
+      const res = await api.getQaCodingStatsRuns();
+      const runs = res.runs || [];
+      setQaRuns(runs);
+      if (runs.length > 0) {
+        const targetId = selectedQaRunId && runs.some((r: any) => r.id === selectedQaRunId)
+          ? selectedQaRunId
+          : runs[0].id;
+        setSelectedQaRunId(targetId);
+        await fetchQaRunStats(targetId);
+      } else {
+        setSelectedQaRunId(null);
+        setQaRunData(null);
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to fetch QA test runs', true);
+    } finally {
+      setIsLoadingQaRuns(false);
+    }
+  };
+
+  const fetchQaRunStats = async (runId: string) => {
+    setIsLoadingQaStats(true);
+    try {
+      const res = await api.getQaCodingStats(runId);
+      setQaRunData(res);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to fetch QA test run statistics', true);
+    } finally {
+      setIsLoadingQaStats(false);
+    }
+  };
+
+  const handleGenerateQaStats = async () => {
+    setIsGeneratingQa(true);
+    try {
+      const res = await api.generateQaCodingStats({
+        runName: newRunName.trim() || undefined,
+      });
+      showToast(res.message);
+      setNewRunName('');
+      await fetchQaRuns();
+      if (res.run?.id) {
+        setSelectedQaRunId(res.run.id);
+        await fetchQaRunStats(res.run.id);
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to generate QA test data', true);
+    } finally {
+      setIsGeneratingQa(false);
+    }
+  };
+
+  const handleDeleteQaRun = (runId: string, runName: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete QA Test Run',
+      message: `Are you sure you want to delete test run "${runName}"? This will permanently delete all mock records generated under this run in the isolated QA schema. Live student records will remain completely untouched.`,
+      confirmText: 'Delete Test Run',
+      isDestructive: true,
+      onConfirm: async () => {
+        setIsDeletingQaRun(true);
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        try {
+          const res = await api.deleteQaCodingStatsRun(runId);
+          showToast(res.message);
+          if (selectedQaRunId === runId) {
+            setSelectedQaRunId(null);
+            setQaRunData(null);
+          }
+          await fetchQaRuns();
+        } catch (err: any) {
+          showToast(err.message || 'Failed to delete QA test run', true);
+        } finally {
+          setIsDeletingQaRun(false);
+        }
+      }
+    });
+  };
+
+  useEffect(() => {
+    if (activeTab === 'settings' && settingsSubTab === 'qa') {
+      fetchQaRuns();
+    }
+  }, [activeTab, settingsSubTab]);
 
   // Class deletion with accessible ConfirmDialog
   const handleDeleteClass = (classId: string, className: string) => {
@@ -1812,7 +1917,8 @@ export const AdminView: React.FC = () => {
             {[
               { id: 'teachers', label: 'Faculty Visibility Settings', count: users.filter(u => u.role === 'teacher').length },
               { id: 'placement', label: 'Placement Officer Visibility Settings', count: users.filter(u => u.role === 'placement').length },
-              { id: 'sync', label: 'External Data Sync Actions' }
+              { id: 'sync', label: 'External Data Sync Actions' },
+              { id: 'qa', label: 'QA Test Data (Dev Only)', count: qaRuns.length }
             ].map(sub => (
               <button
                 key={sub.id}
@@ -2126,6 +2232,293 @@ export const AdminView: React.FC = () => {
                     <RefreshCw className={`w-3.5 h-3.5 ${isSyncingAll ? 'animate-spin' : ''}`} />
                     {isSyncingAll ? 'Synchronizing All...' : 'Sync All Platforms'}
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Sub-Tab 4: Isolated QA Test Data */}
+          {settingsSubTab === 'qa' && (
+            <div className="space-y-6">
+              {/* QA Banner */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-amber-100 rounded-lg text-amber-800 shrink-0">
+                    <AlertTriangle className="w-5 h-5 text-amber-700" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-amber-900">
+                        Isolated QA Coding Stats Test Data (Dev & Testing Only)
+                      </h3>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-200 text-amber-900 border border-amber-300">
+                        TEST DATA — NOT VERIFIED
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-800 mt-1 max-w-3xl">
+                      Generates deterministic mock LeetCode and HackerRank statistics for active students. Records are strictly isolated within the <code className="font-mono bg-amber-100 px-1 py-0.5 rounded text-amber-950 font-bold">qa</code> PostgreSQL schema and are never mixed with verified snapshots, student public profiles, or official placement reports.
+                    </p>
+                  </div>
+                </div>
+                <div className="shrink-0 flex items-center gap-2">
+                  <span className="text-xs font-mono font-bold px-2.5 py-1 bg-white text-amber-900 rounded-lg border border-amber-200 shadow-2xs">
+                    Runs: {qaRuns.length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Run Generator Card */}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FlaskConical className="w-4 h-4 text-[#0f2744]" />
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Generate New QA Test Run</h4>
+                  </div>
+                </div>
+                <div className="p-5 flex flex-col md:flex-row items-stretch md:items-end gap-3">
+                  <div className="flex-1 space-y-1">
+                    <label htmlFor="qa-run-name" className="block text-xs font-bold text-slate-700">
+                      Test Run Description / Name (Optional)
+                    </label>
+                    <input
+                      id="qa-run-name"
+                      type="text"
+                      value={newRunName}
+                      onChange={(e) => setNewRunName(e.target.value)}
+                      placeholder={`e.g. Automated Chart Validation Run ${new Date().toLocaleDateString()}`}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-[#0f2744] bg-white text-slate-800 font-medium"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isGeneratingQa}
+                    onClick={handleGenerateQaStats}
+                    className="px-4 py-2 min-h-[44px] bg-[#0f2744] text-white hover:bg-[#163354] rounded-lg text-xs font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-all shrink-0 shadow-xs focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f2744]"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isGeneratingQa ? 'animate-spin' : ''}`} />
+                    {isGeneratingQa ? 'Generating Deterministic Stats...' : 'Generate Test Data for All Active Students'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Test Runs Selector & Summary */}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-4 h-4 text-[#0f2744]" />
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Available QA Test Runs</h4>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isLoadingQaRuns}
+                      onClick={fetchQaRuns}
+                      aria-label="Refresh test runs"
+                      className="px-3 py-1.5 min-h-[44px] bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingQaRuns ? 'animate-spin' : ''}`} />
+                      Refresh Runs
+                    </button>
+                    {selectedQaRunId && (
+                      <button
+                        type="button"
+                        disabled={isDeletingQaRun}
+                        onClick={() => {
+                          const run = qaRuns.find(r => r.id === selectedQaRunId);
+                          handleDeleteQaRun(selectedQaRunId, run?.name || 'Selected Run');
+                        }}
+                        className="px-3 py-1.5 min-h-[44px] bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete Run
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-5 space-y-4">
+                  {isLoadingQaRuns ? (
+                    <div className="p-8 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />
+                      Loading test runs from qa schema...
+                    </div>
+                  ) : qaRuns.length === 0 ? (
+                    <div className="p-8 text-center bg-slate-50 rounded-lg border border-dashed border-slate-200 text-xs text-slate-500">
+                      No QA test runs found. Click "Generate Test Data for All Active Students" above to initialize isolated mock statistics.
+                    </div>
+                  ) : (
+                    <>
+                      {/* Run Selector Pills */}
+                      <div className="flex flex-wrap gap-2">
+                        {qaRuns.map(run => (
+                          <button
+                            key={run.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedQaRunId(run.id);
+                              fetchQaRunStats(run.id);
+                            }}
+                            className={`px-3 py-2 rounded-lg text-xs font-bold text-left transition-all cursor-pointer border flex flex-col gap-0.5 min-h-[44px] justify-center ${
+                              selectedQaRunId === run.id
+                                ? 'bg-[#0f2744] text-white border-[#0f2744] shadow-xs'
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className="truncate max-w-xs">{run.name}</span>
+                            <span className={`text-[10px] font-mono ${selectedQaRunId === run.id ? 'text-slate-300' : 'text-slate-500'}`}>
+                              {new Date(run.created_at).toLocaleString()} • {run.total_records || 0} records
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Selected Run Metrics */}
+                      {qaRunData && (
+                        <div className="space-y-4 pt-3 border-t border-slate-100">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Students Represented</p>
+                              <p className="text-xl font-bold font-mono text-slate-900 mt-1">
+                                {qaRunData.summary?.totalStudents || 0}
+                              </p>
+                              <p className="text-[10px] text-slate-500 mt-0.5">Active Student Profiles</p>
+                            </div>
+                            <div className="p-3.5 bg-amber-50/60 rounded-xl border border-amber-200/80">
+                              <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">LeetCode Records</p>
+                              <p className="text-xl font-bold font-mono text-amber-950 mt-1">
+                                {qaRunData.summary?.leetcodeCount || 0}
+                              </p>
+                              <p className="text-[10px] text-amber-700 mt-0.5">Avg Solved: {qaRunData.summary?.avgLeetcodeSolved || 0}</p>
+                            </div>
+                            <div className="p-3.5 bg-emerald-50/60 rounded-xl border border-emerald-200/80">
+                              <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">HackerRank Records</p>
+                              <p className="text-xl font-bold font-mono text-emerald-950 mt-1">
+                                {qaRunData.summary?.hackerrankCount || 0}
+                              </p>
+                              <p className="text-[10px] text-emerald-700 mt-0.5">Avg Solved: {qaRunData.summary?.avgHackerrankSolved || 0}</p>
+                            </div>
+                            <div className="p-3.5 bg-blue-50/60 rounded-xl border border-blue-200/80">
+                              <p className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Mean Contest Rating</p>
+                              <p className="text-xl font-bold font-mono text-blue-950 mt-1">
+                                {qaRunData.summary?.avgContestRating || 0}
+                              </p>
+                              <p className="text-[10px] text-blue-700 mt-0.5">Across Rated Students</p>
+                            </div>
+                          </div>
+
+                          {/* Filter & Search Bar */}
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                            <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                              {(['all', 'leetcode', 'hackerrank'] as const).map(p => (
+                                <button
+                                  key={p}
+                                  type="button"
+                                  onClick={() => setQaPlatformFilter(p)}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold capitalize cursor-pointer transition-all min-h-[44px] ${
+                                    qaPlatformFilter === p
+                                      ? 'bg-slate-900 text-white shadow-xs'
+                                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  {p === 'all' ? 'All Platforms' : p === 'leetcode' ? 'LeetCode' : 'HackerRank'}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="relative w-full sm:w-72">
+                              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                              <input
+                                type="text"
+                                value={qaSearchQuery}
+                                onChange={(e) => setQaSearchQuery(e.target.value)}
+                                placeholder="Search by name or roll number..."
+                                className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-[#0f2744] bg-white text-slate-800"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Records Preview Table */}
+                          <div className="border border-slate-200 rounded-xl overflow-hidden">
+                            <div className="overflow-x-auto max-h-96">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-10">
+                                  <tr>
+                                    <th className="py-2.5 px-3">Roll No.</th>
+                                    <th className="py-2.5 px-3">Student</th>
+                                    <th className="py-2.5 px-3">Platform</th>
+                                    <th className="py-2.5 px-3 text-right">Easy / Med / Hard</th>
+                                    <th className="py-2.5 px-3 text-right">Total Solved</th>
+                                    <th className="py-2.5 px-3 text-right">Contest Rating</th>
+                                    <th className="py-2.5 px-3 text-right">Streak</th>
+                                    <th className="py-2.5 px-3 text-center">Data Origin</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {qaRunData.stats
+                                    .filter((r: any) => qaPlatformFilter === 'all' || r.platform === qaPlatformFilter)
+                                    .filter((r: any) => {
+                                      if (!qaSearchQuery.trim()) return true;
+                                      const q = qaSearchQuery.toLowerCase();
+                                      return (
+                                        (r.roll_number && r.roll_number.toLowerCase().includes(q)) ||
+                                        (r.student_name && r.student_name.toLowerCase().includes(q)) ||
+                                        (r.class_name && r.class_name.toLowerCase().includes(q))
+                                      );
+                                    })
+                                    .slice(0, 50)
+                                    .map((row: any) => (
+                                      <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
+                                        <td className="py-2.5 px-3 font-mono font-semibold text-slate-800">
+                                          {row.roll_number}
+                                        </td>
+                                        <td className="py-2.5 px-3">
+                                          <p className="font-semibold text-slate-900">{row.student_name}</p>
+                                          <p className="text-[10px] text-slate-500 font-mono">{row.class_name || 'Class Unassigned'}</p>
+                                        </td>
+                                        <td className="py-2.5 px-3">
+                                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                            row.platform === 'leetcode'
+                                              ? 'bg-amber-100 text-amber-900 border border-amber-200'
+                                              : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
+                                          }`}>
+                                            {row.platform === 'leetcode' ? 'LeetCode' : 'HackerRank'}
+                                          </span>
+                                        </td>
+                                        <td className="py-2.5 px-3 text-right font-mono text-slate-700">
+                                          <span className="text-emerald-700 font-semibold">{row.easy_count}</span> /{' '}
+                                          <span className="text-amber-700 font-semibold">{row.medium_count}</span> /{' '}
+                                          <span className="text-rose-700 font-semibold">{row.hard_count}</span>
+                                        </td>
+                                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
+                                          {row.total_problems}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-right font-mono text-slate-800 font-medium">
+                                          {row.contest_rating > 0 ? row.contest_rating : '—'}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-right font-mono text-slate-700">
+                                          {row.streak_days > 0 ? `${row.streak_days}d` : '0d'}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-center">
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200/80">
+                                            MOCK (qa)
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                </tbody>
+                              </table>
+                            </div>
+                            <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
+                              <span>Showing up to 50 preview records for validation.</span>
+                              <span className="font-semibold text-amber-800 flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                QA Test Data — Not reflected in official transcripts or placement eligibility.
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -2886,6 +3279,124 @@ export const AdminView: React.FC = () => {
                                 <div className="text-[10px] uppercase tracking-wider text-slate-500">Documents</div>
                                 <div className="mt-1 font-bold text-slate-900">{normalizeArray(selectedStudentProfile.documents).length}</div>
                               </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                          <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                            <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700">External Platforms Provenance</h5>
+                            <span className="text-[10px] text-slate-500">Live & Verified APIs</span>
+                          </div>
+                          <div className="space-y-2 text-xs">
+                            {/* GitHub */}
+                            <div className="bg-white border border-slate-200 rounded-lg p-2.5 flex items-center justify-between">
+                              <div>
+                                <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                                  <span>GitHub</span>
+                                  {selectedStudentProfile.github_data?.public_repos !== undefined && (
+                                    <span className="font-mono text-slate-600 font-normal">({selectedStudentProfile.github_data.public_repos} repos)</span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-500">Source: GitHub API {selectedStudentProfile.github_synced_at ? `• Synced ${new Date(selectedStudentProfile.github_synced_at).toLocaleDateString()}` : ''}</div>
+                              </div>
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                                selectedStudentProfile.github_data?.public_repos !== undefined || selectedStudentProfile.github_data?.status === 'SYNCED'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : selectedStudentProfile.github_data?.status === 'FAILED'
+                                  ? 'bg-red-50 text-red-700 border-red-200'
+                                  : selectedStudentProfile.github_url
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-slate-100 text-slate-500 border-slate-200'
+                              }`}>
+                                {selectedStudentProfile.github_data?.public_repos !== undefined || selectedStudentProfile.github_data?.status === 'SYNCED'
+                                  ? 'Verified'
+                                  : selectedStudentProfile.github_data?.status === 'FAILED'
+                                  ? 'Sync Failed'
+                                  : selectedStudentProfile.github_url
+                                  ? 'Unverified'
+                                  : 'Not Connected'}
+                              </span>
+                            </div>
+
+                            {/* LeetCode */}
+                            <div className="bg-white border border-slate-200 rounded-lg p-2.5 flex items-center justify-between">
+                              <div>
+                                <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                                  <span>LeetCode</span>
+                                  {selectedStudentProfile.leetcode_data?.totalSolved != null && (
+                                    <span className="font-mono text-slate-600 font-normal">({selectedStudentProfile.leetcode_data.totalSolved} solved)</span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-500">Source: LeetCode GraphQL {selectedStudentProfile.leetcode_synced_at ? `• Synced ${new Date(selectedStudentProfile.leetcode_synced_at).toLocaleDateString()}` : ''}</div>
+                              </div>
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                                selectedStudentProfile.leetcode_data?.status === 'SYNCED' || selectedStudentProfile.leetcode_data?.totalSolved !== undefined
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : selectedStudentProfile.leetcode_data?.status === 'FAILED'
+                                  ? 'bg-red-50 text-red-700 border-red-200'
+                                  : selectedStudentProfile.leetcode_url
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-slate-100 text-slate-500 border-slate-200'
+                              }`}>
+                                {selectedStudentProfile.leetcode_data?.status === 'SYNCED' || selectedStudentProfile.leetcode_data?.totalSolved !== undefined
+                                  ? 'Verified'
+                                  : selectedStudentProfile.leetcode_data?.status === 'FAILED'
+                                  ? 'Sync Failed'
+                                  : selectedStudentProfile.leetcode_url
+                                  ? 'Unverified'
+                                  : 'Not Connected'}
+                              </span>
+                            </div>
+
+                            {/* HackerRank */}
+                            <div className="bg-white border border-slate-200 rounded-lg p-2.5 flex items-center justify-between">
+                              <div>
+                                <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                                  <span>HackerRank</span>
+                                  {selectedStudentProfile.hackerrank_data?.badges_count != null && (
+                                    <span className="font-mono text-slate-600 font-normal">({selectedStudentProfile.hackerrank_data.badges_count} badges)</span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-500">Source: HackerRank REST {selectedStudentProfile.hackerrank_synced_at ? `• Synced ${new Date(selectedStudentProfile.hackerrank_synced_at).toLocaleDateString()}` : ''}</div>
+                              </div>
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                                selectedStudentProfile.hackerrank_data?.status === 'SYNCED' || selectedStudentProfile.hackerrank_data?.badges_count !== undefined
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : selectedStudentProfile.hackerrank_data?.status === 'FAILED'
+                                  ? 'bg-red-50 text-red-700 border-red-200'
+                                  : selectedStudentProfile.hackerrank_url
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-slate-100 text-slate-500 border-slate-200'
+                              }`}>
+                                {selectedStudentProfile.hackerrank_data?.status === 'SYNCED' || selectedStudentProfile.hackerrank_data?.badges_count !== undefined
+                                  ? 'Verified'
+                                  : selectedStudentProfile.hackerrank_data?.status === 'FAILED'
+                                  ? 'Sync Failed'
+                                  : selectedStudentProfile.hackerrank_url
+                                  ? 'Unverified'
+                                  : 'Not Connected'}
+                              </span>
+                            </div>
+
+                            {/* LinkedIn */}
+                            <div className="bg-white border border-slate-200 rounded-lg p-2.5 flex items-center justify-between">
+                              <div>
+                                <div className="font-semibold text-slate-900">LinkedIn</div>
+                                <div className="text-[10px] text-slate-500">Source: LinkedIn OAuth API {selectedStudentProfile.linkedin_synced_at ? `• Synced ${new Date(selectedStudentProfile.linkedin_synced_at).toLocaleDateString()}` : ''}</div>
+                              </div>
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                                selectedStudentProfile.linkedin_data?.status === 'SYNCED'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : selectedStudentProfile.linkedin_url
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-slate-100 text-slate-500 border-slate-200'
+                              }`}>
+                                {selectedStudentProfile.linkedin_data?.status === 'SYNCED'
+                                  ? 'Verified'
+                                  : selectedStudentProfile.linkedin_url
+                                  ? 'Unverified'
+                                  : 'Not Connected'}
+                              </span>
                             </div>
                           </div>
                         </div>

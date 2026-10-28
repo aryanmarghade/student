@@ -418,6 +418,27 @@ export const api = {
   loadDevSeed: () => request<{ message: string }>('/api/admin/dev-seed', { method: 'POST' }),
   resetToFresh: () => request<{ message: string }>('/api/admin/reset-to-fresh', { method: 'POST' }),
 
+  // QA Test Data Management (Isolated QA Schema)
+  generateQaCodingStats: (payload?: { runName?: string; studentId?: string; runId?: string }) =>
+    request<{ success: boolean; message: string; run: { id: string; name: string }; summary: any }>(
+      '/api/admin/qa/coding-stats/generate',
+      { method: 'POST', body: JSON.stringify(payload || {}) }
+    ),
+
+  getQaCodingStatsRuns: () =>
+    request<{ runs: any[] }>('/api/admin/qa/coding-stats/runs'),
+
+  getQaCodingStats: (runId: string) =>
+    request<{ run: any; stats: any[]; summary: any; isTestData: boolean; label: string }>(
+      `/api/admin/qa/coding-stats?runId=${encodeURIComponent(runId)}`
+    ),
+
+  deleteQaCodingStatsRun: (runId: string) =>
+    request<{ success: boolean; message: string; deletedRunId: string }>(
+      `/api/admin/qa/coding-stats/runs/${encodeURIComponent(runId)}`,
+      { method: 'DELETE' }
+    ),
+
   // Teacher
   getTeacherAssignmentsList: () =>
     request<{ active: TeacherAssignment[]; past: TeacherAssignment[] }>('/api/teacher/assignments'),

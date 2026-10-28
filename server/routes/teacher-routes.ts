@@ -91,13 +91,13 @@ router.get('/classes/:classId/students', async (req: AuthRequest, res) => {
   const cls = (await query('SELECT * FROM classes WHERE id=$1', [req.params.classId])).rows[0];
   const students = (await query(
     `SELECT s.id,s.user_id,s.roll_number,u.full_name,u.email,
-            s.linkedin_url,s.github_url,s.hackerrank_url,s.profile_photo_url,
+            s.linkedin_url,s.github_url,s.hackerrank_url,s.leetcode_url,s.profile_photo_url,
             s.profile_strength,s.bio,s.class_id, c.name AS class_name, c.year AS class_year, c.section AS class_section,
             d.name AS department_name
      FROM students s
-     JOIN users u ON u.id=s.user_id
+     LEFT JOIN users u ON u.id=s.user_id
      LEFT JOIN classes c ON c.id=s.class_id
-     LEFT JOIN departments d ON d.id=s.department_id
+     LEFT JOIN departments d ON d.id=COALESCE(s.department_id, c.department_id)
      WHERE s.class_id=$1 ORDER BY s.roll_number`,
     [req.params.classId],
   )).rows;
@@ -109,7 +109,7 @@ router.get('/classes/:classId/subjects/:subjectId/marks', async (req: AuthReques
   const semester = String(req.query.semester_id || '');
   if (!await verifyTeacherClassScope(classId, subjectId, semester || undefined, req.user!.id))
     return res.status(403).json({ error: 'Access Denied: You are not assigned to this class, subject, and semester.' });
-  const students = (await query(`SELECT s.id,s.roll_number,u.full_name FROM students s JOIN users u ON u.id=s.user_id WHERE s.class_id=$1 ORDER BY s.roll_number`, [classId])).rows;
+  const students = (await query(`SELECT s.id,s.roll_number,u.full_name FROM students s LEFT JOIN users u ON u.id=s.user_id WHERE s.class_id=$1 ORDER BY s.roll_number`, [classId])).rows;
   const [marks, assessmentDefs] = await Promise.all([
     query<any>(`SELECT * FROM marks WHERE class_id=$1 AND subject_id=$2 ${semester ? 'AND semester_id=$3' : ''}`, semester ? [classId, subjectId, semester] : [classId, subjectId]),
     query<any>(`SELECT id, title, max_marks, weight, assessment_type, assessment_date, answer_key, rubric_criteria FROM assessment_definitions WHERE class_id=$1 AND subject_id=$2 AND semester_id=$3 AND status='active' ORDER BY created_at ASC`, [classId, subjectId, semester || ''] ),
@@ -321,7 +321,7 @@ router.get('/classes/:classId/subjects/:subjectId/export-marks', async (req: Aut
   }
 
   const [students, marks, asmtDefs] = await Promise.all([
-    query<any>(`SELECT s.id, s.roll_number, u.full_name FROM students s JOIN users u ON u.id=s.user_id WHERE s.class_id=$1 ORDER BY s.roll_number`, [classId]),
+    query<any>(`SELECT s.id, s.roll_number, u.full_name FROM students s LEFT JOIN users u ON u.id=s.user_id WHERE s.class_id=$1 ORDER BY s.roll_number`, [classId]),
     query<any>(`SELECT * FROM marks WHERE class_id=$1 AND subject_id=$2 AND semester_id=$3`, [classId, subjectId, semester]),
     query<any>(`SELECT title, max_marks FROM assessment_definitions WHERE class_id=$1 AND subject_id=$2 AND semester_id=$3 AND status='active'`, [classId, subjectId, semester]),
   ]);
@@ -671,9 +671,9 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
             sem.name AS "semesterName",
             subj.name AS "subjectName", subj.code AS "subjectCode"
      FROM students s
-     JOIN users u ON u.id = s.user_id
+     LEFT JOIN users u ON u.id = s.user_id
      LEFT JOIN classes c ON c.id = s.class_id
-     LEFT JOIN departments d ON d.id = s.department_id
+     LEFT JOIN departments d ON d.id = COALESCE(s.department_id, c.department_id)
      LEFT JOIN semesters sem ON sem.id = $3
      LEFT JOIN subjects subj ON subj.id = $4
      WHERE s.id = $1 AND s.class_id = $2`,
@@ -845,7 +845,7 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
     githubData = null;
   }
 
-// LinkedIn Data
+  // LinkedIn Data
   let linkedinData: any = null;
   const linkedinSnapshotRes = await query<any>(
     `SELECT * FROM student_linkedin_snapshots
@@ -860,10 +860,11 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
     if (currentLinkedinSnap.sync_status === 'synced') {
       linkedinData = {
         synced: true,
-        dataSource: 'monthly_snapshot',
+        status: 'VERIFIED',
+        dataSource: 'linkedin_snapshot',
         snapshotMonth: currentLinkedinSnap.snapshot_month,
         syncedAt: currentLinkedinSnap.synced_at,
-        url: currentLinkedinSnap.linkedin_url,
+        url: currentLinkedinSnap.linkedin_url || student.linkedin_url,
         connections: currentLinkedinSnap.connections,
         postsCount: currentLinkedinSnap.posts_count,
         followers: currentLinkedinSnap.followers,
@@ -878,16 +879,37 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
     } else if (currentLinkedinSnap.sync_status === 'failed') {
       linkedinData = {
         synced: false,
-        dataSource: 'monthly_snapshot',
+        status: 'FAILED',
+        dataSource: 'linkedin_snapshot',
         snapshotMonth: currentLinkedinSnap.snapshot_month,
         reason: currentLinkedinSnap.error_message || 'LinkedIn sync failed',
         url: student.linkedin_url,
       };
     } else {
-      linkedinData = null;
+      linkedinData = {
+        synced: false,
+        status: 'UNAVAILABLE',
+        dataSource: 'linkedin_oauth_api',
+        url: student.linkedin_url,
+        reason: 'LinkedIn live sync requires authorized student OAuth integration',
+      };
     }
   } else if (student.linkedin_url) {
-    linkedinData = { synced: false, dataSource: 'not_synced', url: student.linkedin_url, reason: 'Not yet synced' };
+    linkedinData = {
+      synced: false,
+      status: 'UNVERIFIED',
+      dataSource: 'linkedin_oauth_api',
+      url: student.linkedin_url,
+      reason: 'LinkedIn profile linked but live API sync requires student OAuth authorization',
+    };
+  } else {
+    linkedinData = {
+      synced: false,
+      status: 'NOT_CONNECTED',
+      dataSource: 'linkedin_oauth_api',
+      url: null,
+      reason: 'No LinkedIn profile linked',
+    };
   }
 
   if (!visibility.linkedin_enabled) {
@@ -909,7 +931,8 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
     if (currentHackerrankSnap.sync_status === 'synced') {
       hackerrankData = {
         synced: true,
-        dataSource: 'monthly_snapshot',
+        status: 'VERIFIED',
+        dataSource: 'hackerrank_rest_api',
         snapshotMonth: currentHackerrankSnap.snapshot_month,
         syncedAt: currentHackerrankSnap.synced_at,
         username: currentHackerrankSnap.hackerrank_username,
@@ -926,7 +949,8 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
     } else if (currentHackerrankSnap.sync_status === 'failed') {
       hackerrankData = {
         synced: false,
-        dataSource: 'monthly_snapshot',
+        status: 'FAILED',
+        dataSource: 'hackerrank_rest_api',
         snapshotMonth: currentHackerrankSnap.snapshot_month,
         reason: currentHackerrankSnap.error_message || 'HackerRank sync failed',
         url: student.hackerrank_url,
@@ -935,20 +959,116 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
       hackerrankData = null;
     }
   } else if (student.hackerrank_url) {
-    hackerrankData = { url: student.hackerrank_url, synced: false, reason: 'Not yet synced' };
+    hackerrankData = {
+      synced: false,
+      status: 'UNVERIFIED',
+      dataSource: 'hackerrank_rest_api',
+      url: student.hackerrank_url,
+      reason: 'Not yet synced with HackerRank',
+    };
+  } else {
+    hackerrankData = {
+      synced: false,
+      status: 'NOT_CONNECTED',
+      dataSource: 'hackerrank_rest_api',
+      url: null,
+      reason: 'No HackerRank profile linked',
+    };
   }
 
   if (!visibility.hackerrank_enabled) {
     hackerrankData = null;
   }
 
-  // Posts grouped by month (YYYY-MM)
+  // LeetCode Data
+  let leetcodeData: any = null;
+  const leetcodeSnapshotRes = await query<any>(
+    `SELECT * FROM student_leetcode_snapshots
+     WHERE student_id = $1
+     ORDER BY snapshot_month DESC`,
+    [studentId]
+  );
+  const currentLeetcodeSnap = leetcodeSnapshotRes.rows.find((r: any) => r.snapshot_month === thisMonth)
+    ?? leetcodeSnapshotRes.rows[0] ?? null;
+
+  if (currentLeetcodeSnap) {
+    if (currentLeetcodeSnap.sync_status === 'synced') {
+      leetcodeData = {
+        synced: true,
+        status: 'VERIFIED',
+        dataSource: 'leetcode_graphql_api',
+        snapshotMonth: currentLeetcodeSnap.snapshot_month,
+        syncedAt: currentLeetcodeSnap.synced_at,
+        username: currentLeetcodeSnap.leetcode_username,
+        ranking: currentLeetcodeSnap.ranking,
+        totalSolved: currentLeetcodeSnap.total_solved,
+        easySolved: currentLeetcodeSnap.easy_solved,
+        mediumSolved: currentLeetcodeSnap.medium_solved,
+        hardSolved: currentLeetcodeSnap.hard_solved,
+        url: student.leetcode_url,
+      };
+    } else if (currentLeetcodeSnap.sync_status === 'failed') {
+      leetcodeData = {
+        synced: false,
+        status: 'FAILED',
+        dataSource: 'leetcode_graphql_api',
+        snapshotMonth: currentLeetcodeSnap.snapshot_month,
+        reason: currentLeetcodeSnap.error_message || 'LeetCode sync failed',
+        url: student.leetcode_url,
+      };
+    }
+  } else if (student.leetcode_data && student.leetcode_data.status === 'SYNCED') {
+    leetcodeData = {
+      synced: true,
+      status: 'VERIFIED',
+      dataSource: 'leetcode_graphql_api',
+      syncedAt: student.leetcode_synced_at,
+      username: student.leetcode_data.username,
+      ranking: student.leetcode_data.ranking,
+      totalSolved: student.leetcode_data.totalSolved,
+      easySolved: student.leetcode_data.easySolved,
+      mediumSolved: student.leetcode_data.mediumSolved,
+      hardSolved: student.leetcode_data.hardSolved,
+      url: student.leetcode_url,
+    };
+  } else if (student.leetcode_data && student.leetcode_data.status === 'FAILED') {
+    leetcodeData = {
+      synced: false,
+      status: 'FAILED',
+      dataSource: 'leetcode_graphql_api',
+      syncedAt: student.leetcode_synced_at,
+      reason: student.leetcode_data.error || 'LeetCode sync failed',
+      url: student.leetcode_url,
+    };
+  } else if (student.leetcode_url) {
+    leetcodeData = {
+      synced: false,
+      status: 'UNVERIFIED',
+      dataSource: 'leetcode_graphql_api',
+      url: student.leetcode_url,
+      reason: 'Not yet synced with LeetCode',
+    };
+  } else {
+    leetcodeData = {
+      synced: false,
+      status: 'NOT_CONNECTED',
+      dataSource: 'leetcode_graphql_api',
+      url: null,
+      reason: 'No LeetCode profile linked',
+    };
+  }
+
+  if (!visibility.leetcode_enabled) {
+    leetcodeData = null;
+  }
+
+  // Campus Posts grouped by month (YYYY-MM)
   const monthMap = new Map<string, number>();
   for (const p of postsRows.rows) {
     const month = new Date(p.created_at).toISOString().slice(0, 7); // YYYY-MM
     monthMap.set(month, (monthMap.get(month) ?? 0) + 1);
   }
-  let postsByMonth = Array.from(monthMap.entries())
+  const postsByMonth = Array.from(monthMap.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([month, count]) => {
       const [year, m] = month.split('-');
@@ -956,10 +1076,6 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
       const label = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
       return { month, label, count };
     });
-  
-  if (!visibility.linkedin_enabled) {
-    postsByMonth = [];
-  }
 
   if (!visibility.academic_enabled) {
     internalMarks = [];
@@ -981,10 +1097,22 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
     profile_photo_url: student.profile_photo_url,
     profile_strength: student.profile_strength,
   };
-  if (visibility.github_enabled) studentObj.github_url = student.github_url;
-  if (visibility.linkedin_enabled) studentObj.linkedin_url = student.linkedin_url;
-  if (visibility.hackerrank_enabled) studentObj.hackerrank_url = student.hackerrank_url;
-  if (visibility.leetcode_enabled) studentObj.leetcode_url = student.leetcode_url;
+  if (visibility.github_enabled) {
+    studentObj.github_url = student.github_url;
+    studentObj.github_synced_at = student.github_synced_at;
+  }
+  if (visibility.linkedin_enabled) {
+    studentObj.linkedin_url = student.linkedin_url;
+    studentObj.linkedin_synced_at = student.linkedin_synced_at;
+  }
+  if (visibility.hackerrank_enabled) {
+    studentObj.hackerrank_url = student.hackerrank_url;
+    studentObj.hackerrank_synced_at = student.hackerrank_synced_at;
+  }
+  if (visibility.leetcode_enabled) {
+    studentObj.leetcode_url = student.leetcode_url;
+    studentObj.leetcode_synced_at = student.leetcode_synced_at;
+  }
 
   res.json({
     student: studentObj,
@@ -1009,27 +1137,27 @@ router.get('/students/:studentId/analytics', async (req: AuthRequest, res) => {
       hackerrankData,
       hackerrankUrl: student.hackerrank_url,
     } : {}),
-    ...(visibility.leetcode_enabled && student.leetcode_data ? {
-      leetcodeData: student.leetcode_data,
+    ...(visibility.leetcode_enabled && leetcodeData ? {
+      leetcodeData,
       leetcodeUrl: student.leetcode_url,
     } : {}),
-    ...(visibility.linkedin_enabled && (linkedinData || postsRows.rows.length > 0) ? {
+    ...(visibility.linkedin_enabled && linkedinData ? {
       linkedinData,
       linkedinUrl: student.linkedin_url,
-      linkedinPosts: postsRows.rows,
-      recentPosts: postsRows.rows.slice(-5).reverse(),
-      postsByMonth,
-      totalPosts: postsRows.rows.length,
     } : {}),
+    campusPosts: postsRows.rows,
+    recentPosts: postsRows.rows.slice(-5).reverse(),
+    postsByMonth,
+    totalPosts: postsRows.rows.length,
   });
 });
 
 router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) => {
   const s = (await query<any>(
     `SELECT s.*,u.full_name,u.email,c.name AS "className",d.name AS "departmentName"
-     FROM students s JOIN users u ON u.id=s.user_id
+     FROM students s LEFT JOIN users u ON u.id=s.user_id
      LEFT JOIN classes c ON c.id=s.class_id
-     LEFT JOIN departments d ON d.id=s.department_id
+     LEFT JOIN departments d ON d.id=COALESCE(s.department_id, c.department_id)
      WHERE s.id=$1`,
     [req.params.studentId],
   )).rows[0];
@@ -1049,13 +1177,13 @@ router.get('/students/:studentId/full-profile', async (req: AuthRequest, res) =>
     query(`SELECT * FROM sports WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]),
     visibility.hackerrank_enabled ? query(`SELECT * FROM student_hackerrank_evidence WHERE student_id=$1 ORDER BY created_at DESC`, [s.id]) : Promise.resolve({ rows: [] }),
     visibility.linkedin_enabled ? query(`SELECT * FROM student_linkedin_posts WHERE student_id=$1 ORDER BY post_date DESC, created_at DESC`, [s.id]) : Promise.resolve({ rows: [] }),
-    visibility.linkedin_enabled ? query(`
+    query(`
       SELECT p.*,
              (SELECT json_agg(a.*) FROM post_attachments a WHERE a.post_id = p.id) as attachments
       FROM posts p
       WHERE p.student_id = $1
       ORDER BY p.created_at DESC
-    `, [s.id]) : Promise.resolve({ rows: [] }),
+    `, [s.id]),
   ]);
 
   const academicHistory = visibility.academic_enabled ? await calculateAcademicHistory(s.id) : null;

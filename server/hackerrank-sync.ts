@@ -33,13 +33,85 @@ export interface MonthlySyncResult {
   details: SnapshotSyncResult[];
 }
 
-function extractHackerRankUsername(url: string): string | null {
-  const match = url.match(/hackerrank\.com\/([^\/\s?#]+)/i);
+export function extractHackerRankUsername(url: string): string | null {
+  if (!url) return null;
+  const match = url.match(/hackerrank\.com\/(?:profile\/)?([a-zA-Z0-9_\-\.]+)/i);
   return match ? match[1] : null;
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Fetch real public profile statistics from HackerRank public API
+ */
+export async function fetchHackerRankStats(username: string): Promise<{
+  badges_count: number;
+  verified_skills: string[];
+  raw_data: any;
+} | null> {
+  const cleanUser = username.trim();
+  if (!cleanUser || !/^[a-zA-Z0-9_\-\.]+$/.test(cleanUser)) return null;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'application/json',
+    };
+
+    const profileRes = await fetch(`https://www.hackerrank.com/rest/hackers/${encodeURIComponent(cleanUser)}`, {
+      headers,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (profileRes.status === 404) {
+      return null;
+    }
+    if (!profileRes.ok) {
+      throw new Error(`HackerRank HTTP error ${profileRes.status}`);
+    }
+
+    const profileJson = await profileRes.json();
+    if (!profileJson || profileJson.model?.deleted) {
+      return null;
+    }
+
+    // Fetch badges
+    let badges: any[] = [];
+    try {
+      const bController = new AbortController();
+      const bTimeout = setTimeout(() => bController.abort(), 6000);
+      const badgesRes = await fetch(`https://www.hackerrank.com/rest/hackers/${encodeURIComponent(cleanUser)}/badges`, {
+        headers,
+        signal: bController.signal,
+      });
+      clearTimeout(bTimeout);
+      if (badgesRes.ok) {
+        const bJson = await badgesRes.json();
+        badges = Array.isArray(bJson.models) ? bJson.models : [];
+      }
+    } catch (_err) {
+      // badges fetch error is non-fatal if profile succeeded
+    }
+
+    const verifiedSkills = badges.map((b: any) => b.badge_name || b.title).filter(Boolean);
+    const badgesCount = badges.length;
+
+    return {
+      badges_count: badgesCount,
+      verified_skills: verifiedSkills,
+      raw_data: { profile: profileJson.model, badges },
+    };
+  } catch (err: any) {
+    console.error(`[HackerRank Fetch] Error for ${cleanUser}:`, err.message);
+    throw err;
+  }
 }
 
 async function syncOneStudent(
@@ -57,13 +129,67 @@ async function syncOneStudent(
   if (!username) {
     const errMsg = `Cannot parse HackerRank username from URL: ${student.hackerrank_url}`;
     console.error(`[HackerRank Sync] ❌ ${student.roll_number}: ${errMsg}`);
+    await upsertSnapshot({
+      studentId: student.id,
+      hackerrankUsername: 'INVALID_URL',
+      month,
+      data: null,
+      status: 'failed',
+      error: errMsg,
+    });
     return { studentId: student.id, username: null, status: 'failed', error: errMsg };
   }
 
-  // No real integration is configured/available.
-  // We do NOT create a fake snapshot and do NOT insert synthetic values.
-  console.log(`[HackerRank Sync] ℹ️ ${student.roll_number} (${username}) — HackerRank integration not available.`);
-  return { studentId: student.id, username, status: 'not_synced', error: 'Real HackerRank integration is not configured/available' };
+  try {
+    const data = await fetchHackerRankStats(username);
+    if (!data) {
+      const errMsg = `HackerRank profile '${username}' not found (404)`;
+      await upsertSnapshot({
+        studentId: student.id,
+        hackerrankUsername: username,
+        month,
+        data: null,
+        status: 'failed',
+        error: errMsg,
+      });
+      return { studentId: student.id, username, status: 'failed', error: errMsg };
+    }
+
+    const hrData = {
+      badges_count: data.badges_count,
+      verified_skills: data.verified_skills,
+      username,
+      synced_at: new Date().toISOString(),
+    };
+
+    await upsertSnapshot({
+      studentId: student.id,
+      hackerrankUsername: username,
+      month,
+      data: { badges_count: data.badges_count, verified_skills: data.verified_skills },
+      status: 'synced',
+      error: undefined,
+    });
+
+    await query(
+      `UPDATE students SET hackerrank_data = $1, hackerrank_synced_at = NOW() WHERE id = $2`,
+      [JSON.stringify(hrData), student.id]
+    );
+
+    console.log(`[HackerRank Sync] ✅ ${student.roll_number} (${username}): ${data.badges_count} badges, ${data.verified_skills.length} skills`);
+    return { studentId: student.id, username, status: 'synced' };
+  } catch (err: any) {
+    const errMsg = err.message || 'HackerRank API network/service error';
+    await upsertSnapshot({
+      studentId: student.id,
+      hackerrankUsername: username,
+      month,
+      data: null,
+      status: 'failed',
+      error: errMsg,
+    });
+    return { studentId: student.id, username, status: 'failed', error: errMsg };
+  }
 }
 
 async function upsertSnapshot(opts: {

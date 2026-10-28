@@ -125,6 +125,18 @@ export async function initializeDatabase() {
   await pool.query(schema);
 
   await pool.query(`UPDATE marks m SET class_id = s.class_id FROM students s WHERE m.student_id = s.id AND m.class_id IS NULL;`);
+  await pool.query(`UPDATE students s SET department_id = c.department_id FROM classes c WHERE s.class_id = c.id AND s.department_id IS NULL;`);
+  await pool.query(`
+    INSERT INTO students (id, user_id, roll_number, class_id, department_id, profile_strength)
+    SELECT 'std_' || substr(u.id, 5), u.id, 'VA_' || upper(substr(u.id, length(u.id) - 5)), (SELECT id FROM classes ORDER BY id LIMIT 1), (SELECT department_id FROM classes ORDER BY id LIMIT 1), 20
+    FROM users u
+    LEFT JOIN students s ON s.user_id = u.id
+    WHERE u.role = 'student' AND s.id IS NULL
+    ON CONFLICT (id) DO NOTHING;
+  `);
+  await pool.query(`UPDATE students SET leetcode_data = NULL, leetcode_synced_at = NULL WHERE (leetcode_url IS NULL OR leetcode_url = '') AND leetcode_data IS NOT NULL;`);
+  await pool.query(`UPDATE students SET github_data = NULL, github_synced_at = NULL WHERE (github_url IS NULL OR github_url = '') AND github_data IS NOT NULL;`);
+  await pool.query(`UPDATE students SET hackerrank_data = NULL, hackerrank_synced_at = NULL WHERE (hackerrank_url IS NULL OR hackerrank_url = '') AND hackerrank_data IS NOT NULL;`);
   await pool.query(`DROP INDEX IF EXISTS uq_marks_student_subject_semester_exam;`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_marks_student_class_subject_semester_exam ON marks(student_id, class_id, subject_id, semester_id, exam_type);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_marks_class_subject_semester ON marks(class_id, subject_id, semester_id);`);
